@@ -11,7 +11,7 @@ def objective_function(x):
 
 evaluated_points = []
 
-
+# TODO: add a potential map in the z-axis
 def live_plot(optim_result):
     global evaluated_points
     evaluated_points.append(optim_result.x_iters[-1])
@@ -34,14 +34,16 @@ def live_plot(optim_result):
     plt.legend()
     plt.title('Live Optimization Progress')
     plt.grid(True)
-    plt.pause(0.5)
+    plt.xlim(bounds[0])
+    plt.ylim(bounds[1])
+    plt.pause(0.2)
 
 
 # Define the bounds of the search space
 bounds = [(-2.0, 4.0), (-3.0, 3.0)]  # Search space for x and y
 
 # Perform Bayesian Optimization
-result = gp_minimize(objective_function, bounds, n_calls=20, random_state=42, callback=live_plot)
+result = gp_minimize(objective_function, bounds, n_calls=50, random_state=42, callback=live_plot)
 
 # Plot the convergence
 plt.figure()

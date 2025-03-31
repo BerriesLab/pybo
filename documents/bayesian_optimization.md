@@ -1,6 +1,7 @@
 <style> 
   p {line-height: 2;}
   ul {line-height: 2;}
+  ol {line-height: 2;}
 </style>
 
 # Bayesian Optimization
@@ -10,106 +11,84 @@ function $\mathscr{L}(\mathbf{x})$, where $\mathbf{x}$ is a vector of parameters
 traditional methods, like grid search or random search, which optimize the objective function by exploring the
 hyperparameter space in a deterministic or pre-defined way, Bayesian optimization builds a probabilistic model of the
 function and uses it to decide where to evaluate next in the hyperparameter space. Bayesian optimization is based
-on [Bayes inference](bayesian_inference.md).
-
-### Bayesian Optimization for Gaussian Processes
-
-The objective function $\mathscr{L}(\mathbf{x})$ is modeled as a Gaussian Process, i.e. a distribution over the possible
-functions, where each point of the function is normally distributed.
-
-**Inputs:**
-
-1. **Objective function** $f(x)$: The function you wish to optimize.
-2. **Search space** $X$: The space of possible inputs (e.g., real-valued, bounded).
-3. **Acquisition function** $A(x)$: A function used to decide the next point to evaluate (e.g., Expected Improvement,
-   Probability of Improvement, Upper Confidence Bound).
-4. **Initial observations**: A small set of initial data points $D = \{(x_1, y_1), (x_2, y_2), \dots, (x_n, y_n)\}$,
-   where each $y_i = f(x_i)$ is the objective value at point $x_i$.
-5. **Budget or stopping criteria**: The maximum number of evaluations or a stopping condition based on convergence.
-
-**Steps:**
-
-1. **Initialize Gaussian Process (GP)**:
-    - Fit a Gaussian Process model to the initial observations.
-    - Use the initial data points to estimate the hyperparameters of the GP model (e.g., length scale, variance).
-
-
-2. **Define the Acquisition Function**:
-    - Choose an acquisition function \(A(x)\) (e.g., Expected Improvement (EI), Probability of Improvement (PI), Upper
-      Confidence Bound (UCB)).
-    - The acquisition function quantifies the trade-off between exploring uncertain areas (high model uncertainty) and
-      exploiting areas where the objective function is likely to be optimal.
-
-
-3. **Iterative Process** (Repeat until stopping criteria met):
-
-   a. **Optimize the Acquisition Function**:
-    - For each iteration, maximize the acquisition function \(A(x)\) over the search space \(X\) to find the next point
-      to evaluate:
-      \[
-      x_{\text{next}} = \arg\max_{x \in X} A(x)
-      \]
-    - This gives the next candidate input point \(x_{\text{next}}\) to evaluate.
-
-   b. **Evaluate the Objective Function**:
-    - Evaluate the objective function \(f(x_{\text{next}})\) at the newly selected point.
-    - Observe the function value \(y_{\text{next}} = f(x_{\text{next}})\).
-
-   c. **Update the Model**:
-    - Add the new data point \((x_{\text{next}}, y_{\text{next}})\) to the existing dataset \(D\).
-    - Update the GP model with the new data. This involves recalculating the posterior and possibly re-optimizing the GP
-      hyperparameters.
-
-4. **Stopping Criteria**:
-    - Stop the process when a predefined number of function evaluations is reached or when the improvement in the
-      objective function becomes negligible.
+on an iterative application of [Bayes inference](bayesian_inference), and is used in several fields of engineering,
+where each experiment is vey time and/or material expensive.
 
 ---
 
-## **Outputs:**
+### Bayesian Optimization for Gaussian Processes
 
-- The point \(x_{\text{best}}\) in the search space that maximizes the acquisition function.
-- The corresponding objective value \(f(x_{\text{best}})\) as the best found solution.
+For Gaussian Processes, the objective function $\mathscr{L}(\mathbf{x})$ is modeled as
+a [Gaussian Process](gaussian_process.md). The following inputs are given:
 
-It is given an initial dataset $X = \left\{(x_i, y_i) \right\}$, where $x_i$ are the inputs (i.e., parameters to
-optimizes)
-and $y_i=\mathscr{L}(x_i)$ are the corresponding outputs (i.e., the function values), a Gaussian Process is used
-to update the belief, or *prior probability* $P(H)$, about the function $f(x)$.
-In this context, the evidence $E$ is the set of observed data points, the likelihood $P(E\vert H)$ is the probability of
-observing the current data given the model parameters, the prior probability $P(H)$ is the initial belief about the
-function before observing the data, and the evidence probability $P(E)=\int P(E\vert\theta)P(\theta)d\theta$ must be
-computed in order to update the model with new data points.
+- **Objective function** $\mathscr{L}(\mathbf{x}): \mathbb{R}^N \rightarrow \mathbb{R}^1$: The function to
+  optimize.
+- **Kernel function** $k(\mathbf{x}, \mathbf{x}^\prime): \mathbb{R}^N \rightarrow \mathbb{R}^1$: The function to
+  calculate the covariance matrix $K$.
+- **Search space** or **hyperparameter space** $X \in \mathbb{R}^N$: The space of possible inputs (real-valued,
+  bounded).
+- **Acquisition function** $A(\mathbf{x}): \mathbb{R}^N \rightarrow \mathbb{R}^1$: A function used to decide the next
+  point to evaluate (e.g., Expected Improvement, Probability of Improvement, Upper Confidence Bound).
+- **Initial observations**: A relatively small set of initial data
+  points
+  $$
+  D_{0} = \{(\mathbf{x}_1, y_1), (\mathbf{x}_2, y_2), \dots, (\mathbf{x}_n, y_n)\} =
+  \left\{
+  \left( \left[ \begin{matrix} x_{10} \\ x_{11} \\ \cdots \\ x_{1N} \end{matrix} \right], y_1\right)
+  \left( \left[\begin{matrix} x_{20} \\ x_{21} \\ \cdots \\ x_{2N} \end{matrix}\right], y_2 \right)
+  \cdots,
+  \left( \left[\begin{matrix} x_{n0} \\ x_{n1} \\ \cdots \\ x_{nN} \end{matrix}\right], y_n \right)
+  \right\}
+  $$
+  where each $y_i = \mathscr{L}(\mathbf{x}_i)$ is the value of the objective function at point $\mathbf{x}_i$. These
+  points can be chosen using Random Sampling, [Latin Hypercube Sampling](latin_hypercube_sampling.md) (LHS), or Grid
+  Search.
 
-1. **Define the Objective Function**:  
-   Let $\mathscr{L}(\mathbf{x}): \mathcal{X} \rightarrow \mathbb{R}$ represent the objective function,
-   where $\mathbf{x}$ is the vector of input variables. Assume a Gaussian Process prior for $\mathscr{L}(\mathbf{x})$
-   with a mean function $\mu(\mathbf{x}) = 0$ and kernel $k(x, x')$
+- **Budget or stopping criteria**: The maximum number of evaluations $n_\mathrm{max}$ or a stopping condition based on
+  convergence, such as $\mathscr{L}(\mathbf{x}_\mathrm{next}) - \mathscr{L}(\mathbf{x}) < \epsilon$, where $\epsilon$ is
+  a very small value.
 
+The optimization process follows five main steps:
 
-2. **Initial Evaluation**:  
-   Evaluate $\mathscr{L}(\mathbf{x})$ at $X$,
-   obtaining $\mathbf{y} = \begin{bmatrix} y_1 & y_2 & \dots & y_n \end{bmatrix}$.
+1. **Initialize Gaussian Process (GP)**:  
+   Fit a Gaussian Process model to the initial observations $D_0$ to estimate the hyperparameters of the GP model (
+   e.g., length scale(s), variance). This is done by first calculating the covariance matrix $K$, and then maximizing
+   the (logarithmic) [Maximum Likelihood Estimate](maximum_likelihood_estimation.md) for the model, i.e.:
+   $$
+   \hat{\mathbf{\theta}} = \arg\max_\theta\log{P(\mathbf{y} \vert X, \theta)}
+   $$
+   where $\theta$ is the set of parameters to find and
+   $$
+   \log P(\mathbf{y} \vert X, \theta) = -\frac{1}{2} (\mathbf{y} - \mathbf{m})^T \left(K +
+   \sigma_n^2 I \right)^{-1} (\mathbf{y} - \mathbf{m}) - \frac{1}{2} \log |K + \sigma_n^2 I| -
+   \frac{n}{2} \log(2\pi)
+   $$
+2. **Find Next Data Point $\mathbf{x}_*$**:  
+   Maximize the acquisition function $A(x)$ over the search space $X$ to find the next point $\mathbf{x}_*$ where to
+   evaluate the objective function $\mathscr{L}$:
+   $$
+   x_{\text{next}} = \arg\max_{x \in X} A(x)
+   $$
+3. **Evaluate the Objective Function**:  
+   Evaluate the objective function at the newly selected point, $y_* = \mathscr{L}(\mathbf{x}_*)$, then add the new
+   observation $\left(\mathbf{x}_*, y_* \right)$ to the existing dataset,
+   i.e. $D_{t+1}=D_t \cup \left(\mathbf{x}_*, y_* \right)$.
+4. **Update the Model**:  
+   Given this new information, it is possible to compute a new posterior $P(H \vert E)$. This involves calculating the
+   mean function and the covariance function based on the extended dataset:
+   $$
+   m(\mathbf{x}) = \mathbf{k}(\mathbf{x}_*,X) \left(K + \sigma_n^2 I \right)^{-1} \mathbf{y}
+   $$
+   $$
+   \sigma^2(\mathbf{x}) = \mathbf{k}(\mathbf{x}_*,X) - \left(K + \sigma_n^2 I \right)^{-1} \mathbf{k}(X, \mathbf{x})
+   $$
+   where $\mathbf{k}$ is the vector of covariances between the new point $\mathbf{x}_*$ and all previously observed
+   points $X$.
+5. **Stopping Criteria**:
+   Stop the process when a predefined number of function evaluations is reached or when the improvement in the
+   objective function becomes negligible.
 
-
-3. **Fit the Gaussian Process**:  
-   Calculate the posterior mean $\mu_*(x)$ and variance $\sigma_*^2(x)$.
-
-
-4. **Optimize the Acquisition Function**:  
-   Maximize the acquisition function (e.g., **Expected Improvement**) to determine the next point $x_{\text{next}}$
-   to evaluate.
-
-
-5. **Evaluate the Objective Function**:  
-   Evaluate $\mathscr{L}(x_{\text{next}})$ to obtain $y_{\text{next}}$.
-
-
-6. **Update the Gaussian Process**:  
-   Update the posterior distribution with the new data point $(x_{\text{next}}, y_{\text{next}})$.
-
-
-7. **Repeat**:  
-   Iterate steps 3-6 until a stopping criterion is met.
+---
 
 ### Data Points
 
@@ -124,6 +103,8 @@ $$
 is the normally distributed noise associated to the *i*-th measurement, having mean $\mu_n = 0$ and
 variance $\sigma_n^2$. When $n$ data points are available, the *covariance matrix* $K \in [n\times n]$
 
+---
+
 ### The Posterior Function $\mathscr{L}_*$
 
 When adding a new test point $x_\mathrm{next}$, so that $\mathscr{L}\left( x_\mathrm{next} \right)$ is the function
@@ -131,10 +112,12 @@ evaluated at the new point, the posterior function, i.e. the new function evalua
 point $x_\mathrm{next}$, also follows a multivariate gaussian distribution
 $$
 \begin{bmatrix} y \\ f \left( x_* \right) \end{bmatrix} \sim
-\mathcal{N}\left(0, \begin{bmatrix} K\left(X, X \right) +\sigma_n^2I & K \left(X, x_* \right)
+\mathcal{N}\left(\mathbf{0}, \begin{bmatrix} K\left(X, X \right) +\sigma_n^2I & K \left(X, x_* \right)
 \\ K \left(x_*, X \right) & K\left( x_*, x_* \right) \end{bmatrix} \right)
 $$
 where $\sigma_n^2$ is due to the Gaussian noise of the experimental data points.
+
+---
 
 ### Acquisition Function
 
@@ -147,9 +130,13 @@ where $\eta = \frac{f_\mathrm{best}-\mu(x)}{\sigma(x)}$ is the normalized improv
 Here, $f_\mathrm{best} - \mu(x)$ is the difference between the current best value and the predicted mean at $x$,
 evaluated before adding the new data point $x_\mathrm{next}$ to the dataset $X$.
 
+---
+
 ### Posterior Mean $\mu_*(x)$
 
 The posterior mean is the prediction of the value of the objective function at $x$, is given by:
 $$
-\mu_*(x) = K(x,X)\left[K(X, X) +\sigma_n^2 I \right]^{-1}\mathbf{y}
+m(\mathbf{x}_*) = \mathbf{k}(\mathbf{x}_*)^T\left[K +\sigma_n^2 I \right]^{-1}\mathbf{y}
 $$
+where $\mathbf{k}(\mathbf{x}_*)$ is a column vector where each element is the covariance between the new
+point $\mathbf{x}_*$ and all points in the dataset $\mathbf{x}_i$.
