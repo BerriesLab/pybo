@@ -13,7 +13,7 @@ subset of the function values $\{ f(\mathbf{x}_i), f(\mathbf{x}_{i+1}), \dots, f
 multivariate normal distribution,
 i.e.
 $$
-\mathbf{f} = \left[ \begin{matrix} f(\mathbf{x}_1) \\ f(\mathbf{x}_2) \\ \cdots \\ f(\mathbf{x}_n) \end{matrix} \right] \sim \mathcal{N}(\mathbf{m}, K)
+\mathbf{f} = \begin{bmatrix} f(\mathbf{x}_1) \\ f(\mathbf{x}_2) \\ \cdots \\ f(\mathbf{x}_n) \end{bmatrix} \sim \mathcal{N}(\mathbf{m}, K)
 $$
 where $\mathbf{m}$ is the mean function vector and $K$ is the covariance matrix. In
 other words, the GP defines a joint probability distribution over the entire function. In formula, A Gaussian Process is

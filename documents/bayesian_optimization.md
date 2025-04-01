@@ -29,7 +29,7 @@ a [Gaussian Process](gaussian_process.md). The following inputs are given:
   bounded).
 - **Acquisition function** $A(\mathbf{x}): \mathbb{R}^N \rightarrow \mathbb{R}^1$: A function used to decide the next
   point to evaluate (e.g., Expected Improvement, Probability of Improvement, Upper Confidence Bound).
-- **Initial observations**: A relatively small set of initial data
+- **Initial observations**: A relatively small set of $n$ initial data
   points
   $$
   D_{0} = \{(\mathbf{x}_1, y_1), (\mathbf{x}_2, y_2), \dots, (\mathbf{x}_n, y_n)\} =
@@ -72,12 +72,18 @@ The optimization process follows five main steps:
 3. **Evaluate the Objective Function**:  
    Evaluate the objective function at the newly selected point, $y_* = \mathscr{L}(\mathbf{x}_*)$, then add the new
    observation $\left(\mathbf{x}_*, y_* \right)$ to the existing dataset,
-   i.e. $D_{t+1}=D_t \cup \left(\mathbf{x}_*, y_* \right)$.
-4. **Update the Model**:  
-   Given this new information, it is possible to compute a new posterior $P(H \vert E)$. This involves calculating the
-   mean function and the covariance function based on the extended dataset:
+   i.e. $D_{t+1}=D_t \cup \left(\mathbf{x}_*, y_* \right)$. Now, the Gaussian Process is described by
    $$
-   m(\mathbf{x}) = \mathbf{k}(\mathbf{x}_*,X) \left(K + \sigma_n^2 I \right)^{-1} \mathbf{y}
+   \begin{bmatrix} y \\ f \left( x_* \right) \end{bmatrix} \sim
+   \mathcal{N}\left(\mathbf{0}, \begin{bmatrix} K\left(X, X \right) +\sigma_n^2I & K \left(X, x_* \right)
+   \\ K \left(x_*, X \right) & K\left( x_*, x_* \right) \end{bmatrix} \right)
+   $$
+4. **Update the Model**:  
+   After evaluating the objective function at $\mathbf{x}_*$, update the Gaussian Process posterior $P(H \vert E)$ with
+   the new data point. This involves calculating the mean function and the covariance function based on the extended
+   dataset:
+   $$
+   m_{t+1}(\mathbf{x}) = m_t(\mathbf{x}) + \mathbf{k}(\mathbf{x}_*,X) \left(K + \sigma_n^2 I \right)^{-1} \mathbf{y}
    $$
    $$
    \sigma^2(\mathbf{x}) = \mathbf{k}(\mathbf{x}_*,X) - \left(K + \sigma_n^2 I \right)^{-1} \mathbf{k}(X, \mathbf{x})
@@ -85,8 +91,8 @@ The optimization process follows five main steps:
    where $\mathbf{k}$ is the vector of covariances between the new point $\mathbf{x}_*$ and all previously observed
    points $X$.
 5. **Stopping Criteria**:
-   Stop the process when a predefined number of function evaluations is reached or when the improvement in the
-   objective function becomes negligible.
+   Repeat steps 2–4 iteratively until a stopping criterion is met, e.g. when a predefined number of function evaluations
+   is reached or when the improvement in the objective function becomes negligible.
 
 ---
 
