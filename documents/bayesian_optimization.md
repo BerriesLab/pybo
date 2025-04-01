@@ -48,7 +48,10 @@ a [Gaussian Process](gaussian_process.md). The following inputs are given:
   convergence, such as $\mathscr{L}(\mathbf{x}_\mathrm{next}) - \mathscr{L}(\mathbf{x}) < \epsilon$, where $\epsilon$ is
   a very small value.
 
-The optimization process follows five main steps:
+The optimization process follows five main steps:  
+https://www.cambridge.org/core/books/bayesian-optimization/11AED383B208E7F22A4CE1B5BCBADB44
+
+https://www.youtube.com/watch?v=4vGiHC35j9s&t=4103s
 
 1. **Initialize Gaussian Process (GP)**:  
    Fit a Gaussian Process model to the initial observations $D_0$ to estimate the hyperparameters of the GP model (
@@ -75,8 +78,9 @@ The optimization process follows five main steps:
    i.e. $D_{t+1}=D_t \cup \left(\mathbf{x}_*, y_* \right)$. Now, the Gaussian Process is described by
    $$
    \begin{bmatrix} y \\ f \left( x_* \right) \end{bmatrix} \sim
-   \mathcal{N}\left(\mathbf{0}, \begin{bmatrix} K\left(X, X \right) +\sigma_n^2I & K \left(X, x_* \right)
-   \\ K \left(x_*, X \right) & K\left( x_*, x_* \right) \end{bmatrix} \right)
+   \mathcal{N}\left(
+   \begin{bmatrix} \mathbf{m(X)} \\ m(\mathbf{x}_*) \end{bmatrix}, \begin{bmatrix} K\left(X, X \right) +\sigma_n^2I & K \left(X, \mathbf{x}_* \right)
+   \\ K \left(\mathbf{x}_*, X \right) & K \left( \mathbf{x}_*, \mathbf{x}_* \right) \end{bmatrix} \right)
    $$
 4. **Update the Model**:  
    After evaluating the objective function at $\mathbf{x}_*$, update the Gaussian Process posterior $P(H \vert E)$ with
