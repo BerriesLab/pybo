@@ -11,13 +11,24 @@ def objective_function(x):
 
 evaluated_points = []
 
-# TODO: add a potential map in the z-axis
+
 def live_plot(optim_result):
     global evaluated_points
     evaluated_points.append(optim_result.x_iters[-1])
 
     plt.clf()
     points = np.array(evaluated_points)
+
+    # Create potential map in the z-axis
+    x = np.linspace(bounds[0][0], bounds[0][1], 100)
+    y = np.linspace(bounds[1][0], bounds[1][1], 100)
+    X, Y = np.meshgrid(x, y)
+    Z = np.array(
+        [[objective_function([x_val, y_val]) for x_val, y_val in zip(row_x, row_y)] for row_x, row_y in zip(X, Y)])
+
+    plt.contourf(X, Y, Z, levels=50, cmap='viridis', alpha=0.8)
+    plt.colorbar(label='Objective Function Value')
+
     if len(points) > 1:
         plt.scatter(points[:-1, 0], points[:-1, 1], c='blue', label='Evaluated Points')
         plt.scatter(points[-1, 0], points[-1, 1], c='green', marker='o', s=100, label='Current Point')

@@ -20,18 +20,20 @@ where:
   the updated belief about the hypothesis, taking into account both the prior knowledge and the new evidence.
 
 
-+ $P(E \vert H)$: **Likelihood** or **update**  
-  This is the probability of observing the evidence $E$, given that the hypothesis $H$ is true. It measures how
-  well the hypothesis explains the observed evidence. This is the model's likelihood function.
++ $P(E \vert H)$: **Likelihood**  
+  This is the probability of observing the evidence (or data) $E$, given the hypothesis (or model) $H$. It is called the
+  likelihood
+  term since it tells how likely it is to observe the data after specifying a certain observation model
+  for the data.
 
 
-+ $P(H)$: **Prior Probability**  
-  This is the belief, or probability of the hypothesis $H$ before any evidence is observed. It reflects prior
-  knowledge or assumptions about the hypothesis, which could be based on expert knowledge, previous data, or even be
-  uniform (i.e., assuming no preference or knowledge about the hypothesis).
++ $P(H)$: **Prior Belief**  
+  This is the belief about the distribution of the hypothesis $H$ before observing any actual evidence, or data. It
+  encodes prior knowledge or assumptions about the hypothesis, which could be based on expert knowledge, previous data,
+  or even be uniform (i.e., assuming no preference or knowledge about the hypothesis).
 
 
-+ $P(E)$: **Evidence Probability**  
++ $P(E)$: **Evidence**  
   This is the total probability of observing the evidence $E$ under **all** possible hypotheses. It acts as a
   normalizing constant to ensure that the posterior probability $P(H \vert E)$ is properly scaled, i.e., the sum of all
   posterior probabilities over all hypotheses equals 1. It can be calculated as $P(E)=\sum_iP(E\vert H_i)P(H_i)$, or
