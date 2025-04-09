@@ -5,6 +5,7 @@ from scipy.stats import norm
 from skopt.learning import GaussianProcessRegressor
 from skopt.space import Real
 
+from activation_functions import expected_improvement
 from objective_functions import test_f0_1d
 
 
@@ -159,6 +160,7 @@ class BayesianOptimization:
             domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], 1000).reshape(-1, 1))
         return np.concatenate(domain, axis=1)
 
+    # TODO: the acquisition function should return a scalar
     def optimize(self):
 
         # Validate object attributes
@@ -186,20 +188,13 @@ class BayesianOptimization:
         plt.legend()
         plt.pause(0.2)
 
-        # TODO: the acquisition function shoudl return a scalar
-        # Optimize acquisition function to find new x
-        def acquisition(mu, sigma):
-            y_best = np.max(self._Y_init)
-            z = (y_best - mu) / sigma
-            ei = (y_best - mu) * norm.cdf(z) + sigma * norm.pdf(z)
-            return -ei.flatten()
-
-        # Optimize x* = argmax(acquisition(x)) for the acquisition function
-
         x_new = []
+        y_best = max(self._Y_init)
         for _ in range(self._n_restarts):
-            res = minimize(fun=acquisition,
-                           x0=mu,
+            # Random x0 in domain
+            x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(1,))
+            res = minimize(fun=lambda x: expected_improvement(x, gpr=gpr, y_best=y_best),
+                           x0=x0,
                            args=sigma,
                            bounds=self._bounds,
                            method="L-BFGS-B")
