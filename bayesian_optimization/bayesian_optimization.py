@@ -5,7 +5,6 @@ from scipy.stats import norm
 from skopt.learning import GaussianProcessRegressor
 from skopt.space import Real
 
-from activation_functions import expected_improvement
 from objective_functions import test_f0_1d
 
 
@@ -25,6 +24,8 @@ class BayesianOptimization:
         self._X_init = None  # The initial dataset X (n samples x N dimensions)
         self._Y_init = None  # The initial dataset Y (n samples x 1 dimensions)
         self._n_init = None  # Number of initial points used by the solver to calculate the first posterior
+        self._X = None  # Current dataset X
+        self._Y = None  # Current dataset Y
 
     """Setters and getters of object attributes."""
 
@@ -73,14 +74,6 @@ class BayesianOptimization:
 
     def get_objective_function(self):
         return self._f0
-
-    def set_number_of_initial_points(self, n_points: int):
-        if not isinstance(n_points, int) or n_points <= 0:
-            raise ValueError("The number of initial points must be a positive integer.")
-        self._n_init = n_points
-
-    def get_number_of_initial_points(self):
-        return self._n_iter
 
     def set_number_of_objective_function_calls(self, n_calls: int):
         if not isinstance(n_calls, int) or n_calls <= 0:
@@ -160,11 +153,29 @@ class BayesianOptimization:
             domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], 1000).reshape(-1, 1))
         return np.concatenate(domain, axis=1)
 
+    @staticmethod
+    def _expected_improvement(x, gpr, y_best):
+        # x is an N x 1 vector, where N is the number of dimensions, or features
+
+        # Reshape
+        x = x.reshape(1, -1)
+
+        mu, sigma = gpr.predict(x, return_std=True)
+        sigma = np.maximum(sigma, 1e-8)  # avoid division by zero
+        z = (mu - y_best) / sigma
+        ei = (mu - y_best) * norm.cdf(z) + sigma * norm.pdf(z)
+        return -ei
+
     # TODO: the acquisition function should return a scalar
     def optimize(self):
-
         # Validate object attributes
         self._validate()
+
+        self._X = self._X_init
+        self._Y = self._Y_init
+
+        # Consistent Gaussian process initialization
+        gpr = self._instantiate_a_gaussian_process()
 
         # Plot initial data
         plt.show(block=False)
@@ -172,60 +183,54 @@ class BayesianOptimization:
         plt.title("Bayesian Optimization: Surrogate Function")
         plt.xlabel("Input (X)")
         plt.ylabel("Output (f(X))")
-        plt.scatter(self._X_init, self._Y_init, marker="x", s=100, color='red', label='Initial Samples')
+        plt.scatter(self._X, self._Y, marker="x", s=100, color='red', label='Initial Samples')
         plt.pause(0.2)
 
-        domain = self._build_domain_from_bounds()
-        gpr = self._instantiate_a_gaussian_process()
-        result = gpr.fit(self._X_init, self._Y_init)
-        mu, sigma = result.predict(domain, return_std=True)
+        j = 0
+        while j < 20:
+            # Define domain and fit the Gaussian process
+            domain = self._build_domain_from_bounds()
+            gpr.fit(self._X, self._Y)
 
-        # Plot mean and shaded area for the standard deviation
-        plt.plot(domain, mu, label="Mean")
-        for i in range(1, 4):  # Plot increasing transparency for 1, 2, and 3 std deviations
-            plt.fill_between(domain.flatten(), mu - i * sigma, mu + i * sigma, alpha=0.2 / i, color="blue",
-                             label=rf"{i}$\sigma$")
-        plt.legend()
-        plt.pause(0.2)
+            # Predict mean and standard deviation
+            mu, sigma = gpr.predict(domain, return_std=True)
 
-        x_new = []
-        y_best = max(self._Y_init)
-        for _ in range(self._n_restarts):
-            # Random x0 in domain
-            x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(1,))
-            res = minimize(fun=lambda x: expected_improvement(x, gpr=gpr, y_best=y_best),
-                           x0=x0,
-                           args=sigma,
-                           bounds=self._bounds,
-                           method="L-BFGS-B")
-            if res.success:
-                x_new.append(res.x)
-            else:
-                print("Optimization failed for acquisition function.")
+            # Plot mean and uncertainty
+            plt.plot(domain, mu, label="Mean")
+            for i in range(1, 4):
+                plt.fill_between(domain.flatten(), mu - i * sigma, mu + i * sigma,
+                                 alpha=0.2 / i, color="blue", label=rf"{i}$\sigma$")
+            plt.pause(1)
 
-        x_new = np.array(x_new).reshape(1, -1)
-        y_new = self._f0(x_new)
+            # Maximize acquisition function (Expected Improvement)
+            y_best = max(self._Y)
+            best_result = None
+            best_value = float("inf")
 
-        # insert new data point
+            for _ in range(self._n_restarts):
+                x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(1))
+                res = minimize(fun=self._expected_improvement,
+                               x0=x0,
+                               args=(gpr, y_best),
+                               bounds=self._bounds,
+                               method="L-BFGS-B")
+                if res.fun < best_value:
+                    best_result = res
+                    best_value = res.fun
 
-        # Repeat...
+            print(f"New best result: {best_result}")
 
-        # Perform Bayesian Optimization
-        # result = gp_minimize(
-        #     func=None,
-        #     dimensions=self._bounds,  # list[tuples[float, float]]
-        #     base_estimator=gpr,
-        #     acq_func='EI',
-        #     xi=0.01,
-        #     n_calls=self._n_iter,
-        #     n_initial_points=0,
-        #     x0=self._X_init.tolist() if isinstance(self._X_init, np.ndarray) else None,
-        #     y0=self._Y_init.tolist() if isinstance(self._Y_init, np.ndarray) else None,
-        #     verbose=True,
-        #     callback=self._callback
-        # )
+            # Visualize new observation
+            plt.scatter(best_result.x, self._f0(best_result.x.reshape(-1, 1)), marker="x", s=100, color='red')
+            plt.pause(1)
 
-        # plt.show()
+            # Add new observation
+            self._X = np.concatenate((self._X, best_result.x.reshape(1, -1)), axis=0)
+            self._Y = np.concatenate((self._Y, self._f0(best_result.x.reshape(-1, 1))), axis=0)
+
+            j += 1
+
+        plt.show()
 
     """ Plotters """
 
@@ -292,16 +297,6 @@ class BayesianOptimization:
         self._validate_acquisition_function()
         self._validate_initial_dataset()
         self._validate_objective_function()
-        self._validate_number_of_initial_points()
-
-    def _validate_number_of_initial_points(self):
-        if self._n_init is None:
-            raise ValueError("Please specify the number of initial points.")
-        if self._n_init <= 0:
-            raise ValueError("The number of initial points must be greater than 0.")
-        if self._X_init is not None and isinstance(self._X_init, np.ndarray) and self._n_init > self._X_init.shape[0]:
-            print("The number of initial points is greater than the number of initial samples. "
-                  "Random sample will be generated.")
 
     def _validate_objective_function(self):
         if self._f0 is None:
@@ -351,8 +346,9 @@ class BayesianOptimization:
 # ( [ x^(n)_1, x^(n)_2, x^(n)_3 ], y^(n) )
 
 
-X_init_1d = np.array([[-4], [-2], [+0], [+2], [+4]])
+X_init_1d = np.array([[-4], [-2], [0], [+2], [+4]])
 Y_init_1d = np.array([[-1], [-2], [0], [2], [1]]).reshape(-1)
+Y_init_1d = test_f0_1d(X_init_1d)
 # Y_init_1d = test_f0_1d(X_init_1d).reshape(-1, 1)
 bounds_1d = [(-5, 5)]
 
@@ -367,14 +363,13 @@ search_space = [
 
 opt = BayesianOptimization()
 opt.set_initial_dataset(X_init_1d, Y_init_1d)
-opt.set_observation_noise(1e-10)
+opt.set_observation_noise(1)
 opt.set_bounds(bounds_1d)
 opt.set_acquisition_function("EI")
 opt.set_kernel(None)
 opt.set_objective_function(test_f0_1d)
-opt.set_number_of_initial_points(10)
 opt.set_number_of_objective_function_calls(10)
-opt.set_number_of_optimizer_restarts(25)
+opt.set_number_of_optimizer_restarts(50)
 opt.set_callback(None)
 opt.set_callback(opt.plot_live)
 print(opt.get_attributes())

@@ -2,7 +2,7 @@ import numpy as np
 
 
 def test_f0_1d(x):
-    return (x[:, 0] - 2) ** 2 + np.sin(5 * x[:, 0])
+    return (x[:, 0] - 2) ** 2 + 5 * np.sin(5 * x[:, 0])
 
 
 def test_f0_2d(x):

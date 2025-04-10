@@ -1,4 +1,4 @@
-def expected_improvement(x: float, gpr: GaussianProcessRegressor, y_best):
+def expected_improvement(x: float, gpr, y_best):
     mu, sigma = gp.predict(x, return_std=True)
     sigma = np.maximum(sigma, 1e-8)  # avoid division by zero
     z = (mu - y_best) / sigma
