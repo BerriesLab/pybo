@@ -1,3 +1,6 @@
+import pickle
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,38 +14,47 @@ class BayesianOptimization:
     def __init__(self):
 
         # Domain attributes
+        self._experiment_name = None
+        self._datetime = datetime.now()
         self._observation_noise = None
-        self._callback = None
-        self._n_restarts = None
+        self._n_restarts = 100
         self._bounds: list[tuple[float, float]] | None = None
-        self._n_iter = None
+        self._domain: np.ndarray or None = None
         self._acquisition_function: str or None = None
         self._f0 = None  # The objective function f0: R^N -> R
         self._kernel = None
-        self._X = None  # The initial dataset X (n samples x N dimensions)
-        self._Y = None  # The initial dataset Y (n samples x 1 dimensions)
-        self._n = None  # Number of initial points used by the solver to calculate the first posterior
+        self._X = None  # The X dataset (n samples x N dimensions)
+        self._Y = None  # The Y dataset (n samples x 1 dimensions)
+        self._new_X = None  # The new X location
+        self._fig = None
+        self._mu: np.ndarray or None = None
+        self._sigma: np.ndarray or None = None
 
-    """Setters and getters of object attributes."""
+    """ Setters and getters """
 
-    def set_initial_dataset(self, X: np.ndarray, Y: np.ndarray):
-        """
-        Sets the training data samples.
-        """
+    def set_experiment_name(self, name: str):
+        if not isinstance(name, str):
+            raise ValueError("Experiment name must be a string.")
+        self._experiment_name = name
+
+    def get_experiment_name(self):
+        return self._experiment_name
+
+    def set_dataset_X(self, X: np.ndarray):
         if not isinstance(X, np.ndarray):
             raise ValueError("X_train must be a numpy array.")
+        self._X = X
 
+    def get_dataset_X(self):
+        return self._X
+
+    def set_dataset_Y(self, Y: np.ndarray):
         if not isinstance(Y, np.ndarray):
             raise ValueError("Y_train must be a numpy array.")
-
-        if X.shape[0] != Y.shape[0]:
-            raise ValueError("The number of samples in X_train and Y_train must match.")
-
-        self._X = X
         self._Y = Y
 
-    def get_initial_samples(self):
-        return self._X, self._Y
+    def get_dataset_Y(self):
+        return self._Y
 
     def set_bounds(self, bounds):
         if not isinstance(bounds, list) or not all(
@@ -70,11 +82,6 @@ class BayesianOptimization:
 
     def get_objective_function(self):
         return self._f0
-
-    def set_number_of_objective_function_calls(self, n_calls: int):
-        if not isinstance(n_calls, int) or n_calls <= 0:
-            raise ValueError("The number of objective function calls must be a positive integer.")
-        self._n_iter = n_calls
 
     def get_number_of_objective_function_calls(self):
         return self._n_iter
@@ -132,13 +139,18 @@ class BayesianOptimization:
     def get_observation_noise(self):
         return self._observation_noise
 
+    def get_new_X(self):
+        return self._new_X
+
     """ I/O """
 
     def import_data(self, filename):
+        """ Assumes the data is in the following format: n x N+1, where the last column is Y."""
         data = pd.read_csv(filename)
         X = data.iloc[:, :-1].values
         Y = data.iloc[:, -1].values
-        self.set_initial_dataset(X, Y)
+        self.set_dataset_X(X)
+        self.set_dataset_Y(Y)
 
     def export_data(self, filename):
         if self._X is None or self._Y is None:
@@ -148,6 +160,18 @@ class BayesianOptimization:
         data = np.hstack((self._X, self._Y.reshape(-1, 1)))
         data = pd.DataFrame(data, columns=columns)
         data.to_csv(filename, index=False)
+
+    def export_attributes(self, filename):
+        if not self.__dict__:
+            raise ValueError("No attributes are set. Cannot export empty object attributes.")
+        with open(filename, 'wb') as file:
+            pickle.dump(self.__dict__, file)
+
+    def import_attributes(self, filename):
+        with open(filename, 'rb') as file:
+            attributes = pickle.load(file)
+        for key, value in attributes.items():
+            self.__dict__[key] = value
 
     """ Optimizer """
 
@@ -164,7 +188,7 @@ class BayesianOptimization:
         domain = []
         for i in range(len(self._bounds)):
             domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], 100).reshape(-1, 1))
-        return np.concatenate(domain, axis=1)
+        self._domain = np.concatenate(domain, axis=1)
 
     @staticmethod
     def _expected_improvement(x, gpr, y_best):
@@ -180,92 +204,95 @@ class BayesianOptimization:
         return -ei
 
     def optimize(self):
-
         self._validate()
-        domain = self._build_domain_from_bounds()
+
+        # Define domain and fit the Gaussian process
+        self._build_domain_from_bounds()
         gpr = self._instantiate_a_gaussian_process()
+        gpr.fit(self._X, self._Y)
 
-        fig = plt.figure()
-        plt.show(block=False)
+        # Predict mean and standard deviation
+        # If the domain is N-dimensional, we need to predict on a grid. So, let's build the grid:
+        if self._domain.shape[1] > 1:
+            x, y = np.meshgrid(self._domain[:, 0], self._domain[:, 1])
+            grid = np.stack([x.flatten(), y.flatten()], axis=1)
+            mu, sigma = gpr.predict(grid, return_std=True)
+            self._mu = mu.reshape(100, 100)
+            self._sigma = sigma.reshape(100, 100)
+        else:
+            self._mu, self._sigma = gpr.predict(self._domain, return_std=True)
 
-        j = 0
-        while j < self._n_iter:
-            # Define domain and fit the Gaussian process
-            gpr.fit(self._X, self._Y)
+        # Maximize acquisition function (Expected Improvement)
+        y_best = max(self._Y)
+        best_result = None
+        best_value = float("inf")
+        for _ in range(self._n_restarts):
+            x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(self._X.shape[1],))
+            res = minimize(fun=self._expected_improvement,
+                           x0=x0,
+                           args=(gpr, y_best),
+                           bounds=self._bounds,
+                           method="L-BFGS-B")
+            if res.fun < best_value:
+                best_result = res
+                best_value = res.fun
+        # Store best result
+        self._new_X = best_result.x.reshape(1, -1)
 
-            # Predict mean and standard deviation
-            # If the domain is N-dimensional, we need to predict on a grid. So, let's build the grid:
-            if domain.shape[1] > 1:
-                x, y = np.meshgrid(domain[:, 0], domain[:, 1])
-                grid = np.stack([x.flatten(), y.flatten()], axis=1)
-                mu, sigma = gpr.predict(grid, return_std=True)
-                mu = mu.reshape(100, 100)
-                sigma = sigma.reshape(100, 100)
-            else:
-                mu, sigma = gpr.predict(domain, return_std=True)
-
-            # Maximize acquisition function (Expected Improvement)
-            y_best = max(self._Y)
-            best_result = None
-            best_value = float("inf")
-
-            for _ in range(self._n_restarts):
-                x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(self._X.shape[1],))
-                res = minimize(fun=self._expected_improvement,
-                               x0=x0,
-                               args=(gpr, y_best),
-                               bounds=self._bounds,
-                               method="L-BFGS-B")
-                if res.fun < best_value:
-                    best_result = res
-                    best_value = res.fun
-
-            print(f"New best result: {best_result}")
-
-            # Plot
-            if self._X.shape[1] == 1:
-                self._plot_1d(fig, domain, mu, sigma)
-            elif self._X.shape[1] == 2:
-                self._plot_2d(fig, domain, mu, sigma)
-
-            # Add new observation
-            self._X = np.concatenate((self._X, best_result.x.reshape(1, -1)), axis=0)
-            # TODO: if 1d reshape(-1, 1)
-            self._Y = np.concatenate((self._Y, self._f0(best_result.x.reshape(1, -1))), axis=0)
-
-            j += 1
-
+        self._init_1d_plot()
+        # self._plot_ground_truth()
+        # self._plot_observations()
+        # self._plot_posterior()
+        # self._plot_new_location()
+        # plt.legend()
         plt.show()
 
     """ Plotters """
 
-    # TODO: fix plots and use these methods in optimize
-    def _plot_1d(self, fig, domain, mu, sigma):
-        plt.clf()
-        plt.show(block=False)
+    def _init_plot(self):
+        if len(self._bounds) == 1:
+            self._init_1d_plot()
+        if len(self._bounds) == 2:
+            self._init_2d_plot()
+
+    def _plot_ground_truth(self):
+        if self._f0 is None:
+            return
+        if len(self._bounds) == 1:
+            self._plot_1d_objective_function()
+        if len(self._bounds) == 2:
+            self._plot_2d_objective_function()
+
+    def _plot_new_location(self):
+        if len(self._bounds) == 1:
+            self._plot_1d_new_location()
+        if len(self._bounds) == 2:
+            self._plot_2d_new_location()
+
+    def _plot_observations(self):
+        if len(self._bounds) == 1:
+            self._plot_1d_observations()
+        if len(self._bounds) == 2:
+            self._plot_2d_observations()
+
+    def _plot_posterior(self):
+        if len(self._bounds) == 1:
+            self._plot_1d_posterior()
+        if len(self._bounds) == 2:
+            self._plot_2d_posterior()
+
+    def _init_1d_plot(self):
+        self._fig = plt.figure()
         plt.xlim(self._bounds[0][0] * 1.1, self._bounds[0][1] * 1.1)
         plt.title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
-        plt.xlabel("Input (X)")
-        plt.ylabel("Output (f(X))")
-        # Plot observations
-        plt.scatter(self._X, self._Y, marker="x", s=100, color='red', label='Observations')
-        # Plot the true objective function (if available)
-        plt.plot(domain, self._f0(domain), color="black", linestyle="--", label="True objective function")
-        # Plot mean and uncertainty
-        plt.plot(domain, mu, label="Mean")
-        for i in range(1, 4):
-            plt.fill_between(x=domain.flatten(),
-                             y1=mu - i * sigma,
-                             y2=mu + i * sigma,
-                             alpha=0.2 / i,
-                             color="blue",
-                             label=rf"{i}$\sigma$")
-        plt.pause(1)
+        plt.xlabel(r"$\mathcal{X}$")
+        plt.ylabel(r"$\mathcal{Y}$")
 
-    def _plot_2d(self, fig, domain, mu, sigma):
+    def _init_2d_plot(self):
+        self._fig = plt.figure()
+        plt.show(block=False)
         plt.clf()
-        ax = fig.add_subplot(111, projection='3d')
-        # Add labels and title
+        ax = self._fig.add_subplot(111, projection='3d')
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.set_zlabel('f(x, y)')
@@ -273,38 +300,62 @@ class BayesianOptimization:
         ax.set_xlim(self._bounds[0][0], self._bounds[0][1])
         ax.set_ylim(self._bounds[1][0], self._bounds[1][1])
 
-        # Plot observations
-        ax.scatter(self._X[:, 0], self._X[:, 1], self._Y, c='red', marker='X', s=100, label='Observations')
-        # Plot the true objective function (if available)
-        x_grid = domain[:, 0]
-        y_grid = domain[:, 1]
+    def _plot_1d_objective_function(self):
+        plt.plot(self._domain, self._f0(self._domain), color="black", linestyle="--", label="True objective function",
+                 zorder=1)
+
+    def _plot_2d_objective_function(self):
+        x_grid = self._domain[:, 0]
+        y_grid = self._domain[:, 1]
         X, Y = np.meshgrid(x_grid, y_grid)
         points = np.c_[X.ravel(), Y.ravel()]
         Z = self._f0(points).reshape(X.shape)
-        ax.plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, alpha=0.5, cmap='Greys',
-                        label="True objective function")
-        # Plot projections of the contours for each dimension.  By choosing offsets
-        # that match the appropriate axes limits, the projected contours will sit on
-        # the 'walls' of the graph.
-        # ax.contour(X, Y, Z, zdir='z', offset=-100, cmap='coolwarm')
-        # ax.contour(X, Y, Z, zdir='x', offset=self._bounds[0][0] * 1.1, cmap='coolwarm')
-        # ax.contour(X, Y, Z, zdir='y', offset=self._bounds[1][1] * 1.1, cmap='coolwarm')
+        self._fig.axes[0].plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, alpha=0.5, cmap='Greys',
+                                       label="True objective function", zorder=1)
 
-        # Plot mean and uncertainty
+    def _plot_1d_new_location(self):
+        plt.vlines(self._new_X, ymin=plt.ylim()[0], ymax=plt.ylim()[1], color='red', alpha=0.3, linestyle="--",
+                   zorder=3)
+        plt.scatter(self._new_X, np.zeros_like(self._new_X), marker="x", s=50, color='red', label='New Location',
+                    zorder=3)
+
+    def _plot_2d_new_location(self):
+        plt.scatter(self._new_X[:, 0], self._new_X[:, 1], marker="x", s=50, color='red', label='New Location', )
+
+    def _plot_1d_observations(self):
+        plt.scatter(self._X, self._Y, marker="o", s=50, color='red', label='Observations', zorder=3)
+
+    def _plot_2d_observations(self):
+        self._fig.axes[0].scatter(self._X[:, 0], self._X[:, 1], self._Y, c='red', marker='o', s=100,
+                                  label='Observations', zorder=4)
+
+    def _plot_1d_posterior(self):
+        plt.plot(self._domain, self._mu, label="Mean", zorder=2)
         for i in range(1, 4):
-            ax.plot_surface(X, Y, mu.reshape(X.shape) - i * sigma.reshape(X.shape), lw=0.5, rstride=8, cstride=8,
-                            alpha=0.2, cmap='coolwarm',
-                            label="True objective function")
-            ax.plot_surface(X, Y, mu.reshape(X.shape) + i * sigma.reshape(X.shape), lw=0.5, rstride=8, cstride=8,
-                            alpha=0.2, cmap='coolwarm',
-                            label="True objective function")
-        plt.pause(1)
+            plt.fill_between(x=self._domain.flatten(),
+                             y1=self._mu - i * self._sigma,
+                             y2=self._mu + i * self._sigma,
+                             alpha=0.2 / i,
+                             color="blue",
+                             label=rf"{i}$\sigma$")
+
+    def _plot_2d_posterior(self):
+        for i in range(1, 4):
+            self._fig.axes[0].plot_surface(self._X, self._Y,
+                                           self._mu.reshape(self._X.shape) - i * self._sigma.reshape(self._X.shape),
+                                           lw=0.5, rstride=8, cstride=8,
+                                           alpha=0.2, cmap='coolwarm',
+                                           label="True objective function", zorder=2)
+            self._fig.axes[0].plot_surface(self._X, self._Y,
+                                           self._mu.reshape(self._X.shape) + i * self._sigma.reshape(self._X.shape),
+                                           lw=0.5, rstride=8, cstride=8,
+                                           alpha=0.2, cmap='coolwarm',
+                                           label="True objective function", zorder=3)
 
     """ Validators """
 
     def _validate(self):
         self._validate_bounds()
-        self._validate_number_of_iterations()
         self._validate_acquisition_function()
         self._validate_initial_dataset()
         self._validate_objective_function()
@@ -323,10 +374,6 @@ class BayesianOptimization:
     def _validate_acquisition_function(self):
         if self._acquisition_function is None:
             raise ValueError("Please specify the acquisition function.")
-
-    def _validate_number_of_iterations(self):
-        if self._n_iter is None:
-            raise ValueError("Please specify the number of iterations.")
 
     def _validate_bounds(self):
         # Handle base case
