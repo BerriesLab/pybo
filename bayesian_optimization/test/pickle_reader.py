@@ -14,4 +14,4 @@ def read_pickle_file(file_path):
 # Example usage
 if __name__ == "__main__":
     # Replace 'example.pkl' with the actual path to your pickle file
-    read_pickle_file('../data/experiment.dat')
+    read_pickle_file('../../data/experiment.dat')

@@ -13,47 +13,51 @@ lhs.set_bounds([(-5, 5)])
 samples = lhs.sample_domain()
 
 """ Save samples to a CSV file """
-numpy.savetxt("../data/1d_dataset.csv", samples, delimiter=",", header="x1", comments="")
+numpy.savetxt("../../data/1d_dataset.csv", samples, delimiter=",", header="x1", comments="")
 
 """ Run experiments and collect data - Simulation"""
-X = numpy.loadtxt("../data/1d_dataset.csv", delimiter=",", skiprows=1).reshape(-1, 1)
+X = numpy.loadtxt("../../data/1d_dataset.csv", delimiter=",", skiprows=1).reshape(-1, 1)
 Y = test_f0_1d(samples)
 XY = numpy.hstack((X, Y.reshape(-1, 1)))
-numpy.savetxt("../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
+numpy.savetxt("../../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
 
 """ Load samples from the CSV file """
-XY = numpy.loadtxt("../data/1d_dataset.csv", delimiter=",", skiprows=1)
+XY = numpy.loadtxt("../../data/1d_dataset.csv", delimiter=",", skiprows=1)
 
 """ Initialize the optimizer """
 opt = BayesianOptimization()
 opt.set_objective_function(test_f0_1d)
 opt.set_experiment_name("test_1d_optimization")
 opt.set_bounds([(-5, 5)])
-opt.import_data("../data/1d_dataset.csv")
-opt.set_observation_noise(0.001)
+opt.set_observation_noise(1e-6)
 opt.set_acquisition_function("EI")
 opt.set_kernel(Kernel.RBF.value(length_scale=1.0))
-opt.set_number_of_optimizer_restarts(50)
+opt.set_number_of_optimizer_restarts(100)
 
-for _ in range(10):
+for i in range(2):
+    """ Import data and model """
+    opt.import_data("../../data/1d_dataset.csv")
+    if i > 0:
+        filepath = opt._compose_filepath(directory="../../data", previous=True)
+        opt.import_attributes(filepath, format="pickle")
+
     """ Solve to get new x """
-    opt.optimize()
+    opt.optimize(live_plot=True)
+    opt.save_figure_to_disc(directory="../../data")
+    opt.save_attributes_to_disc(directory="../../data", format="pickle")
+    opt.save_attributes_to_disc(directory="../../data", format="json")
     new_x = opt.get_new_X()
-    opt.export_attributes("../data/1d_experiment.dat")
+    print(f"Iteration {i + 1}, new_x = {new_x.item()}")
 
     """ Update the dataset with new x """
-    XY = numpy.loadtxt("../data/1d_dataset.csv", delimiter=",", skiprows=1)
+    XY = numpy.loadtxt("../../data/1d_dataset.csv", delimiter=",", skiprows=1)
     XY = numpy.vstack((XY, numpy.hstack((new_x, np.nan * np.ones_like(new_x)))))
-    numpy.savetxt("../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
+    numpy.savetxt("../../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
 
-    """ Run experiment at x_new and get new y """
+    """ Run experiment at new_x and get new y """
     new_y = test_f0_1d(new_x)
 
     """ Update the dataset with new y """
-    XY = numpy.loadtxt("../data/1d_dataset.csv", delimiter=",", skiprows=1)
-    XY[-1, -1] = new_y
-    numpy.savetxt("../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
-
-    """ Re-instantiate an optimizer with attributes and update dataset """
-    opt.import_attributes("../data/experiment.dat")
-    opt.import_data("../data/1d_dataset.csv")
+    XY = numpy.loadtxt("../../data/1d_dataset.csv", delimiter=",", skiprows=1)
+    XY[-1, -1] = new_y.item()
+    numpy.savetxt("../../data/1d_dataset.csv", XY, delimiter=",", header="x1, y", comments="")
