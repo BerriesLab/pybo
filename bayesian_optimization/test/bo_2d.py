@@ -4,7 +4,7 @@ import numpy as np
 from bayesian_optimization.bayesian_optimization import BayesianOptimization
 from bayesian_optimization.enums import Kernel
 from bayesian_optimization.latin_hypercube_sampling import LatinHypercubeSampling
-from bayesian_optimization.objective_functions import test_f0_2d
+from bayesian_optimization.test.objective_functions import test_f0_2d
 
 """ Sample domain """
 lhs = LatinHypercubeSampling()

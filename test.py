@@ -31,4 +31,4 @@ class TimeSeries:
     # TODO: a method to linearly interpolate null values between the closest know values
 
 # class Settings:
-#     def __init__(self):
+#     def __init__.py(self):
