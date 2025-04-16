@@ -64,13 +64,13 @@ class MultiObjectiveBayesianOptimization:
     def get_dataset_Y(self):
         return self._Y
 
-    def set_bounds(self, bounds):
+    def set_bounds(self, bounds, n=100):
         if not isinstance(bounds, list) or not all(
                 isinstance(b, tuple) and len(b) == 2 and all(isinstance(v, (int, float)) for v in b) for b in
                 bounds):
             raise ValueError("Bounds must be a list of tuples of two numeric values.")
         self._bounds = bounds
-        self._build_domain_from_bounds()
+        self._build_domain_from_bounds(n=n)
 
     def get_bounds(self):
         return self._bounds
@@ -153,11 +153,11 @@ class MultiObjectiveBayesianOptimization:
 
     """ I/O """
 
-    def import_data(self, filename):
+    def import_data(self, filename, n_features):
         """ Assumes the data is in the following format: n x N+1, where the last column is Y."""
         data = pd.read_csv(filename)
-        X = data.iloc[:, :-1].values
-        Y = data.iloc[:, -1].values
+        X = data.iloc[:, : n_features].values
+        Y = data.iloc[:, n_features:].values
         self.set_dataset_X(X)
         self.set_dataset_Y(Y)
 
@@ -225,35 +225,18 @@ class MultiObjectiveBayesianOptimization:
 
     def optimize(self, live_plot=True):
         self._validate()
-        self._predict_gaussian_process()
+        self._fit_gaussian_process()
         self._calculate_pareto_front()
         self._calculate_reference_point()
         self._minimize_acquisition_function()
         if live_plot:
+            self._predict_gaussian_process_on_domain()
             self._live_plot()
 
-    def _predict_gaussian_process(self):
-        # Instantiate a Gaussian process for each objective function
+    def _fit_gaussian_process(self):
         for i in range(self._n_objectives):
             self._instantiate_a_gaussian_process()
-        # Fit all Gaussian processes
-        for i in range(self._n_objectives):
             self._model[i].fit(self._X, self._Y[:, i])
-        # Predict mean and standard deviation for each Gaussian process model
-        for i in range(self._n_objectives):
-            if self._domain.shape[1] > 1:
-                # If the domain is N-D, predict on a grid
-                grids = [self._domain[:, i] for i in range(self._domain.shape[1])]
-                mesh = np.meshgrid(*grids)
-                grid = np.stack([m.flatten() for m in mesh], axis=-1)
-                mu, sigma = self._model[i].predict(grid, return_std=True)
-                self._mu.append(mu.reshape(mesh[0].shape))
-                self._sigma.append(sigma.reshape(mesh[0].shape))
-            else:
-                # If the domain is 1-D
-                mu, sigma = self._model[i].predict(self._domain, return_std=True)
-                self._mu.append(mu)
-                self._sigma.append(sigma)
 
     def _instantiate_a_gaussian_process(self):
         gpr = GaussianProcessRegressor(
@@ -263,56 +246,59 @@ class MultiObjectiveBayesianOptimization:
             n_restarts_optimizer=self._n_restarts, )
         self._model.append(gpr)
 
+    def _calculate_pareto_front(self):
+        """
+        Args: Y (np.ndarray): Points to calculate the Pareto front from. Shape: (n_points, n_objectives)
+        Returns: np.ndarray: Pareto front of Y. Shape: (n_pareto, n_objectives)
+        """
+        is_efficient = np.ones(self._Y.shape[0], dtype=bool)
+        for idx, value in enumerate(self._Y):
+            if is_efficient[idx]:
+                # A point is set as efficient if at least one of its objectives is less than the current
+                # point's objectives OR if all objectives are equal.  This ensures that points that are
+                # equal to the current point are also kept.
+                is_efficient[is_efficient] = (np.any(self._Y[is_efficient] < value, axis=1) |
+                                              np.all(self._Y[is_efficient] == value, axis=1))
+                # This line explicitly sets the current value to efficient. This is crucial because the
+                # previous step might have incorrectly marked the current point as "False" if it was equal
+                # to other points. This line ensures that the current point is always retained
+                # for comparison against subsequent points.
+                is_efficient[idx] = True
+        self._pareto_front = self._Y[is_efficient]
+
+    def _calculate_reference_point(self):
+        self._ref_point = np.max(self._pareto_front, axis=0) + 0.1
+
     def _minimize_acquisition_function(self):
         """ Minimizes the acquisition function (EHVI) to find the next point to evaluate. """
-
         best_result = None
         best_value = float("inf")
         lower_bounds = np.array([self._bounds[i][0] for i in range(len(self._bounds))])
-        upper_bounds = np.array([self._bounds[i][0] for i in range(len(self._bounds))])
+        upper_bounds = np.array([self._bounds[i][1] for i in range(len(self._bounds))])
         for _ in range(self._n_restarts):
             x0 = np.random.uniform(lower_bounds, upper_bounds, size=(self._X.shape[1],))
             res = minimize(fun=self._ehvi,
                            x0=x0,
-                           args=(self._model, self._pareto_front, self._ref_point),
+                           args=(self._n_objectives, self._model, self._pareto_front, self._ref_point),
                            bounds=self._bounds,
                            method="L-BFGS-B")
             if res.fun < best_value:
                 best_result = res
                 best_value = res.fun
-
+            print(res)
         self._new_X = best_result.x.reshape(1, -1)
 
-    # TODO: write wrapper and check data type and shapes while running the example.
-    def _ehvi_wrapper(self):
-        self._ehvi(n_objectives=self._n_objectives,
-                   mean=self._mu,
-                   sigma=self._sigma,
-                   pareto_front=self._pareto_front,
-                   ref_point=self._ref_point)
-
     @staticmethod
-    def _ehvi(x, n_objectives, mean, sigma, pareto_front, ref_point=None):
-        """
-        Calculates the Expected Hypervolume Improvement (EHVI) for a given point `x`.
+    def _ehvi(x, n_objectives, model: list[GaussianProcessRegressor], pareto_front, ref_point=None):
 
-        Args:
-            x (np.ndarray): The point at which to evaluate EHVI.  Shape: (1, n_features).
-            model: A trained Gaussian Process model (or other surrogate model)
-                that can predict mean and covariance/variance.
-            pareto_front (np.ndarray): The current Pareto front.
-                Shape: (n_points_on_front, n_objectives).
-            ref_point (np.ndarray, optional): The reference point for hypervolume
-                calculation.  Shape: (n_objectives,).  If None, it is computed
-                as slightly worse than the worst point in the Pareto front.
+        x = x.reshape(1, -1)
+        mean = []
+        sigma = []
 
-        Returns:
-            float: The EHVI value at the point `x`.
-        """
-
-        # mean, cov = model.predict(x, return_cov=True)
-        # mean = mean.flatten()
-        # sigma = np.sqrt(np.diag(cov))  # Get standard deviations
+        for i in range(n_objectives):
+            mu, std = model[i].predict(x, return_std=True)
+            mean.append(mu)
+            sigma.append(std)
 
         # 1. Define the reference point
         if ref_point is None:
@@ -331,6 +317,7 @@ class MultiObjectiveBayesianOptimization:
             z = improvement / sigma
             ehvi = (improvement * norm.cdf(z) + sigma * norm.pdf(z))
             ehvi = max(ehvi, 0)
+        # TODO: check analytical formula and its implementation
         elif n_objectives == 2:
             # Analytic EHVI for two objectives
             front = pareto_front
@@ -342,22 +329,17 @@ class MultiObjectiveBayesianOptimization:
             r2 = ref_point[1]
 
             # Standardize Pareto front and reference values
-            front_s = np.copy(front)
-            front_s[:, 0] = (front_s[:, 0] - mu1) / sigma1
-            front_s[:, 1] = (front_s[:, 1] - mu2) / sigma2
+            f1_s = (front[:, 0] - mu1) / sigma1
+            f2_s = (front[:, 1] - mu2) / sigma2
             r1_s = (r1 - mu1) / sigma1
             r2_s = (r2 - mu2) / sigma2
 
             ehvi = 0
             for i in range(len(front)):
-                u1s = front_s[i, 0]
-                u2s = front_s[i, 1]
-                c1 = (r1_s - u1s) * (r2_s - u2s)
-                c2 = sigma1 * sigma2
-                t1 = c1 * norm.cdf(u1s) * norm.cdf(u2s)
-                t2 = (r2 - mu2 - sigma2 * u2s) * sigma1 * norm.cdf(u1s) * norm.pdf(u2s)
-                t3 = (r1 - mu1 - sigma1 * u1s) * sigma2 * norm.pdf(u1s) * norm.cdf(u2s)
-                t4 = c2 * norm.pdf(u1s) * norm.pdf(u2s)
+                t1 = (r1_s - f1_s) * (r2_s - f2_s) * norm.cdf(f1_s) * norm.cdf(f2_s)
+                t2 = sigma1 * (r2 - mu2) * norm.cdf(f2_s) * norm.pdf(f1_s)
+                t3 = sigma2 * (r1 - mu1) * norm.pdf(f2_s) * norm.cdf(f1_s)
+                t4 = sigma1 * sigma2 * norm.pdf(f1_s) * norm.pdf(f2_s)
                 ehvi += t1 + t2 + t3 + t4
         else:
             # For more than 2 objectives, use Monte Carlo approximation.
@@ -395,40 +377,39 @@ class MultiObjectiveBayesianOptimization:
 
         return ehvi
 
-    def _calculate_pareto_front(self):
-        """
-        Args: Y (np.ndarray): Points to calculate the Pareto front from. Shape: (n_points, n_objectives)
-        Returns: np.ndarray: Pareto front of Y. Shape: (n_pareto, n_objectives)
-        """
-        is_efficient = np.ones(self._Y.shape[0], dtype=bool)
-        for idx, value in enumerate(self._Y):
-            if is_efficient[idx]:
-                # A point is set as efficient if at least one of its objectives is less than the current
-                # point's objectives OR if all objectives are equal.  This ensures that points that are
-                # equal to the current point are also kept.
-                is_efficient[is_efficient] = (np.any(self._Y[is_efficient] < value, axis=1) |
-                                              np.all(self._Y[is_efficient] == value, axis=1))
-                # This line explicitly sets the current value to efficient. This is crucial because the
-                # previous step might have incorrectly marked the current point as "False" if it was equal
-                # to other points. This line ensures that the current point is always retained
-                # for comparison against subsequent points.
-                is_efficient[idx] = True
-        self._pareto_front = self._Y[is_efficient]
-
-    def _calculate_reference_point(self):
-        self._ref_point = np.min(self._pareto_front, axis=0)
+    def _predict_gaussian_process_on_domain(self):
+        # Predict mean and standard deviation for each Gaussian process model
+        for i in range(self._n_objectives):
+            if self._domain.shape[1] > 1:
+                # If the domain is N-D, predict on a grid
+                grids = [self._domain[:, i] for i in range(self._domain.shape[1])]
+                mesh = np.meshgrid(*grids)
+                grid = np.stack([m.flatten() for m in mesh], axis=-1)
+                mu, sigma = self._model[i].predict(grid, return_std=True)
+                self._mu.append(mu.reshape(mesh[0].shape))
+                self._sigma.append(sigma.reshape(mesh[0].shape))
+            else:
+                # If the domain is 1-D
+                mu, sigma = self._model[i].predict(self._domain, return_std=True)
+                self._mu.append(mu)
+                self._sigma.append(sigma)
 
     """ Plotters """
 
     def _live_plot(self):
-        if len(self._bounds) == 1:
-            self._live_1d_plot()
-        elif len(self._bounds) == 2:
-            self._live_2d_plot()
-        else:
-            raise ValueError("Only 1D and 2D plots are supported.")
+        if self._n_objectives == 1:
+            if len(self._bounds) == 1:
+                self._f01_1d_live_plot()
+            elif len(self._bounds) == 2:
+                self._f01_2d_live_plot()
+            else:
+                raise ValueError("Only 1D and 2D plots are supported.")
+        elif self._n_objectives == 2:
+            self._mobo_2f0_live_plot()
+        elif self._n_objectives == 3:
+            raise ValueError("Multi-objective plot for 3 objectives is not supported yet")
 
-    def _live_1d_plot(self):
+    def _f01_1d_live_plot(self):
         self._initialize_1d_plot()
         self._plot_1d_objective_function()
         self._plot_1d_new_location()
@@ -469,7 +450,7 @@ class MultiObjectiveBayesianOptimization:
                                   color="blue",
                                   label=rf"{i}$\sigma$")
 
-    def _live_2d_plot(self):
+    def _f01_2d_live_plot(self):
         self._initialize_2d_plot()
         self._plot_2d_objective_function()
         self._plot_2d_new_location()
@@ -525,6 +506,29 @@ class MultiObjectiveBayesianOptimization:
                                   alpha=0.2, cmap='coolwarm',
                                   zorder=3)
 
+    def _mobo_2f0_live_plot(self):
+        # Initialize figure
+        if not self._fig or not self._ax:
+            self._fig = plt.figure()
+            self._ax = self._fig.add_subplot()
+            self._ax.set_title(
+                r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^{2 \times N} \rightarrow \mathbb{R}^N$')
+            self._ax.clear()  # Clear previous plot
+            self._ax.set_xlabel('$f_{01}$')
+            self._ax.set_ylabel('$f_{02}$')
+            # self._ax.set_xlim()
+            # self._ax.set_ylim()
+        self._ax.clear()
+
+        # Plot observations
+        self._ax.scatter(self._Y[:, 0], self._Y[:, 1], marker="o", s=50, color='red', label='Observations')
+
+        # Plot Pareto Front
+        self._ax.scatter(self._pareto_front[:, 0], self._pareto_front[:, 1], marker="x", s=50, color='olive',
+                         label='Pareto Front')
+        plt.legend()
+        plt.pause(0.1)
+
     """ Validators """
 
     def _validate(self):
@@ -569,8 +573,8 @@ class MultiObjectiveBayesianOptimization:
             filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0]} samples'
         return filename
 
-    def _build_domain_from_bounds(self):
+    def _build_domain_from_bounds(self, n=100):
         domain = []
         for i in range(len(self._bounds)):
-            domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], 100).reshape(-1, 1))
+            domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], n).reshape(-1, 1))
         self._domain = np.concatenate(domain, axis=1)

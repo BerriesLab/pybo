@@ -167,7 +167,7 @@ class BayesianOptimization:
         data = pd.DataFrame(data, columns=columns)
         data.to_csv(filename, index=False)
 
-    def save_attributes_to_disc(self, directory, format="pickle"):
+    def save_model_to_disc(self, directory, format="pickle"):
         # Handle base case
         if not self.__dict__:
             raise ValueError("No attributes are set. Cannot export empty object attributes.")
@@ -182,11 +182,12 @@ class BayesianOptimization:
                     json.dump(self.__dict__, file, default=str)
             else:
                 raise ValueError("Unsupported format. Use 'pickle' or 'json'.")
+            return filepath
         except IOError:
             print(f"Warning: File '{filepath}' could not be saved. Continuing operation.")
             return
-
-    def import_attributes(self, filename, format="pickle"):
+    
+    def import_model(self, filename, format="pickle"):
 
         filename = filename + ".dat"
         if not os.path.exists(filename):
@@ -204,6 +205,8 @@ class BayesianOptimization:
             raise ValueError("Unsupported format. Use 'pickle' or 'json'.")
 
         for key, value in attributes.items():
+            if key == "_XY":  # Skip loading the _XY attribute
+                continue
             self.__dict__[key] = value
 
     def save_figure_to_disc(self, directory):
@@ -243,6 +246,7 @@ class BayesianOptimization:
             self._live_plot()
 
     def _predict_gaussian_process(self):
+        """ Note that self._mu and self._sigma are used only for plotting purposes and are not necessary for optimization. """
         # Define domain and fit the Gaussian process
         self._instantiate_a_gaussian_process()
         self._model.fit(self._X, self._Y)
@@ -263,8 +267,10 @@ class BayesianOptimization:
         y_best = max(self._Y)
         best_result = None
         best_value = float("inf")
+        lower_bounds = np.array([self._bounds[i][0] for i in range(len(self._bounds))])
+        upper_bounds = np.array([self._bounds[i][1] for i in range(len(self._bounds))])
         for _ in range(self._n_restarts):
-            x0 = np.random.uniform(self._bounds[0][0], self._bounds[0][1], size=(self._X.shape[1],))
+            x0 = np.random.uniform(lower_bounds, upper_bounds, size=(self._X.shape[1],))
             res = minimize(fun=self._expected_improvement,
                            x0=x0,
                            args=(self._model, y_best),
@@ -308,15 +314,12 @@ class BayesianOptimization:
         self._plot_1d_observations()
         self._plot_1d_posterior()
         self._ax.legend()
-        plt.pause(0.01)  # Update the plot without blocking
 
     def _initialize_1d_plot(self):
-        if not self._fig or not self._ax:
-            self._fig, self._ax = plt.subplots()
-            self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
-            self._ax.set_xlabel(r"$\mathcal{X}$")
-            self._ax.set_ylabel(r"$\mathcal{Y}$")
-        self._ax.clear()
+        self._fig, self._ax = plt.subplots()
+        self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
+        self._ax.set_xlabel(r"$\mathcal{X}$")
+        self._ax.set_ylabel(r"$\mathcal{Y}$")
         self._ax.set_xlim(self._bounds[0][0] * 1.1, self._bounds[0][1] * 1.1)
 
     def _plot_1d_objective_function(self):
@@ -336,8 +339,8 @@ class BayesianOptimization:
         self._ax.plot(self._domain, self._mu, label="Mean", zorder=2)
         for i in range(1, 4):
             self._ax.fill_between(x=self._domain.flatten(),
-                                  y1=self._mu - i * self._sigma,
-                                  y2=self._mu + i * self._sigma,
+                                  y1=(self._mu.reshape(-1, 1) - i * self._sigma.reshape(-1, 1)).flatten(),
+                                  y2=(self._mu.reshape(-1, 1) + i * self._sigma.reshape(-1, 1)).flatten(),
                                   alpha=0.2 / i,
                                   color="blue",
                                   label=rf"{i}$\sigma$")
@@ -349,15 +352,11 @@ class BayesianOptimization:
         self._plot_2d_observations()
         self._plot_2d_posterior()
         self._fig.canvas.draw()
-        plt.pause(0.01)  # Update the plot without blocking
 
     def _initialize_2d_plot(self):
-        if not self._fig or not self._ax:
-            self._fig = plt.figure()
-            self._ax = self._fig.add_subplot(111, projection='3d')
-            self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R}^2 \rightarrow \mathbb{R}$')
-
-        self._ax.clear()  # Clear previous plot
+        self._fig = plt.figure()
+        self._ax = self._fig.add_subplot(111, projection='3d')
+        self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R}^2 \rightarrow \mathbb{R}$')
         self._ax.set_xlabel('x')
         self._ax.set_ylabel('y')
         self._ax.set_zlabel('f(x, y)')
@@ -430,14 +429,11 @@ class BayesianOptimization:
 
     """ Helpers """
 
-    def _compose_filepath(self, directory, previous=False):
-        filename = self._compose_filename(previous)
+    def _compose_filepath(self, directory):
+        filename = self._compose_filename()
         filepath = f"{directory}/{filename}"
         return filepath
 
-    def _compose_filename(self, previous=False):
-        if previous:
-            filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0] - 1} samples'
-        else:
-            filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0]} samples'
+    def _compose_filename(self):
+        filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0]} samples'
         return filename

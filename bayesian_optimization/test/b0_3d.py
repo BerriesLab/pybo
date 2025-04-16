@@ -39,12 +39,12 @@ for i in range(2):
     opt.import_data("../../data/3d_dataset.csv")
     if i > 0:
         filepath = opt._compose_filepath(directory="../../data", previous=True)
-        opt.import_attributes(filepath, format="pickle")
+        opt.import_model(filepath, format="pickle")
 
     """ Solve to get new x """
     opt.optimize(live_plot=False)
-    opt.save_attributes_to_disc(directory="../../data", format="pickle")
-    opt.save_attributes_to_disc(directory="../../data", format="json")
+    opt.save_model_to_disc(directory="../../data", format="pickle")
+    opt.save_model_to_disc(directory="../../data", format="json")
     new_x = opt.get_new_X()
     print(f"Iteration {i + 1}, new_x = {new_x}")
 
