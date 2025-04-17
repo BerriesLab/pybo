@@ -186,7 +186,7 @@ class BayesianOptimization:
         except IOError:
             print(f"Warning: File '{filepath}' could not be saved. Continuing operation.")
             return
-    
+
     def import_model(self, filename, format="pickle"):
 
         filename = filename + ".dat"
@@ -314,6 +314,7 @@ class BayesianOptimization:
         self._plot_1d_observations()
         self._plot_1d_posterior()
         self._ax.legend()
+        plt.close(self._fig)
 
     def _initialize_1d_plot(self):
         self._fig, self._ax = plt.subplots()
@@ -351,7 +352,8 @@ class BayesianOptimization:
         self._plot_2d_new_location()
         self._plot_2d_observations()
         self._plot_2d_posterior()
-        self._fig.canvas.draw()
+        self._ax.legend()
+        plt.close(self._fig)
 
     def _initialize_2d_plot(self):
         self._fig = plt.figure()

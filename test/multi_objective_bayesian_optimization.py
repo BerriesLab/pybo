@@ -1,10 +1,10 @@
 import numpy as np
+from test.objective_functions import test_f0_wear, test_f0_speed
 
-from bayesian_optimization.enums import Kernel
-from bayesian_optimization.latin_hypercube_sampling import LatinHypercubeSampling
-from bayesian_optimization.multi_objective_bayesian_optimization.multi_objective_bayesian_optimizaton import \
+from bayesian_optimization_for_cpu.enums import Kernel
+from bayesian_optimization_for_cpu.latin_hypercube_sampling import LatinHypercubeSampling
+from bayesian_optimization_for_cpu.multi_objective_bayesian_optimization import \
     MultiObjectiveBayesianOptimization as Mobo
-from bayesian_optimization.test.objective_functions import test_f0_wear, test_f0_speed
 
 """ Sample domain """
 lhs = LatinHypercubeSampling()
