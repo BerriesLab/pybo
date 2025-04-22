@@ -48,6 +48,14 @@ class MultiObjectiveBayesianOptimization:
     def get_experiment_name(self):
         return self._experiment_name
 
+    def set_n_objectives(self, n_objectives: int):
+        if not isinstance(n_objectives, int) or n_objectives <= 0:
+            raise ValueError("The number of objectives must be a positive integer.")
+        self._n_objectives = n_objectives
+
+    def get_n_objectives(self):
+        return self._n_objectives
+
     def set_dataset_X(self, X: np.ndarray):
         if not isinstance(X, np.ndarray):
             raise ValueError("X_train must be a numpy array.")
@@ -64,11 +72,11 @@ class MultiObjectiveBayesianOptimization:
     def get_dataset_Y(self):
         return self._Y
 
-    def set_bounds(self, bounds, n=100):
-        if not isinstance(bounds, list) or not all(
-                isinstance(b, tuple) and len(b) == 2 and all(isinstance(v, (int, float)) for v in b) for b in
-                bounds):
-            raise ValueError("Bounds must be a list of tuples of two numeric values.")
+    def set_bounds(self, bounds, n: None or list[int] = None):
+        """ Set bounds. If n is None, then n is set to 100 for each bound."""
+        if n is None:
+            n = [100] * len(bounds)
+        self._validate_bounds(bounds, n)
         self._bounds = bounds
         self._build_domain_from_bounds(n=n)
 
@@ -76,7 +84,7 @@ class MultiObjectiveBayesianOptimization:
         return self._bounds
 
     def set_acquisition_function(self, acquisition_function: str):
-        supported_functions = ['ei', 'pi', 'lcb', 'ehvi']
+        supported_functions = ['ei', 'ehvi']
         if acquisition_function not in supported_functions:
             raise ValueError(f"Invalid acquisition function. Supported values are {supported_functions}.")
         self._acquisition_function = acquisition_function
@@ -153,13 +161,10 @@ class MultiObjectiveBayesianOptimization:
 
     """ I/O """
 
-    def import_data(self, filename, n_features):
-        """ Assumes the data is in the following format: n x N+1, where the last column is Y."""
-        data = pd.read_csv(filename)
-        X = data.iloc[:, : n_features].values
-        Y = data.iloc[:, n_features:].values
-        self.set_dataset_X(X)
-        self.set_dataset_Y(Y)
+    def import_data(self, filename):
+        XY = np.loadtxt(filename, delimiter=",", skiprows=1)
+        self.set_dataset_X(XY[:, 0:-self._n_objectives])
+        self.set_dataset_Y(XY[:, -self._n_objectives:])
 
     def export_data(self, filename):
         if self._X is None or self._Y is None:
@@ -170,7 +175,7 @@ class MultiObjectiveBayesianOptimization:
         data = pd.DataFrame(data, columns=columns)
         data.to_csv(filename, index=False)
 
-    def save_attributes_to_disc(self, directory, format="pickle"):
+    def save_model_to_disc(self, directory, format="pickle"):
         # Handle base case
         if not self.__dict__:
             raise ValueError("No attributes are set. Cannot export empty object attributes.")
@@ -225,20 +230,28 @@ class MultiObjectiveBayesianOptimization:
 
     def optimize(self, live_plot=True):
         self._validate()
+        self._instantiate_gaussian_process()
         self._fit_gaussian_process()
         self._calculate_pareto_front()
         self._calculate_reference_point()
         self._minimize_acquisition_function()
         if live_plot:
+            # TODO: fix plots
             self._predict_gaussian_process_on_domain()
             self._live_plot()
 
     def _fit_gaussian_process(self):
+        """ Fit a Gaussian Process Regressor for each objective. """
         for i in range(self._n_objectives):
-            self._instantiate_a_gaussian_process()
             self._model[i].fit(self._X, self._Y[:, i])
 
+    def _instantiate_gaussian_process(self):
+        """ Instantiate a Gaussian Process Regressor for each objective. """
+        for i in range(self._n_objectives):
+            self._instantiate_a_gaussian_process()
+
     def _instantiate_a_gaussian_process(self):
+        """ Instantiate a Gaussian Process Regressor. """
         gpr = GaussianProcessRegressor(
             kernel=self._kernel,
             alpha=self._observation_noise,  # Noise added to the diagonal of the input matrix
@@ -532,7 +545,7 @@ class MultiObjectiveBayesianOptimization:
     """ Validators """
 
     def _validate(self):
-        self._validate_bounds()
+        self._validate_bounds_bak()
         self._validate_acquisition_function()
         self._validate_initial_dataset()
         self._validate_objective_function()
@@ -552,12 +565,36 @@ class MultiObjectiveBayesianOptimization:
         if self._acquisition_function is None:
             raise ValueError("Please specify the acquisition function.")
 
-    def _validate_bounds(self):
+    def _validate_bounds_bak(self):
         # Handle base case
         if self._bounds is None:
             raise ValueError("Bounds for the input domain must be specified.")
         if isinstance(self._X, np.ndarray) and len(self._bounds) != self._X.shape[1]:
             raise ValueError("The number of dimensions in bounds and X must match.")
+
+    @staticmethod
+    def _validate_bounds(bounds, n):
+        if not isinstance(bounds, list):
+            raise ValueError("Bounds must be a list.")
+        else:
+            for bound in bounds:
+                if not len(bound) == 2:
+                    raise ValueError("Bounds must be a list of tuples of two numeric values.")
+
+                if not bound[0] < bound[1]:
+                    raise ValueError("Lower bound must be smaller than upper bound.")
+
+                if not isinstance(bound[0], (int, float)) and not isinstance(bound[1], (int, float)):
+                    raise ValueError("Bounds must be a list of tuples of two numeric values.")
+
+        if not len(n) == len(bounds):
+            raise ValueError("The number of samples must be the same length as the number of bounds.")
+        else:
+            for n_ in n:
+                if not isinstance(n_, int):
+                    raise ValueError("The number of samples must be a list of integers.")
+                if n_ <= 0:
+                    raise ValueError("The number of samples must be a positive integer.")
 
     """ Helpers """
 
@@ -573,8 +610,11 @@ class MultiObjectiveBayesianOptimization:
             filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0]} samples'
         return filename
 
-    def _build_domain_from_bounds(self, n=100):
+    def _build_domain_from_bounds(self, n=(100,)):
+        if len(n) != len(self._bounds):
+            raise ValueError("The length of n must match the number of dimensions in bounds.")
         domain = []
         for i in range(len(self._bounds)):
-            domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], n).reshape(-1, 1))
-        self._domain = np.concatenate(domain, axis=1)
+            domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], n[i]).reshape(-1, 1))
+        # self._domain = np.concatenate(domain, axis=1)
+        self._domain = domain
