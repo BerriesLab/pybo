@@ -17,7 +17,7 @@ samples = lhs.sample_domain()
 numpy.savetxt("../data/2d_dataset.csv", samples, delimiter=",", header="x1,x2", comments="")
 
 """ Run experiments and collect data - Simulation"""
-X = numpy.loadtxt("../data/2d_dataset.csv", delimiter=",", skiprows=1).reshape(-1, 1)
+X = numpy.loadtxt("../data/2d_dataset.csv", delimiter=",", skiprows=1).reshape(-1, 2)
 Y = test_f0_2d(samples)
 XY = numpy.hstack((X.reshape(-1, 2), Y.reshape(-1, 1)))
 numpy.savetxt("../data/2d_dataset.csv", XY, delimiter=",", header="x1,x2,y", comments="")
@@ -37,9 +37,7 @@ for i in range(n_samples, n_samples + n_experiments):
         opt.set_acquisition_function("EI")
         opt.set_kernel(Kernel.RBF.value(length_scale=1.0))
         opt.set_number_of_optimizer_restarts(100)
-        XY = numpy.loadtxt("../data/2d_dataset.csv", delimiter=",", skiprows=1)
-        opt.set_dataset_X(XY[:, 0:2])
-        opt.set_dataset_Y(XY[:, 2:])
+        opt.import_data("../data/2d_dataset.csv")
 
     else:
         """ Instantiate optimizer, then import data and model """

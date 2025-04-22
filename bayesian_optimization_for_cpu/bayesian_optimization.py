@@ -359,9 +359,9 @@ class BayesianOptimization:
         self._fig = plt.figure()
         self._ax = self._fig.add_subplot(111, projection='3d')
         self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R}^2 \rightarrow \mathbb{R}$')
-        self._ax.set_xlabel('x')
-        self._ax.set_ylabel('y')
-        self._ax.set_zlabel('f(x, y)')
+        self._ax.set_xlabel(r'$\mathcal{X}$')
+        self._ax.set_ylabel(r'$\mathcal{Y}$')
+        self._ax.set_zlabel(r'$f(\mathcal{X}, \mathcal{Y})$')
         self._ax.set_xlim(self._bounds[0][0], self._bounds[0][1])
         self._ax.set_ylim(self._bounds[1][0], self._bounds[1][1])
 
@@ -371,7 +371,7 @@ class BayesianOptimization:
         X, Y = np.meshgrid(x_grid, y_grid)
         points = np.c_[X.ravel(), Y.ravel()]
         Z = self._f0(points).reshape(X.shape)
-        self._ax.plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, cmap='coolwarm', alpha=0.2)
+        self._ax.plot_wireframe(X, Y, Z, lw=0.5, alpha=0.4, color="black")
 
     def _plot_2d_new_location(self):
         self._ax.scatter(self._new_X[:, 0], self._new_X[:, 1], np.zeros_like(self._new_X[:, 0]),

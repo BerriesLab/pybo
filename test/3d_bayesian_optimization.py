@@ -37,9 +37,7 @@ for i in range(n_samples, n_samples + n_experiments):
         opt.set_acquisition_function("EI")
         opt.set_kernel(Kernel.RBF.value(length_scale=1.0))
         opt.set_number_of_optimizer_restarts(100)
-        XY = numpy.loadtxt("../data/3d_dataset.csv", delimiter=",", skiprows=1)
-        opt.set_dataset_X(XY[:, 0:3])
-        opt.set_dataset_Y(XY[:, 3:])
+        opt.import_data("../data/3d_dataset.csv")
 
     else:
         """ Instantiate optimizer, then import data and model """

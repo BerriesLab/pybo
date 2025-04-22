@@ -2,7 +2,8 @@ import os
 
 import cv2
 
-DEFAULT_OUTPUT_VIDEO_PATH = 'bo_1d_test.mp4'  # Centralized filename for the output video
+DEFAULT_OUTPUT_VIDEO_PATH = 'bo_2d_test02.mp4'  # Centralized filename for the output video
+DEFAULT_INPUT_FILENAME_PREFIX = "test_2d_optimization - 2025-04-22_11-36-13"
 
 
 def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""):
@@ -58,4 +59,4 @@ if __name__ == "__main__":
             img = np.zeros((100, 100, 3), dtype=np.uint8)
             cv2.putText(img, str(i), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.imwrite(os.path.join(image_folder, f'image_{i:02d}.png'), img)
-    create_video_from_images(image_folder, output_video_path, fps, prefix="test_1d_optimization - 2025-04-16_20-29-09")
+    create_video_from_images(image_folder, output_video_path, fps, prefix=DEFAULT_INPUT_FILENAME_PREFIX)
