@@ -14,20 +14,14 @@ def test_f0_3d(x):
 
 
 def test_f0_wear(x):
-    # x[:, 0] =  i_0
-    # x[:, 1] =  i_max
-    # x[:, 2] =  t_on
-    A = 1
-    B = 2
-    C = 3
-    return A * x[:, 0] + B * x[:, 1] + C * x[:, 2]
+    i_0 = x[:, 0]
+    i_max = x[:, 1]
+    t_on = x[:, 2]
+    return (i_max - i_0) * t_on / 2
 
 
-def test_f0_speed(x):
-    # x[:, 0] =  i_0
-    # x[:, 1] =  i_max
-    # x[:, 2] =  t_on
-    A = 4
-    B = 2
-    C = 10
-    return A * x[:, 0] + B * x[:, 1] + C * x[:, 2]
+def test_f0_machining_time(x):
+    i_0 = x[:, 0]
+    i_max = x[:, 1]
+    t_on = x[:, 2]
+    return 2 / (i_max - i_0) * t_on

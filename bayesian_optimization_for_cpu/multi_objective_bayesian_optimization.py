@@ -1,11 +1,11 @@
 import json
 import os
 import pickle
+from collections.abc import Callable
 from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import norm
 from skopt.learning import GaussianProcessRegressor
@@ -13,30 +13,48 @@ from skopt.learning import GaussianProcessRegressor
 
 class MultiObjectiveBayesianOptimization:
 
-    def __init__(self, n_objectives: int = 2):
+    def __init__(
+            self,
+            n_objectives: int,
+            experiment_name: str,
+            bounds: list[tuple[float, float]],
+            acquisition_function: str,
+            f0: list[Callable] | None,
+            kernel: str,
+            X: np.ndarray,  # The X dataset (n samples x N dimensions)
+            Y: np.ndarray,  # The Y dataset (n samples x M objectives)
+            observation_noise: float = 1e-12,
+            n_optimizer_restarts: int = 100):
 
-        # Domain attributes
+        # Validate passed arguments
+        self._validate_XY(X, Y)
+        self._validate_f0(n_objectives, f0)
+
+        # Attributes required at initialization
         self._n_objectives = n_objectives
-        self._experiment_name = None
+        self._experiment_name = experiment_name
         self._datetime = datetime.now()
-        self._observation_noise = 1e-12
-        self._n_restarts = 100
-        self._bounds: list[tuple[float, float]] | None = None
-        self._domain: np.ndarray or None = None
-        self._acquisition_function: str or None = None
-        self._f0: list[callable] = []  # The objective function f0: R^N -> R
-        self._kernel = None
-        self._X = None  # The X dataset (n samples x N dimensions)
-        self._Y = np.zeros((0, n_objectives))  # The Y dataset (n samples x 1 dimensions)
+        self._observation_noise = observation_noise
+        self._n_optimizer_restarts = n_optimizer_restarts
+        self._bounds = bounds
+        self._acquisition_function = acquisition_function
+        self._f0 = f0
+        self._kernel = kernel
+        self._X = X
+        self._Y = Y
+
+        # Optimization State Attributes
+        self._domain: np.ndarray | None = None
         self._model: list[GaussianProcessRegressor] = []
         self._pareto_front = None
         self._ref_point = None
         self._new_X = None  # The new X location
+        
+        # Plotting Attributes
         self._fig = None
         self._ax = None
-        self._mu: list[np.ndarray] = []
-        self._sigma: list[np.ndarray] = []
-        self._callback = []
+        self._mu: list[np.ndarray] | None = None
+        self._sigma: list[np.ndarray] | None = None
 
     """ Setters and getters """
 
@@ -72,6 +90,19 @@ class MultiObjectiveBayesianOptimization:
     def get_dataset_Y(self):
         return self._Y
 
+    def set_observation_noise(self, noise):
+        if noise is None or noise == 0:
+            self._observation_noise = 1e-10
+            return
+        self._observation_noise = noise
+
+    def get_observation_noise(self):
+        return self._observation_noise
+
+    def get_new_X(self):
+        return self._new_X
+
+    # TODO: n is not used anymore to set the bounds
     def set_bounds(self, bounds, n: None or list[int] = None):
         """ Set bounds. If n is None, then n is set to 100 for each bound."""
         if n is None:
@@ -92,6 +123,7 @@ class MultiObjectiveBayesianOptimization:
     def get_acquisition_function(self):
         return self._acquisition_function
 
+    # TODO: the f0 now is a list of callable
     def set_objective_function(self, objective_function):
         if not callable(objective_function):
             raise ValueError("Objective function must be callable.")
@@ -106,10 +138,10 @@ class MultiObjectiveBayesianOptimization:
     def set_number_of_optimizer_restarts(self, n_restarts: int):
         if not isinstance(n_restarts, int) or n_restarts <= 0:
             raise ValueError("The number of optimizer restarts must be a positive integer.")
-        self._n_restarts = n_restarts
+        self._n_optimizer_restarts = n_restarts
 
     def get_number_of_optimizer_restarts(self):
-        return self._n_restarts
+        return self._n_optimizer_restarts
 
     def set_number_of_iterations(self, n_iter: int):
         if not isinstance(n_iter, int) or n_iter <= 0:
@@ -119,100 +151,41 @@ class MultiObjectiveBayesianOptimization:
     def get_number_of_iterations(self):
         return self._n_iter
 
-    def get_attributes(self):
-        attributes = {}
-        for attr, value in self.__dict__.items():
-            if callable(value):
-                attributes[attr] = value.__name__ if hasattr(value, '__name__') else "Unnamed Callable"
-            else:
-                attributes[attr] = value
-        return attributes
-
-    def set_callback(self, callback):
-        if callback is None:
-            self._callback = None
-            return
-
-        if isinstance(callback, list):
-            if not all(callable(callback[i]) for i in range(len(callback))):
-                raise ValueError("All elements in the callback list must be callable.")
-        self._callback = callback
-
-    def get_callback(self):
-        return self._callback
-
     def set_kernel(self, kernel: str):
         self._kernel = kernel
 
     def get_kernel(self):
         return self._kernel
 
-    def set_observation_noise(self, noise):
-        if noise is None or noise == 0:
-            self._observation_noise = 1e-10
-            return
-        self._observation_noise = noise
-
-    def get_observation_noise(self):
-        return self._observation_noise
-
-    def get_new_X(self):
-        return self._new_X
-
     """ I/O """
 
-    def import_data(self, filename):
+    # TODO: add json
+    @classmethod
+    def load_from_disk(cls, file_path: str):
+        with open(file_path, 'rb') as f:
+            obj = pickle.load(f)
+        if not isinstance(obj, cls):
+            raise TypeError(f"Expected object of type {cls.__name__}, got {type(obj).__name__}")
+        return obj
+
+    # TODO: add json
+    def save_to_disk(self, directory: str):
+        filepath = self._compose_filepath(directory) + ".dat"
+        with open(filepath, 'wb') as f:
+            pickle.dump(self, f)
+        return filepath
+
+    def import_XY_from_csv(self, filename):
+        """ Assume that the first row is a header """
         XY = np.loadtxt(filename, delimiter=",", skiprows=1)
         self.set_dataset_X(XY[:, 0:-self._n_objectives])
         self.set_dataset_Y(XY[:, -self._n_objectives:])
 
-    def export_data(self, filename):
+    def export_XY_to_csv(self, filename):
         if self._X is None or self._Y is None:
             raise ValueError("No data available to export. Ensure that _X and _Y are set.")
-
-        columns = ["i_0", "i_max", "t_on", "wear"]
-        data = np.hstack((self._X, self._Y.reshape(-1, 1)))
-        data = pd.DataFrame(data, columns=columns)
-        data.to_csv(filename, index=False)
-
-    def save_model_to_disc(self, directory, format="pickle"):
-        # Handle base case
-        if not self.__dict__:
-            raise ValueError("No attributes are set. Cannot export empty object attributes.")
-
-        filepath = self._compose_filepath(directory)
-        try:
-            if format == "pickle":
-                with open(f"{filepath}.dat", 'wb') as file:
-                    pickle.dump(self.__dict__, file)
-            elif format == "json":
-                with open(f"{filepath}.json", 'w') as file:
-                    json.dump(self.__dict__, file, default=str)
-            else:
-                raise ValueError("Unsupported format. Use 'pickle' or 'json'.")
-        except IOError:
-            print(f"Warning: File '{filepath}' could not be saved. Continuing operation.")
-            return
-
-    def import_attributes(self, filename, format="pickle"):
-
-        filename = filename + ".dat"
-        if not os.path.exists(filename):
-            print(f"Warning: File '{filename}' does not exist. Continuing operation.")
-            return
-
-        if format == "pickle":
-            with open(filename, 'rb') as file:
-                attributes = pickle.load(file)
-        elif format == "json":
-            import json
-            with open(filename, 'r') as file:
-                attributes = json.load(file)
-        else:
-            raise ValueError("Unsupported format. Use 'pickle' or 'json'.")
-
-        for key, value in attributes.items():
-            self.__dict__[key] = value
+        XY = np.hstack((self._X, self._Y))
+        np.savetxt(filename, XY, delimiter=",", comments="")
 
     def save_figure_to_disc(self, directory):
         # Handle base case
@@ -222,6 +195,7 @@ class MultiObjectiveBayesianOptimization:
         filepath = self._compose_filepath(directory)
         try:
             self._fig.savefig(f"{filepath}.png")
+            plt.close(self._fig)
         except IOError:
             print(f"Warning: File '{filepath}' could not be saved. Continuing operation.")
             return
@@ -229,15 +203,12 @@ class MultiObjectiveBayesianOptimization:
     """ Optimizer """
 
     def optimize(self, live_plot=True):
-        self._validate()
         self._instantiate_gaussian_process()
         self._fit_gaussian_process()
         self._calculate_pareto_front()
         self._calculate_reference_point()
         self._minimize_acquisition_function()
         if live_plot:
-            # TODO: fix plots
-            self._predict_gaussian_process_on_domain()
             self._live_plot()
 
     def _fit_gaussian_process(self):
@@ -256,7 +227,7 @@ class MultiObjectiveBayesianOptimization:
             kernel=self._kernel,
             alpha=self._observation_noise,  # Noise added to the diagonal of the input matrix
             optimizer="fmin_l_bfgs_b",
-            n_restarts_optimizer=self._n_restarts, )
+            n_restarts_optimizer=self._n_optimizer_restarts, )
         self._model.append(gpr)
 
     def _calculate_pareto_front(self):
@@ -288,7 +259,7 @@ class MultiObjectiveBayesianOptimization:
         best_value = float("inf")
         lower_bounds = np.array([self._bounds[i][0] for i in range(len(self._bounds))])
         upper_bounds = np.array([self._bounds[i][1] for i in range(len(self._bounds))])
-        for _ in range(self._n_restarts):
+        for _ in range(self._n_optimizer_restarts):
             x0 = np.random.uniform(lower_bounds, upper_bounds, size=(self._X.shape[1],))
             res = minimize(fun=self._ehvi,
                            x0=x0,
@@ -315,13 +286,8 @@ class MultiObjectiveBayesianOptimization:
 
         # 1. Define the reference point
         if ref_point is None:
-            #  This is a *bad* way to calculate the reference point for real applications.
-            #  It is inefficient and can lead to a poorly defined hypervolume.
-            #  The reference point should be *outside* the Pareto front.
-            min_values = np.min(pareto_front, axis=0)
-            ref_point = min_values - 1  # Shift slightly below the minimum
-            print(
-                "WARNING: Reference point was calculated within the EHVI function. This is inefficient and can lead to suboptimal results.  Define the reference point *outside* this function and pass it in.")
+            raise ValueError("A reference point mus tbe defined before optimizing the EHVI.")
+
         # 2. Calculate the EHVI
         ehvi = 0
         if n_objectives == 1:
@@ -330,6 +296,7 @@ class MultiObjectiveBayesianOptimization:
             z = improvement / sigma
             ehvi = (improvement * norm.cdf(z) + sigma * norm.pdf(z))
             ehvi = max(ehvi, 0)
+
         # TODO: check analytical formula and its implementation
         elif n_objectives == 2:
             # Analytic EHVI for two objectives
@@ -354,6 +321,8 @@ class MultiObjectiveBayesianOptimization:
                 t3 = sigma2 * (r1 - mu1) * norm.pdf(f2_s) * norm.cdf(f1_s)
                 t4 = sigma1 * sigma2 * norm.pdf(f1_s) * norm.pdf(f2_s)
                 ehvi += t1 + t2 + t3 + t4
+            ehvi = np.mean(ehvi)
+
         else:
             # For more than 2 objectives, use Monte Carlo approximation.
             # This is computationally more intensive.
@@ -410,19 +379,28 @@ class MultiObjectiveBayesianOptimization:
     """ Plotters """
 
     def _live_plot(self):
+        # Handle single-objective cases
         if self._n_objectives == 1:
+
             if len(self._bounds) == 1:
-                self._f01_1d_live_plot()
+                self._f01_1d_plot()
             elif len(self._bounds) == 2:
-                self._f01_2d_live_plot()
+                self._f01_2d_plot()
             else:
                 raise ValueError("Only 1D and 2D plots are supported.")
-        elif self._n_objectives == 2:
-            self._mobo_2f0_live_plot()
-        elif self._n_objectives == 3:
-            raise ValueError("Multi-objective plot for 3 objectives is not supported yet")
 
-    def _f01_1d_live_plot(self):
+        # Handle bi-objective cases
+        elif self._n_objectives == 2:
+            self._mobo_2f0_plot()
+
+        # Handle tri-objective cases
+        elif self._n_objectives == 3:
+            self._mobo_3f0_plot()
+
+        else:
+            raise ValueError("Cannot display pareto front for more than 3-objectives")
+
+    def _f01_1d_plot(self):
         self._initialize_1d_plot()
         self._plot_1d_objective_function()
         self._plot_1d_new_location()
@@ -463,7 +441,7 @@ class MultiObjectiveBayesianOptimization:
                                   color="blue",
                                   label=rf"{i}$\sigma$")
 
-    def _f01_2d_live_plot(self):
+    def _f01_2d_plot(self):
         self._initialize_2d_plot()
         self._plot_2d_objective_function()
         self._plot_2d_new_location()
@@ -519,58 +497,37 @@ class MultiObjectiveBayesianOptimization:
                                   alpha=0.2, cmap='coolwarm',
                                   zorder=3)
 
-    def _mobo_2f0_live_plot(self):
+    def _mobo_2f0_plot(self):
         # Initialize figure
-        if not self._fig or not self._ax:
-            self._fig = plt.figure()
-            self._ax = self._fig.add_subplot()
-            self._ax.set_title(
-                r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^{2 \times N} \rightarrow \mathbb{R}^N$')
-            self._ax.clear()  # Clear previous plot
-            self._ax.set_xlabel('$f_{01}$')
-            self._ax.set_ylabel('$f_{02}$')
-            # self._ax.set_xlim()
-            # self._ax.set_ylim()
-        self._ax.clear()
-
+        self._fig = plt.figure()
+        self._ax = self._fig.add_subplot()
+        self._ax.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow '
+                           r'\mathbb{R}^2$')
+        self._ax.set_xlabel('$f_{01}$')
+        self._ax.set_ylabel('$f_{02}$')
         # Plot observations
         self._ax.scatter(self._Y[:, 0], self._Y[:, 1], marker="o", s=50, color='red', label='Observations')
-
         # Plot Pareto Front
         self._ax.scatter(self._pareto_front[:, 0], self._pareto_front[:, 1], marker="x", s=50, color='olive',
                          label='Pareto Front')
         plt.legend()
-        plt.pause(0.1)
+
+    def _mobo_3f0_plot(self):
+        raise ValueError("Multi-objective plot for 3 objectives is not supported yet")
 
     """ Validators """
 
-    def _validate(self):
-        self._validate_bounds_bak()
-        self._validate_acquisition_function()
-        self._validate_initial_dataset()
-        self._validate_objective_function()
-
-    def _validate_objective_function(self):
-        if self._f0 is None:
-            raise ValueError("Please specify the objective function.")
-
-    def _validate_initial_dataset(self):
-        if self._X is None and self._Y is None:
-            print("No initial dataset provided. No initial points will be used.")
-        if (self._X is not None and self._Y is not None and
-                self._X.shape[0] != self._Y.shape[0]):
+    @staticmethod
+    def _validate_XY(X, Y):
+        if X is None or Y is None:
+            raise ValueError("X and Y cannot be none")
+        if not X.shape[0] == Y.shape[0]:
             raise ValueError("The number of samples in X_init and Y_init must match.")
 
-    def _validate_acquisition_function(self):
-        if self._acquisition_function is None:
-            raise ValueError("Please specify the acquisition function.")
-
-    def _validate_bounds_bak(self):
-        # Handle base case
-        if self._bounds is None:
-            raise ValueError("Bounds for the input domain must be specified.")
-        if isinstance(self._X, np.ndarray) and len(self._bounds) != self._X.shape[1]:
-            raise ValueError("The number of dimensions in bounds and X must match.")
+    @staticmethod
+    def _validate_f0(n_objectives, f0):
+        if f0 is not None and not n_objectives == len(f0):
+            raise ValueError("The number of objectives must equal the number of objective functions.")
 
     @staticmethod
     def _validate_bounds(bounds, n):
