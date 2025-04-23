@@ -53,8 +53,8 @@ class MultiObjectiveBayesianOptimization:
         # Plotting Attributes
         self._fig = None
         self._ax = None
-        self._mu: list[np.ndarray] | None = None
-        self._sigma: list[np.ndarray] | None = None
+        self._mu: list[np.ndarray] = [None]
+        self._sigma: list[np.ndarray] = [None]
 
     """ Setters and getters """
 
@@ -244,9 +244,7 @@ class MultiObjectiveBayesianOptimization:
                 is_efficient[is_efficient] = (np.any(self._Y[is_efficient] < value, axis=1) |
                                               np.all(self._Y[is_efficient] == value, axis=1))
                 # This line explicitly sets the current value to efficient. This is crucial because the
-                # previous step might have incorrectly marked the current point as "False" if it was equal
-                # to other points. This line ensures that the current point is always retained
-                # for comparison against subsequent points.
+                # previous step might have incorrectly marked the current point as "False" due to numerical precision.
                 is_efficient[idx] = True
         self._pareto_front = self._Y[is_efficient]
 
@@ -289,7 +287,6 @@ class MultiObjectiveBayesianOptimization:
             raise ValueError("A reference point mus tbe defined before optimizing the EHVI.")
 
         # 2. Calculate the EHVI
-        ehvi = 0
         if n_objectives == 1:
             # Expected Improvement (EI) for single objective
             improvement = mean - pareto_front[0]  # pareto_front is just one value
@@ -373,8 +370,8 @@ class MultiObjectiveBayesianOptimization:
             else:
                 # If the domain is 1-D
                 mu, sigma = self._model[i].predict(self._domain, return_std=True)
-                self._mu.append(mu)
-                self._sigma.append(sigma)
+                self._mu[0] = mu
+                self._sigma[0] = sigma
 
     """ Plotters """
 
@@ -383,9 +380,9 @@ class MultiObjectiveBayesianOptimization:
         if self._n_objectives == 1:
 
             if len(self._bounds) == 1:
-                self._f01_1d_plot()
+                self._plot_from_R1_to_R1()
             elif len(self._bounds) == 2:
-                self._f01_2d_plot()
+                self._plot_from_R2_to_R1()
             else:
                 raise ValueError("Only 1D and 2D plots are supported.")
 
@@ -400,49 +397,61 @@ class MultiObjectiveBayesianOptimization:
         else:
             raise ValueError("Cannot display pareto front for more than 3-objectives")
 
-    def _f01_1d_plot(self):
-        self._initialize_1d_plot()
-        self._plot_1d_objective_function()
-        self._plot_1d_new_location()
-        self._plot_1d_observations()
-        self._plot_1d_posterior()
-        self._ax.legend()
-        plt.pause(0.01)  # Update the plot without blocking
-
-    def _initialize_1d_plot(self):
-        if not self._fig or not self._ax:
-            self._fig, self._ax = plt.subplots()
-            self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
-            self._ax.set_xlabel(r"$\mathcal{X}$")
-            self._ax.set_ylabel(r"$\mathcal{Y}$")
-        self._ax.clear()
+    def _plot_from_R1_to_R1(self):
+        # Initialize figure
+        self._fig, self._ax = plt.subplots()
+        self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
+        self._ax.set_xlabel(r"$\mathcal{X}$")
+        self._ax.set_ylabel(r"$\mathcal{Y}$")
         self._ax.set_xlim(self._bounds[0][0] * 1.1, self._bounds[0][1] * 1.1)
-
-    def _plot_1d_objective_function(self):
-        self._ax.plot(self._domain, self._f0(self._domain), color="black", linestyle="--",
-                      label="True objective function", zorder=1)
-
-    def _plot_1d_new_location(self):
-        self._ax.vlines(self._new_X, ymin=self._ax.get_ylim()[0], ymax=self._ax.get_ylim()[1],
-                        color='red', alpha=0.3, linestyle="--", zorder=3)
-        self._ax.scatter(self._new_X, np.zeros_like(self._new_X), marker="x", s=50, color='red',
-                         label='New Location', zorder=3)
-
-    def _plot_1d_observations(self):
-        self._ax.scatter(self._X, self._Y, marker="o", s=50, color='red', label='Observations', zorder=3)
-
-    def _plot_1d_posterior(self):
-        self._ax.plot(self._domain, self._mu, label="Mean", zorder=2)
+        # Build domain
+        self._build_domain_from_bounds()
+        # Plot objective function if known
+        if not self._f0:
+            self._ax.plot(self._domain, self._f0[0](self._domain), color="black", linestyle="--", label=r"True $f_0$")
+        # Plot posterior
+        self._predict_gaussian_process_on_domain()
+        self._ax.plot(self._domain, self._mu[0], label="Mean", zorder=2)
         for i in range(1, 4):
             self._ax.fill_between(x=self._domain.flatten(),
-                                  y1=self._mu - i * self._sigma,
-                                  y2=self._mu + i * self._sigma,
+                                  y1=self._mu[0] - i * self._sigma[0],
+                                  y2=self._mu[0] + i * self._sigma[0],
                                   alpha=0.2 / i,
                                   color="blue",
                                   label=rf"{i}$\sigma$")
+        # Plot new location
+        y_min, y_max = self._ax.get_ylim()
+        self._ax.vlines(self._new_X, ymin=y_min, ymax=y_max, color='red', alpha=0.3, linestyle="--", label="New X")
+        # Plot all observations except minimum
+        min_y_idx = np.argmin(self._Y)
+        mask = np.ones(len(self._Y), dtype=bool)
+        mask[min_y_idx] = False
+        self._ax.scatter(self._X[mask], self._Y[mask], marker="o", s=50, color='red', label='Observations')
+        # Plot minimum Y value
+        self._ax.scatter(self._X[min_y_idx], self._Y[min_y_idx], marker='*', s=200, color='green', label='Min Y')
+        self._ax.legend()
 
-    def _f01_2d_plot(self):
-        self._initialize_2d_plot()
+    # TODO: fix figures
+    def _plot_from_R2_to_R1(self):
+        # Initialize figure
+        self._fig = plt.figure()
+        self._ax = self._fig.add_subplot(111, projection='3d')
+        self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R}^2 \rightarrow \mathbb{R}$')
+        self._ax.set_xlabel('$x_1$')
+        self._ax.set_ylabel('$x_2$')
+        self._ax.set_zlabel('$f(\mathcal{X})$')
+        self._ax.set_xlim(self._bounds[0][0], self._bounds[0][1])
+        self._ax.set_ylim(self._bounds[1][0], self._bounds[1][1])
+        # Plot objective function if known
+
+        x_grid = np.linspace(self._bounds[0][0], self._bounds[0][1], 100)
+        y_grid = np.linspace(self._bounds[1][0], self._bounds[1][1], 100)
+        X, Y = np.meshgrid(x_grid, y_grid)
+        points = np.c_[X.ravel(), Y.ravel()]
+        Z = self._f0(points).reshape(X.shape)
+        self._ax.plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, cmap='coolwarm', alpha=0.2)
+
+
         self._plot_2d_objective_function()
         self._plot_2d_new_location()
         self._plot_2d_observations()
@@ -450,26 +459,6 @@ class MultiObjectiveBayesianOptimization:
         self._fig.canvas.draw()
         plt.pause(0.01)  # Update the plot without blocking
 
-    def _initialize_2d_plot(self):
-        if not self._fig or not self._ax:
-            self._fig = plt.figure()
-            self._ax = self._fig.add_subplot(111, projection='3d')
-            self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R}^2 \rightarrow \mathbb{R}$')
-
-        self._ax.clear()  # Clear previous plot
-        self._ax.set_xlabel('x')
-        self._ax.set_ylabel('y')
-        self._ax.set_zlabel('f(x, y)')
-        self._ax.set_xlim(self._bounds[0][0], self._bounds[0][1])
-        self._ax.set_ylim(self._bounds[1][0], self._bounds[1][1])
-
-    def _plot_2d_objective_function(self):
-        x_grid = np.linspace(self._bounds[0][0], self._bounds[0][1], 100)
-        y_grid = np.linspace(self._bounds[1][0], self._bounds[1][1], 100)
-        X, Y = np.meshgrid(x_grid, y_grid)
-        points = np.c_[X.ravel(), Y.ravel()]
-        Z = self._f0(points).reshape(X.shape)
-        self._ax.plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, cmap='coolwarm', alpha=0.2)
 
     def _plot_2d_new_location(self):
         self._ax.scatter(self._new_X[:, 0], self._new_X[:, 1], np.zeros_like(self._new_X[:, 0]),
@@ -573,5 +562,4 @@ class MultiObjectiveBayesianOptimization:
         domain = []
         for i in range(len(self._bounds)):
             domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], n[i]).reshape(-1, 1))
-        # self._domain = np.concatenate(domain, axis=1)
-        self._domain = domain
+        self._domain = np.concatenate(domain, axis=1)

@@ -9,7 +9,7 @@ from objective_functions import test_f0_wear, test_f0_machining_time
 """ Inputs """
 n_objectives = 2
 f0: list[callable] = [test_f0_wear, test_f0_machining_time]
-n_samples: int = 50  # Number of initial samples
+n_samples: int = 20  # Number of initial samples
 bounds: list[tuple[float, float]] = [(-5, 5), (-5, 5), (-5, 5)]  # Domain bounds
 n: list[int] = [100, 100, 200]
 header: str = "x1,x2,x3,y1,y2"  # Dynamic header for objectives
