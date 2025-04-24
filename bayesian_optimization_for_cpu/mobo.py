@@ -28,7 +28,7 @@ class MultiObjectiveBayesianOptimization:
 
         # Validate passed arguments
         self._validate_XY(X, Y)
-        self._validate_f0(n_objectives, f0)
+        self._validate_f0(f0, n_objectives)
 
         # Attributes required at initialization
         self._n_objectives = n_objectives
@@ -47,14 +47,15 @@ class MultiObjectiveBayesianOptimization:
         self._domain: np.ndarray | None = None
         self._model: list[GaussianProcessRegressor] = []
         self._pareto_front = None
+        self._pareto_front_idx = None
         self._ref_point = None
         self._new_X = None  # The new X location
         
         # Plotting Attributes
         self._fig = None
         self._ax = None
-        self._mu: list[np.ndarray] = [None]
-        self._sigma: list[np.ndarray] = [None]
+        self._mu: list[np.ndarray] = [np.zeros(1) for _ in range(n_objectives)]
+        self._sigma: list[np.ndarray] = [np.zeros(1) for _ in range(n_objectives)]
 
     """ Setters and getters """
 
@@ -102,14 +103,10 @@ class MultiObjectiveBayesianOptimization:
     def get_new_X(self):
         return self._new_X
 
-    # TODO: n is not used anymore to set the bounds
-    def set_bounds(self, bounds, n: None or list[int] = None):
+    def set_bounds(self, bounds):
         """ Set bounds. If n is None, then n is set to 100 for each bound."""
-        if n is None:
-            n = [100] * len(bounds)
-        self._validate_bounds(bounds, n)
+        self._validate_bounds(bounds)
         self._bounds = bounds
-        self._build_domain_from_bounds(n=n)
 
     def get_bounds(self):
         return self._bounds
@@ -123,11 +120,9 @@ class MultiObjectiveBayesianOptimization:
     def get_acquisition_function(self):
         return self._acquisition_function
 
-    # TODO: the f0 now is a list of callable
-    def set_objective_function(self, objective_function):
-        if not callable(objective_function):
-            raise ValueError("Objective function must be callable.")
-        self._f0 = objective_function
+    def set_objective_function(self, f0: list[Callable]):
+        self._validate_f0(f0)
+        self._f0 = f0
 
     def get_objective_function(self):
         return self._f0
@@ -202,14 +197,14 @@ class MultiObjectiveBayesianOptimization:
 
     """ Optimizer """
 
-    def optimize(self, live_plot=True):
+    def optimize(self, plot=True):
         self._instantiate_gaussian_process()
         self._fit_gaussian_process()
         self._calculate_pareto_front()
         self._calculate_reference_point()
         self._minimize_acquisition_function()
-        if live_plot:
-            self._live_plot()
+        if plot:
+            self._plot()
 
     def _fit_gaussian_process(self):
         """ Fit a Gaussian Process Regressor for each objective. """
@@ -247,6 +242,7 @@ class MultiObjectiveBayesianOptimization:
                 # previous step might have incorrectly marked the current point as "False" due to numerical precision.
                 is_efficient[idx] = True
         self._pareto_front = self._Y[is_efficient]
+        self._pareto_front_idx = np.where(is_efficient)[0]
 
     def _calculate_reference_point(self):
         self._ref_point = np.max(self._pareto_front, axis=0) + 0.1
@@ -295,7 +291,7 @@ class MultiObjectiveBayesianOptimization:
             ehvi = max(ehvi, 0)
 
         # TODO: check analytical formula and its implementation
-        elif n_objectives == 2:
+        elif n_objectives == 3:
             # Analytic EHVI for two objectives
             front = pareto_front
             mu1 = mean[0]
@@ -324,7 +320,9 @@ class MultiObjectiveBayesianOptimization:
             # For more than 2 objectives, use Monte Carlo approximation.
             # This is computationally more intensive.
             n_samples = 10000  # Number of samples
-            samples = np.random.multivariate_normal(mean, cov, n_samples)  # (n_samples, n_objectives)
+            cov = np.diag((np.array(sigma) ** 2).reshape(-1))
+            mean = np.array(mean).reshape(-1)
+            samples = np.random.multivariate_normal(mean, cov, n_samples)
             improvement = np.zeros(n_samples)
 
             for i in range(n_samples):
@@ -364,18 +362,18 @@ class MultiObjectiveBayesianOptimization:
                 grids = [self._domain[:, i] for i in range(self._domain.shape[1])]
                 mesh = np.meshgrid(*grids)
                 grid = np.stack([m.flatten() for m in mesh], axis=-1)
-                mu, sigma = self._model[i].predict(grid, return_std=True)
-                self._mu.append(mu.reshape(mesh[0].shape))
-                self._sigma.append(sigma.reshape(mesh[0].shape))
+                self._mu[i], self._sigma[i] = self._model[i].predict(grid, return_std=True)
+                #self._mu.append(mu.reshape(mesh[0].shape))
+                #self._sigma.append(sigma.reshape(mesh[0].shape))
             else:
                 # If the domain is 1-D
-                mu, sigma = self._model[i].predict(self._domain, return_std=True)
-                self._mu[0] = mu
-                self._sigma[0] = sigma
+                self._mu[i], self._sigma[i] = self._model[i].predict(self._domain, return_std=True)
+                #self._mu[0] = mu
+                #self._sigma[0] = sigma
 
     """ Plotters """
 
-    def _live_plot(self):
+    def _plot(self):
         # Handle single-objective cases
         if self._n_objectives == 1:
 
@@ -388,27 +386,31 @@ class MultiObjectiveBayesianOptimization:
 
         # Handle bi-objective cases
         elif self._n_objectives == 2:
-            self._mobo_2f0_plot()
+            self._plot_from_RN_to_R2()
 
         # Handle tri-objective cases
         elif self._n_objectives == 3:
-            self._mobo_3f0_plot()
+            self._plot_from_RN_to_R3()
 
         else:
-            raise ValueError("Cannot display pareto front for more than 3-objectives")
-
+            raise ValueError("Cannot display pareto front for more than 3-objectives without PCA.")
+        
     def _plot_from_R1_to_R1(self):
+
         # Initialize figure
         self._fig, self._ax = plt.subplots()
         self._ax.set_title(r'Bayesian Optimization for $f_0:\mathbb{R} \rightarrow \mathbb{R}$')
         self._ax.set_xlabel(r"$\mathcal{X}$")
         self._ax.set_ylabel(r"$\mathcal{Y}$")
         self._ax.set_xlim(self._bounds[0][0] * 1.1, self._bounds[0][1] * 1.1)
+
         # Build domain
         self._build_domain_from_bounds()
+
         # Plot objective function if known
-        if not self._f0:
+        if self._f0:
             self._ax.plot(self._domain, self._f0[0](self._domain), color="black", linestyle="--", label=r"True $f_0$")
+
         # Plot posterior
         self._predict_gaussian_process_on_domain()
         self._ax.plot(self._domain, self._mu[0], label="Mean", zorder=2)
@@ -419,20 +421,23 @@ class MultiObjectiveBayesianOptimization:
                                   alpha=0.2 / i,
                                   color="blue",
                                   label=rf"{i}$\sigma$")
+
         # Plot new location
         y_min, y_max = self._ax.get_ylim()
         self._ax.vlines(self._new_X, ymin=y_min, ymax=y_max, color='red', alpha=0.3, linestyle="--", label="New X")
+
         # Plot all observations except minimum
         min_y_idx = np.argmin(self._Y)
         mask = np.ones(len(self._Y), dtype=bool)
         mask[min_y_idx] = False
         self._ax.scatter(self._X[mask], self._Y[mask], marker="o", s=50, color='red', label='Observations')
+
         # Plot minimum Y value
         self._ax.scatter(self._X[min_y_idx], self._Y[min_y_idx], marker='*', s=200, color='green', label='Min Y')
         self._ax.legend()
 
-    # TODO: fix figures
     def _plot_from_R2_to_R1(self):
+
         # Initialize figure
         self._fig = plt.figure()
         self._ax = self._fig.add_subplot(111, projection='3d')
@@ -442,51 +447,52 @@ class MultiObjectiveBayesianOptimization:
         self._ax.set_zlabel('$f(\mathcal{X})$')
         self._ax.set_xlim(self._bounds[0][0], self._bounds[0][1])
         self._ax.set_ylim(self._bounds[1][0], self._bounds[1][1])
+
+        # Build domain
+        self._build_domain_from_bounds()
+
         # Plot objective function if known
+        if self._f0 and all([isinstance(f, Callable) for f in self._f0]):
+            x_grid = np.linspace(self._bounds[0][0], self._bounds[0][1], 100)
+            y_grid = np.linspace(self._bounds[1][0], self._bounds[1][1], 100)
+            X, Y = np.meshgrid(x_grid, y_grid)
+            points = np.c_[X.ravel(), Y.ravel()]
+            Z = self._f0[0](points).reshape(X.shape)
+            self._ax.plot_wireframe(X, Y, Z, lw=0.5, alpha=0.4, color='black', label=r"True $f_0$")
 
-        x_grid = np.linspace(self._bounds[0][0], self._bounds[0][1], 100)
-        y_grid = np.linspace(self._bounds[1][0], self._bounds[1][1], 100)
-        X, Y = np.meshgrid(x_grid, y_grid)
-        points = np.c_[X.ravel(), Y.ravel()]
-        Z = self._f0(points).reshape(X.shape)
-        self._ax.plot_surface(X, Y, Z, lw=0.5, rstride=8, cstride=8, cmap='coolwarm', alpha=0.2)
+        # Plot new X location with vertical line
+        z_line = np.linspace(0, self._ax.get_zlim()[1], 100)
+        x_line = np.full_like(z_line, self._new_X[0, 0])
+        y_line = np.full_like(z_line, self._new_X[0, 1])
+        self._ax.plot(x_line, y_line, z_line, 'r--', alpha=0.5, label='New Location')
 
+        # Plot all observations except minimum
+        min_y_idx = np.argmin(self._Y)
+        mask = np.ones(len(self._Y), dtype=bool)
+        mask[min_y_idx] = False
+        self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Y[mask, 0], c='red', marker='o', s=50,
+                         label='Observations')
 
-        self._plot_2d_objective_function()
-        self._plot_2d_new_location()
-        self._plot_2d_observations()
-        self._plot_2d_posterior()
-        self._fig.canvas.draw()
-        plt.pause(0.01)  # Update the plot without blocking
+        # Plot minimum Y value
+        mask = np.invert(mask)
+        self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Y[mask, 0], c='green', marker='*', s=200, label='Min Y')
 
-
-    def _plot_2d_new_location(self):
-        self._ax.scatter(self._new_X[:, 0], self._new_X[:, 1], np.zeros_like(self._new_X[:, 0]),
-                         marker="x", s=50, color='red', label='New Location')
-
-    def _plot_2d_observations(self):
-        self._ax.scatter(self._X[:, 0], self._X[:, 1], self._Y, c='red', marker='o', s=50, label='Observations',
-                         zorder=4)
-
-    def _plot_2d_posterior(self):
+        # Plot posterior
+        self._predict_gaussian_process_on_domain()
         x_grid = self._domain[:, 0]
         y_grid = self._domain[:, 1]
         X, Y = np.meshgrid(x_grid, y_grid)
         for i in range(1, 4):
-            self._ax.plot_surface(X,
-                                  Y,
-                                  (self._mu - i * self._sigma).reshape(X.shape),
+            self._ax.plot_surface(X, Y, (self._mu[0] - i * self._sigma[0]).reshape(X.shape),
                                   lw=0.5, rstride=8, cstride=8,
                                   alpha=0.2, cmap='coolwarm',
                                   zorder=2)
-            self._ax.plot_surface(X,
-                                  Y,
-                                  (self._mu + i * self._sigma).reshape(X.shape),
+            self._ax.plot_surface(X, Y, (self._mu[0] + i * self._sigma[0]).reshape(X.shape),
                                   lw=0.5, rstride=8, cstride=8,
                                   alpha=0.2, cmap='coolwarm',
                                   zorder=3)
 
-    def _mobo_2f0_plot(self):
+    def _plot_from_RN_to_R2(self):
         # Initialize figure
         self._fig = plt.figure()
         self._ax = self._fig.add_subplot()
@@ -494,14 +500,17 @@ class MultiObjectiveBayesianOptimization:
                            r'\mathbb{R}^2$')
         self._ax.set_xlabel('$f_{01}$')
         self._ax.set_ylabel('$f_{02}$')
-        # Plot observations
-        self._ax.scatter(self._Y[:, 0], self._Y[:, 1], marker="o", s=50, color='red', label='Observations')
+        # Plot observations except Pareto front
+        mask = np.ones(len(self._Y), dtype=bool)
+        mask[self._pareto_front_idx] = False
+        self._ax.scatter(self._Y[mask, 0], self._Y[mask, 1], marker="o", s=50, color='red', label='Observations')
         # Plot Pareto Front
-        self._ax.scatter(self._pareto_front[:, 0], self._pareto_front[:, 1], marker="x", s=50, color='olive',
+        mask = np.invert(mask)
+        self._ax.scatter(self._Y[mask, 0], self._Y[mask, 1], marker="x", s=50, color='olive',
                          label='Pareto Front')
         plt.legend()
 
-    def _mobo_3f0_plot(self):
+    def _plot_from_RN_to_R3(self):
         raise ValueError("Multi-objective plot for 3 objectives is not supported yet")
 
     """ Validators """
@@ -514,12 +523,14 @@ class MultiObjectiveBayesianOptimization:
             raise ValueError("The number of samples in X_init and Y_init must match.")
 
     @staticmethod
-    def _validate_f0(n_objectives, f0):
-        if f0 is not None and not n_objectives == len(f0):
-            raise ValueError("The number of objectives must equal the number of objective functions.")
+    def _validate_f0(f0, n_objectives):
+        if f0 and not len(f0) == n_objectives:
+            raise ValueError("The number of objective functions must match the number of objectives in f0.")
+        if f0 and not all([isinstance(f, Callable) for f in f0]):
+            raise ValueError("f0 must be a list of callable.")
 
     @staticmethod
-    def _validate_bounds(bounds, n):
+    def _validate_bounds(bounds):
         if not isinstance(bounds, list):
             raise ValueError("Bounds must be a list.")
         else:
@@ -533,14 +544,6 @@ class MultiObjectiveBayesianOptimization:
                 if not isinstance(bound[0], (int, float)) and not isinstance(bound[1], (int, float)):
                     raise ValueError("Bounds must be a list of tuples of two numeric values.")
 
-        if not len(n) == len(bounds):
-            raise ValueError("The number of samples must be the same length as the number of bounds.")
-        else:
-            for n_ in n:
-                if not isinstance(n_, int):
-                    raise ValueError("The number of samples must be a list of integers.")
-                if n_ <= 0:
-                    raise ValueError("The number of samples must be a positive integer.")
 
     """ Helpers """
 
@@ -556,9 +559,16 @@ class MultiObjectiveBayesianOptimization:
             filename = f'{self._experiment_name} - {self._datetime.strftime("%Y-%m-%d_%H-%M-%S")} - {self._X.shape[0]} samples'
         return filename
 
-    def _build_domain_from_bounds(self, n=(100,)):
-        if len(n) != len(self._bounds):
+    def _build_domain_from_bounds(self, n=None):
+        if n is None:
+            n = [100 for _ in range(len(self._bounds))]
+        elif isinstance(n, int):
+            n = [n for _ in range(len(self._bounds))]
+        elif isinstance(n, list) and not len(n) == len(self._bounds):
             raise ValueError("The length of n must match the number of dimensions in bounds.")
+        else:
+            raise ValueError("n must be None, an integer, or a list of integers.")
+
         domain = []
         for i in range(len(self._bounds)):
             domain.append(np.linspace(self._bounds[i][0], self._bounds[i][1], n[i]).reshape(-1, 1))

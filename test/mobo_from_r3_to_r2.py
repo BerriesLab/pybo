@@ -2,17 +2,16 @@ import numpy as np
 
 from bayesian_optimization_for_cpu.enums import Kernel
 from bayesian_optimization_for_cpu.latin_hypercube_sampling import LatinHypercubeSampling
-from bayesian_optimization_for_cpu.multi_objective_bayesian_optimization import \
+from bayesian_optimization_for_cpu.mobo import \
     MultiObjectiveBayesianOptimization as Mobo
-from objective_functions import test_f0_1d
+from objective_functions import test_f0_wear, test_f0_machining_time
 
 """ Inputs """
-n_objectives = 1
-f0: list[callable] = [test_f0_1d]
-n_samples: int = 10  # Number of initial samples
-bounds: list[tuple[float, float]] = [(-20, 20)]  # Domain bounds
-n: list[int] = [100]
-header: str = "x1,y1"  # Dynamic header for objectives
+n_objectives = 2
+f0: list[callable] = [test_f0_wear, test_f0_machining_time]
+n_samples: int = 20  # Number of initial samples
+bounds: list[tuple[float, float]] = [(-5, 5), (-5, 5), (-5, 5)]  # Domain bounds
+header: str = "x1,x2,x3,y1"
 n_experiments: int = 20  # Number of optimization steps to take = 1 in practical settings
 filepath: str = ""
 
@@ -24,7 +23,7 @@ samples = lhs.sample_domain()
 np.savetxt("../data/mobo_dataset.csv", samples, delimiter=",", header=header, comments="")
 
 """ Simulate User: Run experiments and collect data"""
-X = np.loadtxt("../data/mobo_dataset.csv", delimiter=",", skiprows=1, ndmin=2)
+X = np.loadtxt("../data/mobo_dataset.csv", delimiter=",", skiprows=1)
 Y = np.array([f(samples) for f in f0]).T  # Compute all objective outputs
 XY = np.hstack((X, Y))  # Combine inputs and all objectives
 np.savetxt("../data/mobo_dataset.csv", XY, delimiter=",", header=header, comments="")
@@ -38,7 +37,7 @@ for i in range(n_samples, n_samples + n_experiments):
         # Instantiate new Mobo
         mobo = Mobo(
             n_objectives=n_objectives,
-            experiment_name="test_mobo",
+            experiment_name="test_mobo_from_R3_to_R2",
             bounds=bounds,
             acquisition_function="ehvi",
             f0=f0,
@@ -55,7 +54,7 @@ for i in range(n_samples, n_samples + n_experiments):
         mobo.import_XY_from_csv("../data/mobo_dataset.csv")
 
     """ Solve to get new X """
-    mobo.optimize(live_plot=True)
+    mobo.optimize(plot=True)
 
     """ Save mode, data and figure to disc """
     mobo.save_figure_to_disc(directory="../data")
