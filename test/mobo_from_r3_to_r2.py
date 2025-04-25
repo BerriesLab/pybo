@@ -28,7 +28,6 @@ Y = np.array([f(samples) for f in f0]).T  # Compute all objective outputs
 XY = np.hstack((X, Y))  # Combine inputs and all objectives
 np.savetxt("../data/mobo_dataset.csv", XY, delimiter=",", header=header, comments="")
 
-
 """ Make a number of experiments """
 for i in range(n_samples, n_samples + n_experiments):
 
@@ -37,7 +36,7 @@ for i in range(n_samples, n_samples + n_experiments):
         # Instantiate new Mobo
         mobo = Mobo(
             n_objectives=n_objectives,
-            experiment_name="test_mobo_from_R3_to_R2",
+            experiment_name="test_mobo_from_R3_to_R2_gpu",
             bounds=bounds,
             acquisition_function="ehvi",
             f0=f0,

@@ -291,7 +291,7 @@ class MultiObjectiveBayesianOptimization:
             ehvi = max(ehvi, 0)
 
         # TODO: check analytical formula and its implementation
-        elif n_objectives == 3:
+        elif n_objectives == 2:
             # Analytic EHVI for two objectives
             front = pareto_front
             mu1 = mean[0]
