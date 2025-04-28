@@ -41,6 +41,7 @@ for i in tqdm(range(n_opt_iter)):
             X=X,
             Y=Y,
             Yvar=None,
+            n_acqf_iter=100,
         )
     else:
         # Load an existing MOBO

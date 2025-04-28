@@ -32,9 +32,11 @@ class Mobo:
                  acquisition_function: botorch.acquisition.multi_objective.MultiObjectiveMCAcquisitionFunction,
                  f0: MultiObjectiveTestProblem | None,
                  kernel: str,
-                 X: np.ndarray,  # (n samples x N dimensions)
-                 Y: np.ndarray,  # (n samples x M objectives)
-                 Yvar: np.ndarray | None = None,  # (n samples x M objectives
+                 X: torch.Tensor,  # (n samples x N dimensions)
+                 Y: torch.Tensor,  # (n samples x M objectives)
+                 Yvar: torch.Tensor | None = None,  # (n samples x M objectives
+                 n_acqf_opt_iter: int = 100,
+                 max_n_fit_restart: int = 20,
                  ):
 
         # Validate passed arguments
@@ -54,6 +56,8 @@ class Mobo:
         self._X = X
         self._Y = Y
         self._Yvar = Yvar
+        self._n_acqf_opt_iter = n_acqf_opt_iter
+        self._max_n_fit_restart = max_n_fit_restart
 
         # Device Attributes, filled at object instantiation
         self._device = get_device()
@@ -61,8 +65,8 @@ class Mobo:
 
         # Optimization State Attributes
         self._domain: np.ndarray | None = None
-        self._models: list[SingleTaskGP] | list[Empty] = []
-        self._mlls: list[ExactMarginalLogLikelihood] | list[Empty] = []
+        self._models: list[SingleTaskGP] = []
+        self._mlls: list[ExactMarginalLogLikelihood] = []
         self._partitioning: NondominatedPartitioning = None
         self._pareto_front = None
         self._pareto_front_idx = None
@@ -84,14 +88,6 @@ class Mobo:
 
     def get_experiment_name(self):
         return self._experiment_name
-
-    def set_n_objectives(self, n_objectives: int):
-        if not isinstance(n_objectives, int) or n_objectives <= 0:
-            raise ValueError("The number of objectives must be a positive integer.")
-        self._n_objectives = n_objectives
-
-    def get_n_objectives(self):
-        return self._n_objectives
 
     def set_X(self, X: torch.Tensor | None = None):
         if not isinstance(X, torch.Tensor) or X is not None:
@@ -123,7 +119,6 @@ class Mobo:
     # TODO: fix setters and getters
 
     def set_bounds(self, bounds):
-        """ Set bounds. If n is None, then n is set to 100 for each bound."""
         self._validate_bounds(bounds)
         self._bounds = bounds
 
@@ -132,14 +127,6 @@ class Mobo:
 
     def get_number_of_objective_function_calls(self):
         return self._n_iter
-
-    def set_number_of_optimizer_restarts(self, n_restarts: int):
-        if not isinstance(n_restarts, int) or n_restarts <= 0:
-            raise ValueError("The number of optimizer restarts must be a positive integer.")
-        self._n_optimizer_restarts = n_restarts
-
-    def get_number_of_optimizer_restarts(self):
-        return self._n_optimizer_restarts
 
     """ Optimizer """
 
@@ -158,28 +145,46 @@ class Mobo:
                 )
             )
 
-    def _fit_models(self):
-        if self._model is None:
-            raise ValueError("Model is not initialized.")
+    def _fit_models(self, restart_on_error=True):
+        if not self._models:
+            raise ValueError("Models must be initialized before fitting.")
         # Use ExactMarginalLogLikelihood to train the hyperparameters of the GP.
-        self._mlls = [ExactMarginalLogLikelihood(model.likelihood, model) for model in self._models]
+        restart_count = 0
+        for i in range(self._Y.shape[-1]):
+            mll = ExactMarginalLogLikelihood(self._models[i].likelihood, self._models[i])
+            # TODO: if it fails at every re-start, enters into infinite loop - add breakin logic
+            # Fit the models – Include restarting logic
+            try:
+                botorch.fit_gpytorch_mll(mll)
+                return None
+            except Exception as e:
+                print(f"Error fitting model: {e}")
+                if restart_on_error and restart_count < self._max_n_fit_restart:
+                    print(f"Restarting fitting... (Attempt {restart_count + 1}/{self._max_n_fit_restart})")
+                    restart_count += 1
+                    return self._fit_models(restart_on_error=True)
+                else:
+                    raise e  # re-raise if not restarting or max restarts reached
+        return None
+
+    def _partitioning(self):
+        #TODO: add partitioning
 
     def _define_acquisition_function(self):
-        """Define the acquisition function."""
-        # Use qEHVI for batch optimization.  For single-point optimization, use qEHVI.
-        # The ref_point is crucial for EHVI.  It defines the lower bound of the region
-        # in objective space that we want to improve upon.  It should be set such that
-        # it is weakly dominated by all points in the Pareto front.
-        # self._acquisition_function = self._acquisition_function(
-        self._acquisition_function = qExpectedHypervolumeImprovement(
-            model=self._models,
-            ref_point=self._ref_point,
-            partitioning=self._partitioning,
-            # Define an objective that specifies how the model outputs should be transformed
-            # to obtain the objective values.
-            # TODO: understand this transformation
-            objective=IdentityMCMultiOutputObjective,  # No transformation in this case.
-        )
+            # Use qEHVI for batch optimization.  For single-point optimization, use qEHVI.
+            # The ref_point is crucial for EHVI.  It defines the lower bound of the region
+            # in objective space that we want to improve upon.  It should be set such that
+            # it is weakly dominated by all points in the Pareto front.
+            self._acquisition_function = qNoisyExpectedHypervolumeImprovement(
+                model=self._models,
+                ref_point=self._ref_point,
+                partitioning=self._partitioning,
+                # Define an objective that specifies how the model outputs should be transformed
+                # to obtain the objective values.
+                # TODO: understand this transformation
+                objective=IdentityMCMultiOutputObjective,  # No transformation in this case.
+            )
+
 
     def _define_reference_point(self):
         # Define the reference point.  This is critical for EHVI.  Choose a point
@@ -190,29 +195,16 @@ class Mobo:
     def _calculate_pareto_front(self):
         self._partitioning = NondominatedPartitioning(ref_point=self._ref_point, Y=self._Y)
 
-    def optimize(self, q=1, acqf_n_opt_iter=200, restart_on_error=True):
+    def optimize(self, q=1, restart_on_error=True):
         self._initialize_models()
+        self._fit_models()
         self._define_reference_point()
+        self._define_acquisition_function()
+
         self._calculate_pareto_front()
         self._define_acquisition_function()
 
-        # TODO: if it fails at every re-start, enters into infinite loop - add breakin logic
-        # Fit the models – Include restarting logic
-        for mll in self._mlls:
-            try:
-                botorch.fit_gpytorch_mll(mll)
-            except Exception as e:
-                print(f"Error fitting model: {e}")
-                if restart_on_error:
-                    print("Restarting optimization loop from the beginning...")
-                    return optimize_problem(
-                        num_iterations=n_opt_iter,
-                        q=q,
-                        acqf_opt_iters=acqf_n_opt_iter,
-                        restart_on_error=restart_on_error,
-                    )
-                else:
-                    raise e  # re-raise if not restarting
+    def _optimize_acquisition_function(self, acq_func, bounds, n_opt_iter, acqf_n_opt_iter, restart_on_error=True):
 
         # Optimize the acquisition function to find the next point(s) to evaluate.
         try:
