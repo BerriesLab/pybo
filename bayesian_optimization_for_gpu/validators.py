@@ -1,12 +1,5 @@
-import abc
-
 import torch
-import botorch
-import gpytorch
-from typing import Callable, Optional, Union
-
-from bayesian_optimization_for_cpu.enums import Kernel
-from bayesian_optimization_for_gpu.enums import AcquisitionFunction
+from utils.types import AcquisitionFunctionType
 
 
 def validate_experiment_name(name: str):
@@ -16,12 +9,12 @@ def validate_experiment_name(name: str):
 
 def validate_X(X: torch.Tensor):
     if not isinstance(X, torch.Tensor):
-        raise ValueError("X must be a torch.tensor.")
+        raise ValueError("X must be a torch.Tensor.")
 
 
 def validate_Y(Y: torch.Tensor):
     if not isinstance(Y, torch.Tensor):
-        raise ValueError("Y must be a torch.tensor.")
+        raise ValueError("Y must be a torch.Tensor.")
 
 
 def validate_Yvar(Yvar: torch.Tensor):
@@ -29,13 +22,14 @@ def validate_Yvar(Yvar: torch.Tensor):
         raise ValueError("Yvar must be None or a torch.tensor.")
 
 
-def validate_bounds(bounds: list[tuple[float, float]]):
-    if not isinstance(bounds, list):
-        raise ValueError("bounds must be a list.")
-    for bound in bounds:
-        if not isinstance(bound, tuple):
-            raise ValueError("Each bound must be a tuple.")
-        if len(bound) != 2:
-            raise ValueError("Each bound must be a tuple of length 2.")
-        if bound[0] >= bound[1]:
-            raise ValueError("Each bound must be a tuple of (lower, upper) where lower < upper.")
+def validate_acquisition_function(acquisition_function: AcquisitionFunctionType):
+    if not isinstance(acquisition_function, AcquisitionFunctionType):
+        raise ValueError(
+            f"Invalid acquisition function. Supported values are {AcquisitionFunctionType.values()}."
+        )
+
+def validate_bounds(bounds: torch.Tensor):
+    if not isinstance(bounds, torch.Tensor):
+        raise ValueError("Bounds must be a torch.tensor.")
+    if bounds.shape[0] != 2:
+        raise ValueError("Bounds must be a 2 x D tensor.")
