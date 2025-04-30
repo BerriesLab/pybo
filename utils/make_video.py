@@ -1,5 +1,4 @@
 import os
-
 import cv2
 
 DEFAULT_OUTPUT_VIDEO_PATH = 'bo_2d_test02.mp4'  # Centralized filename for the output video

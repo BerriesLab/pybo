@@ -15,11 +15,11 @@ def _plot(self):
 
     # Handle bi-objective cases
     elif self._n_objectives == 2:
-        self._plot_from_RN_to_R2()
+        self.plot_multi_objective_from_RN_to_R2()
 
     # Handle tri-objective cases
     elif self._n_objectives == 3:
-        self._plot_from_RN_to_R3()
+        self.plot_multi_objective_from_RN_to_R3()
 
     else:
         raise ValueError("Cannot display pareto front for more than 3-objectives without PCA.")

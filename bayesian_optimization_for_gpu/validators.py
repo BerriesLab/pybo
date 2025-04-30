@@ -1,3 +1,5 @@
+import datetime
+
 import torch
 from utils.types import AcquisitionFunctionType
 
@@ -6,6 +8,9 @@ def validate_experiment_name(name: str):
     if not isinstance(name, str):
         raise ValueError("Experiment name must be a string.")
 
+def validate_datetime(date_time: datetime.datetime):
+    if not isinstance(date_time, datetime.datetime):
+        raise ValueError("Datetime must be a datetime.datetime object.")
 
 def validate_X(X: torch.Tensor):
     if not isinstance(X, torch.Tensor):

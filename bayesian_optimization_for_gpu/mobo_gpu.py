@@ -2,16 +2,17 @@ import datetime
 import pickle
 import warnings
 import time
+import os
+import glob
 
 import gpytorch.likelihoods
-import numpy as np
-import torch
 import botorch
 from botorch.exceptions import BadInitialCandidatesWarning
 from botorch.sampling import SobolQMCNormalSampler
 from botorch.sampling.normal import NormalMCSampler
 
 from botorch.test_functions.base import MultiObjectiveTestProblem
+from botorch.utils.multi_objective import is_non_dominated
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning, DominatedPartitioning
 from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
@@ -25,7 +26,8 @@ from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement,
     qLogExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from gpytorch.constraints import GreaterThan
-from validators import *
+from bayesian_optimization_for_gpu.validators import *
+from utils.io import *
 
 
 class Mobo:
@@ -43,11 +45,10 @@ class Mobo:
         self._X: torch.Tensor | None = None
         self._Y: torch.Tensor | None = None
         self._Yvar: torch.Tensor | None = None
-        self._n_acqf_opt_iter: int = 100
-        self._max_n_model_fit_restart: int = 20
-        self._max_n_acqf_opt_restarts: int = 20
-        self._batch_size: int = 4
-        self._MC_samples: int = 128
+        self._n_acqf_opt_iter: int = 500
+        self._max_n_acqf_opt_restarts: int = 50
+        self._batch_size: int = 16
+        self._MC_samples: int = 1024
 
         # Device Attributes, filled at object instantiation
         self._device = get_device()
@@ -58,18 +59,12 @@ class Mobo:
         self._sampler_instance: NormalMCSampler | None = None
         self._model: ModelListGP | None = None
         self._mlls: list[ExactMarginalLogLikelihood] = []
-        self._partitioning: NondominatedPartitioning = None
+        self._partitioning: NondominatedPartitioning | None = None
         self._pareto_front = None
         self._pareto_front_idx = None
         self._ref_point = None
         self._new_X = None  # The new X location
         self._hypervolume = []
-
-        # Plotting Attributes
-        # self._fig = None
-        # self._ax = None
-        # self._mu: list[np.ndarray] = [np.zeros(1) for _ in range(n_objectives)]
-        # self._sigma: list[np.ndarray] = [np.zeros(1) for _ in range(n_objectives)]
 
     """ Setters and getters """
 
@@ -80,6 +75,13 @@ class Mobo:
 
     def get_experiment_name(self):
         return self._experiment_name
+
+    def set_datetime(self, date_time: datetime.datetime):
+        validate_datetime(date_time)
+        self._datetime = date_time
+
+    def get_datetime(self):
+        return self._datetime
 
     def set_X(self, X: torch.Tensor):
         validate_X(X)
@@ -131,9 +133,15 @@ class Mobo:
     def set_f0(self, f0: MultiObjectiveTestProblem):
         self._f0 = f0
 
+    def get_pareto(self):
+        return self._pareto
+
     """ Optimizer """
 
-    def _initialize_model(self):
+    def _initialize_model(self, verbose=True):
+        if verbose:
+            print("Initializing model...", end="")
+
         models = []
         for i in range(self._Y.shape[-1]):
             models.append(
@@ -151,11 +159,23 @@ class Mobo:
         # Extract the Marginal Likelihood for each model
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
-    def _initialize_sampler(self):
+        if verbose:
+            print(" Done.")
+
+    def _initialize_sampler(self, verbose=True,):
+        if verbose:
+            print("Initializing sampler...", end="")
+
         if self._sampler_type.name == SamplerType.Sobol.name:
             self._sampler_instance = SobolQMCNormalSampler(torch.Size([self._MC_samples]))
 
-    def _initialize_acquisition_function(self):
+        if verbose:
+            print(" Done.")
+
+    def _initialize_acquisition_function(self, verbose=True,):
+        if verbose:
+            print("Initializing acquisition function...", end="")
+
         if self._acquisition_function_type.name == AcquisitionFunctionType.qEHVI.name:
             self._acquisition_function_instance = qExpectedHypervolumeImprovement(
                 model=self._model,
@@ -170,7 +190,7 @@ class Mobo:
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
-            )
+            ).to(device=self._device, dtype=self._dtype)
 
         elif self._acquisition_function_type.name == AcquisitionFunctionType.qNEHVI:
             if self._Yvar is None:
@@ -186,91 +206,127 @@ class Mobo:
         else:
             raise ValueError(f"Invalid acquisition function. Supported values are {AcquisitionFunctionType.values()}.")
 
-    def _initialize_partitioning(self):
+        if verbose:
+            print(" Done.")
+
+    def _initialize_partitioning(self, verbose=True,):
+        if verbose:
+            print("Initializing partitioning function...", end="")
+
         self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=self._Y)
 
-    def _define_reference_point(self):
+        if verbose:
+            print(" Done.")
+
+    def _define_reference_point(self, verbose=True,):
+        if verbose:
+            print("Defining reference point...", end="")
+
         self._ref_point = (torch.max(self._Y, dim=0).values + 1).to(device=self._device, dtype=self._dtype)
 
-    def _fit_model(self, restart_on_error=True):
+        if verbose:
+            print(" Done.")
+
+    def _fit_model(self, restart_on_error=True, verbose=True,):
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
+
+        if verbose:
+            print("Fitting model...", end="")
 
         restart_count = 0
         while True:
             try:
                 botorch.fit_gpytorch_mll(self._mll)
+
+                if verbose:
+                    print(" Done.")
                 break  # Exit the inner loop on success
             except Exception as e:
-                if restart_on_error and restart_count < self._max_n_model_fit_restart:
-                    print(f"Restarting fitting... (Attempt {restart_count + 1}/{self._max_n_model_fit_restart})")
+                if restart_on_error and restart_count < self._max_n_acqf_opt_restarts:
+                    print(f"Restarting fitting... (Attempt {restart_count + 1}/{self._max_n_acqf_opt_restarts})")
                     restart_count += 1
                 else:
                     raise e  # Raise if not restarting or max restarts reached
         return None
 
-    def _optimize_acquisition_function(self):
+    def _optimize_acquisition_function(self, verbose=True,):
+        if verbose:
+            print("Optimizing acquisition function...", end="")
+
         self._new_X, _ = optimize_acqf(
             acq_function=self._acquisition_function_instance,
             bounds=self._bounds,
             q=self._batch_size,
-            num_restarts=50,  # Number of times the optimizer is restarted if it fails to converge
+            num_restarts=self._max_n_acqf_opt_restarts,  # Number of times the optimizer is restarted if it fails to converge
             raw_samples=512,  # Number of samples for initialization
-            options={"batch_limit": 5, "maxiter": 200},
+            options={"batch_limit": 5, "maxiter": self._n_acqf_opt_iter},
             sequential=True,
         )
         self._new_X = unnormalize(self._new_X.detach(), self._bounds)
 
-    def _compute_hypervolume(self):
+        if verbose:
+            print(" Done.")
+
+    def _compute_hypervolume(self, verbose=True,):
+        if verbose:
+            print("Computing hypervolume...", end="")
+
         bd = DominatedPartitioning(ref_point=self._ref_point, Y=self._Y)
         volume = bd.compute_hypervolume().item()
         self._hypervolume.append(volume)
+
+        if verbose:
+            print(" Done.")
+
+    def _find_pareto(self, verbose=True):
+        if verbose:
+            print("Finding Pareto front...", end="")
+
+        self._pareto = is_non_dominated(self._Y)
+
+        if verbose:
+            print(" Done.")
 
     def optimize(self, verbose=True):
 
         warnings.filterwarnings("ignore", category=BadInitialCandidatesWarning)
         warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-        self._initialize_model()
-        # self._initialize_partitioning_function_for_non_dominated_hypervolume()
-        self._define_reference_point()
-        # self._compute_dominated_hypervolume()
-        self._initialize_partitioning()
-        self._initialize_sampler()
+        self._initialize_model(verbose=verbose)
+        self._define_reference_point(verbose=verbose)
+        self._initialize_partitioning(verbose=verbose)
+        self._initialize_sampler(verbose=verbose)
 
         t0 = time.monotonic()
-        self._fit_model()
-        self._initialize_acquisition_function()
-        self._optimize_acquisition_function()
-        self._compute_hypervolume()
-
+        self._fit_model(verbose=verbose)
+        self._initialize_acquisition_function(verbose=verbose)
+        self._optimize_acquisition_function(verbose=verbose)
+        self._find_pareto(verbose=verbose)
+        self._compute_hypervolume(verbose=verbose)
         t1 = time.monotonic()
 
         if verbose:
-            print(f"Acq. Function: {self._acquisition_function_type.name}\n"
-                  f"Hypervolume: {self._hypervolume[-1]:>4.2f}\n"
-                  f"New X: {self._new_X}\n"
-                  f"Calculation Time = {t1 - t0:>4.2f}.", end="",)
-        else:
-            print(".", end="")
-
-    # def _initialize_partitioning_function_for_non_dominated_hypervolume(self):
-    #     # partition non-dominated space into disjoint rectangles
-    #     with torch.no_grad():
-    #         pred = self._model.posterior(normalize(self._X, self._bounds)).mean
-    #     self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=pred)
-
-
-
-
+            print(f"Calculation Time = {t1 - t0:>4.2f}\n"
+                  f"New X: {self._new_X}\n\n")
 
     """ I/O """
-
+    
     def to_file(self):
-        pickle.dump(self, open(f"./models/{self._experiment_name}.dat", "wb"))
+        filepath = compose_model_filename()
+        with open(filepath, "wb") as f:
+            pickle.dump(self, f)
+        return filepath
 
     @classmethod
-    def from_file(cls, filepath: str):
-        """Load a MOBO instance from a file."""
+    def from_file(cls, filepath: str = None):
+        """Load a MOBO instance from a file.
+        If no filepath provided, loads the most recent .dat file from current directory."""
+        if filepath is None:
+            files = glob.glob('*.dat')
+            if not files:
+                raise FileNotFoundError("No .dat files found in current directory")
+            filepath = max(files, key=os.path.getctime)
+
         with open(filepath, 'rb') as f:
             return pickle.load(f)
