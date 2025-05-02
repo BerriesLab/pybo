@@ -1,10 +1,6 @@
-import datetime
 import pickle
 import warnings
 import time
-import os
-import glob
-
 import gpytorch.likelihoods
 import botorch
 from botorch.exceptions import BadInitialCandidatesWarning
@@ -17,7 +13,7 @@ from botorch.utils.multi_objective.box_decompositions import FastNondominatedPar
 from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
 from utils.cuda import get_device, get_supported_dtype
-from utils.types import AcquisitionFunctionType, SamplerType
+from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType, TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
@@ -38,17 +34,19 @@ class Mobo:
 
         self._experiment_name = experiment_name
         self._datetime = datetime.datetime.now()
-        self._bounds: torch.Tensor | None = None
+        self._bounds: torch.Tensor | None = None  # of shape "2 x D"
         self._acquisition_function_type: AcquisitionFunctionType | None = None
         self._sampler_type = None
         self._f0: MultiObjectiveTestProblem | None = None
         self._X: torch.Tensor | None = None
         self._Y: torch.Tensor | None = None
         self._Yvar: torch.Tensor | None = None
+
         self._n_acqf_opt_iter: int = 500
-        self._max_n_acqf_opt_restarts: int = 50
-        self._batch_size: int = 16
-        self._MC_samples: int = 1024
+        self._max_n_acqf_opt_restarts: int = 10
+        self._batch_size: int = 1  # Number of candidates to be generated in parallel in each optimization step
+        self._MC_samples: int = 1024  # Number of samples for initialization and acquisition function optimization
+        self._raw_samples: int = 256  # Number of samples for acquisition function optimization
 
         # Device Attributes, filled at object instantiation
         self._device = get_device()
@@ -61,7 +59,7 @@ class Mobo:
         self._mlls: list[ExactMarginalLogLikelihood] = []
         self._partitioning: NondominatedPartitioning | None = None
         self._pareto_front = None
-        self._pareto_front_idx = None
+        self._optimization_problem_type = None
         self._ref_point = None
         self._new_X = None  # The new X location
         self._hypervolume = []
@@ -94,7 +92,7 @@ class Mobo:
         validate_Y(Y)
         self._Y = Y.to(self._device, self._dtype)
 
-    def get_Y(self):
+    def get_Y(self) -> torch.Tensor | None:
         return self._Y
 
     def set_Yvar(self, Yvar: torch.Tensor | None = None):
@@ -114,11 +112,20 @@ class Mobo:
     def get_bounds(self):
         return self._bounds
 
+    def set_device(self, device: TorchDeviceType):
+        self._device = torch.device(device.value)
+
     def set_acquisition_function(self, acquisition_function: AcquisitionFunctionType):
         self._acquisition_function_type = acquisition_function
 
     def get_acquisition_function(self):
         return self._acquisition_function_type
+
+    def set_optimization_problem_type(self, optimization_problem_type: OptimizationProblemType):
+        self._optimization_problem_type = optimization_problem_type
+
+    def get_optimization_problem_type(self):
+        return self._optimization_problem_type
 
     def set_sampler(self, sampler):
         self._sampler_type = sampler
@@ -130,8 +137,23 @@ class Mobo:
     def get_batch_size(self):
         return self._batch_size
 
+    def set_MC_samples(self, MC_samples:int):
+        self._MC_samples = MC_samples
+
+    def get_MC_samples(self):
+        return self._MC_samples
+
+    def set_raw_samples(self, raw_samples:int):
+        self._raw_samples = raw_samples
+
+    def get_raw_samples(self):
+        return self._raw_samples
+
     def set_f0(self, f0: MultiObjectiveTestProblem):
         self._f0 = f0
+
+    def get_f0(self):
+        return self._f0
 
     def get_pareto(self):
         return self._pareto
@@ -190,7 +212,7 @@ class Mobo:
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
-            ).to(device=self._device, dtype=self._dtype)
+            )
 
         elif self._acquisition_function_type.name == AcquisitionFunctionType.qNEHVI:
             if self._Yvar is None:
@@ -222,7 +244,10 @@ class Mobo:
         if verbose:
             print("Defining reference point...", end="")
 
-        self._ref_point = (torch.max(self._Y, dim=0).values + 1).to(device=self._device, dtype=self._dtype)
+        if self._optimization_problem_type == OptimizationProblemType.Maximization:
+            self._ref_point = (torch.max(self._Y, dim=0).values - 1).to(device=self._device, dtype=self._dtype)
+        elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+            self._ref_point = (torch.min(self._Y, dim=0).values + 1).to(device=self._device, dtype=self._dtype)
 
         if verbose:
             print(" Done.")
@@ -258,9 +283,9 @@ class Mobo:
             acq_function=self._acquisition_function_instance,
             bounds=self._bounds,
             q=self._batch_size,
-            num_restarts=self._max_n_acqf_opt_restarts,  # Number of times the optimizer is restarted if it fails to converge
-            raw_samples=512,  # Number of samples for initialization
-            options={"batch_limit": 5, "maxiter": self._n_acqf_opt_iter},
+            num_restarts=self._max_n_acqf_opt_restarts,
+            raw_samples=self._raw_samples,  # n x q x dim
+            options={"maxiter": self._n_acqf_opt_iter, "disp": True},
             sequential=True,
         )
         self._new_X = unnormalize(self._new_X.detach(), self._bounds)
@@ -283,7 +308,10 @@ class Mobo:
         if verbose:
             print("Finding Pareto front...", end="")
 
-        self._pareto = is_non_dominated(self._Y)
+        if self._optimization_problem_type == OptimizationProblemType.Maximization:
+            self._pareto = is_non_dominated(self._Y, maximize=True)
+        elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+            self._pareto = is_non_dominated(self._Y, maximize=False)
 
         if verbose:
             print(" Done.")
@@ -314,8 +342,8 @@ class Mobo:
     
     def to_file(self):
         filepath = compose_model_filename()
-        with open(filepath, "wb") as f:
-            pickle.dump(self, f)
+        with open(filepath, "wb") as file:
+            pickle.dump(self, file)
         return filepath
 
     @classmethod

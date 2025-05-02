@@ -22,3 +22,14 @@ class Kernel(Enum):
 
 class SamplerType(Enum):
     Sobol = "Sobol"
+
+
+class OptimizationProblemType(Enum):
+    Minimization = "min"
+    Maximization = "max"
+
+
+class TorchDeviceType(Enum):
+    CPU = "cpu"
+    GPU = "cuda"
+    MPS = "mps"

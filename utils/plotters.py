@@ -1,8 +1,13 @@
 import matplotlib.pyplot as plt
-import numpy as np
+from torch.quasirandom import SobolEngine
 
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
 from utils.io import *
+
+
+pareto_kwargs = {'color': "tab:orange", 'marker': "x", 's': 100}
+observation_kwargs = {'color': "tab:blue", 'marker': "o", 's': 70, "alpha":0.8, "edgecolors": "black"}
+ground_truth_kwargs = {'color': "black", 'marker': "o", 's': 10, "alpha": 0.1}
 
 
 # def _plot(self):
@@ -125,7 +130,7 @@ from utils.io import *
 #                               zorder=3)
 
 
-def plot_multi_objective_from_RN_to_R2(mobo: Mobo, directory, show=True):
+def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, whre n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure
@@ -135,6 +140,20 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, directory, show=True):
     axes.set_ylabel('$f_{02}$')
     axes.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^2$')
 
+    # Plot ground truth if requested
+    if ground_truth:
+        if not mobo.get_f0():
+            raise ValueError("Ground truth not available.")
+
+        # Let's draw a number of random samples to plot the ground truth
+        dims = mobo.get_f0().num_objectives
+        sobol = SobolEngine(dimension=dims, scramble=True)
+        x = sobol.draw(n=int(1e4))
+        # Evaluate the objective function
+        y = mobo.get_f0()(x)
+        # Plot points in 3D
+        axes.scatter(y[:, 0], y[:, 1], marker="o", s=10, color='black', alpha=0.1)
+
     # Bring inputs to CPU
     Y = mobo.get_Y().cpu().numpy()
     pareto = mobo.get_pareto().cpu().numpy()
@@ -142,11 +161,11 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, directory, show=True):
     # Plot observations except Pareto front
     mask = np.ones(len(Y), dtype=bool)
     mask[pareto] = False
-    axes.scatter(Y[mask, 0], Y[mask, 1], marker="o", s=100, color='red', label='Observations')
+    axes.scatter(Y[mask, 0], Y[mask, 1], **observation_kwargs, label='Observations')
 
     # Plot Pareto Front
     mask = np.invert(mask)
-    axes.scatter(Y[mask, 0], Y[mask, 1], marker="x", s=100, color='olive', label='Pareto Front')
+    axes.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs, label='Pareto Front')
 
     # Add legend
     plt.legend()
@@ -159,16 +178,51 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, directory, show=True):
     plt.close(fig)
 
 
-def plot_multi_objective_from_RN_to_R3(mobo: Mobo, directory, show=True):
+def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 3' objective matrix, where n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
-    # Initialize figure
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlabel('$f_{01}$')
-    ax.set_ylabel('$f_{02}$')
-    ax.set_zlabel('$f_{03}$')
-    ax.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^3$')
+    # Initialize figure with subplots
+    fig = plt.figure(figsize=(24, 8))
+
+    # 3D plot
+    ax1 = fig.add_subplot(141, projection='3d')
+    ax1.set_xlabel('$f_{01}$')
+    ax1.set_ylabel('$f_{02}$')
+    ax1.set_zlabel('$f_{03}$')
+    ax1.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^3$')
+
+    # 2D projections
+    ax2 = fig.add_subplot(142)
+    ax2.set_xlabel('$f_{01}$')
+    ax2.set_ylabel('$f_{02}$')
+    ax2.set_title('f1 vs f2 Projection')
+
+    ax3 = fig.add_subplot(143)
+    ax3.set_xlabel('$f_{02}$')
+    ax3.set_ylabel('$f_{03}$')
+    ax3.set_title('f2 vs f3 Projection')
+
+    ax4 = fig.add_subplot(144)
+    ax4.set_xlabel('$f_{01}$')
+    ax4.set_ylabel('$f_{03}$')
+    ax4.set_title('f1 vs f3 Projection')
+
+    # Plot ground truth if requested
+    if ground_truth:
+        if not mobo.get_f0():
+            raise ValueError("Ground truth not available.")
+
+        # Let's draw a number of random samples to plot the ground truth
+        dims = mobo.get_f0().num_objectives
+        sobol = SobolEngine(dimension=dims, scramble=True)
+        x = sobol.draw(n=int(1e4))
+        # Evaluate the objective function
+        y = mobo.get_f0()(x)
+        # Plot points in 3D
+        ax1.scatter(y[:, 0], y[:, 1], y[:, 2], **ground_truth_kwargs)
+        ax2.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
+        ax3.scatter(y[:, 1], y[:, 2], **ground_truth_kwargs)
+        ax4.scatter(y[:, 0], y[:, 2], **ground_truth_kwargs)
 
     # Bring inputs to CPU
     Y = mobo.get_Y().cpu().numpy()
@@ -177,15 +231,22 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, directory, show=True):
     # Plot observations except Pareto front
     mask = np.ones(len(Y), dtype=bool)
     mask[pareto] = False
-    ax.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], marker="o", s=100, color='red', label='Observations')
+    ax1.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **observation_kwargs, label='Observations')
+    ax2.scatter(Y[mask, 0], Y[mask, 1], **observation_kwargs)
+    ax3.scatter(Y[mask, 1], Y[mask, 2], **observation_kwargs)
+    ax4.scatter(Y[mask, 0], Y[mask, 2], **observation_kwargs)
 
     # Plot Pareto Front
     mask = np.invert(mask)
-    ax.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], marker="x", s=100, color='olive', label='Pareto Front')
+    ax1.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **pareto_kwargs, label='Pareto Front')
+    ax2.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs)
+    ax3.scatter(Y[mask, 1], Y[mask, 2], **pareto_kwargs)
+    ax4.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs)
 
-    # Add legend
-    plt.legend()
+    # Add legend to main 3D plot
+    ax1.legend()
 
+    plt.tight_layout()
     filepath = compose_figure_filename()
     fig.savefig(filepath + ".png", dpi=300, bbox_inches='tight')
 
