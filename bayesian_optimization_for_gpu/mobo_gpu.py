@@ -112,8 +112,14 @@ class Mobo:
     def get_bounds(self):
         return self._bounds
 
+    def get_device(self):
+        return self._device
+
     def set_device(self, device: TorchDeviceType):
         self._device = torch.device(device.value)
+
+    def get_model(self):
+        return self._model
 
     def set_acquisition_function(self, acquisition_function: AcquisitionFunctionType):
         self._acquisition_function_type = acquisition_function

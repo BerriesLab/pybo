@@ -1,5 +1,4 @@
 from torch.quasirandom import SobolEngine
-
 from bayesian_optimization_for_gpu.latin_hypercube_sampling import LatinHypercubeSampling
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
 from utils.cuda import *
@@ -8,14 +7,15 @@ from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProble
 from utils.plotters import plot_multi_objective_from_RN_to_R2
 from botorch.test_functions.multi_objective import BraninCurrin
 
-
 experiment_name = "test_mobo_from_R3_to_R2"
 main_directory = f"../data"
+initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
 """ Define the problem and bounds"""
 n_objectives = 2
+n_dimensions = 2
 problem = BraninCurrin(negate=True)
 bounds = problem.bounds
 
@@ -27,12 +27,16 @@ monte_carlo_samples = 128
 raw_samples = 256
 
 """ Generate initial dataset """
-# lhs = LatinHypercubeSampling()
-# lhs.set_n_samples(n_samples)
-# lhs.set_bounds(bounds)
-# X = lhs.sample_domain()
-sobol = SobolEngine(dimension=2, scramble=True)
-X = sobol.draw(n=n_init_samples)
+if initial_sampling_type == SamplerType.LatinHypercube:
+    lhs = LatinHypercubeSampling()
+    lhs.set_n_samples(n_init_samples)
+    lhs.set_bounds(bounds.numpy().T.tolist())
+    X = torch.tensor(lhs.sample_domain())
+elif initial_sampling_type == SamplerType.Sobol:
+    sobol = SobolEngine(dimension=n_dimensions, scramble=True)
+    X = sobol.draw(n=n_init_samples)
+else:
+    raise ValueError("Invalid initial sampling type.")
 save_dataset_to_csv(X)
 
 """ Simulate experiments """
@@ -73,7 +77,7 @@ for i in range(n_iterations):
 
     mobo.optimize()
     mobo.to_file()
-    plot_multi_objective_from_RN_to_R2(mobo, ground_truth=True, show=False)
+    plot_multi_objective_from_RN_to_R2(mobo, ground_truth=True, posterior=True, show=False)
 
     # Evaluate the objective function at the new point(s).
     new_X = mobo.get_new_X().cpu().numpy()

@@ -22,6 +22,7 @@ class Kernel(Enum):
 
 class SamplerType(Enum):
     Sobol = "Sobol"
+    LatinHypercube = "Latin Hypercube"
 
 
 class OptimizationProblemType(Enum):

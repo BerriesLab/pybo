@@ -1,13 +1,15 @@
 import matplotlib.pyplot as plt
+from botorch.utils.multi_objective import is_non_dominated
 from torch.quasirandom import SobolEngine
 
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
 from utils.io import *
-
+from utils.types import OptimizationProblemType
 
 pareto_kwargs = {'color': "tab:orange", 'marker': "x", 's': 100}
 observation_kwargs = {'color': "tab:blue", 'marker': "o", 's': 70, "alpha":0.8, "edgecolors": "black"}
 ground_truth_kwargs = {'color': "black", 'marker': "o", 's': 10, "alpha": 0.1}
+posterior_kwargs = {'color': "tab:green", 'marker': "o", 's': 70, "alpha": 0.5, "edgecolors": "black"}
 
 
 # def _plot(self):
@@ -130,7 +132,8 @@ ground_truth_kwargs = {'color': "black", 'marker': "o", 's': 10, "alpha": 0.1}
 #                               zorder=3)
 
 
-def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, show=True):
+# TODO: the pareto front and posterior pareto should be a line in a 2d space
+def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior=False, show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, whre n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure
@@ -152,7 +155,28 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, show=True
         # Evaluate the objective function
         y = mobo.get_f0()(x)
         # Plot points in 3D
-        axes.scatter(y[:, 0], y[:, 1], marker="o", s=10, color='black', alpha=0.1)
+        axes.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
+
+    if posterior:
+        # Extract 1000 random samples
+        sobol = SobolEngine(dimension=mobo.get_X().shape[1], scramble=True)
+        x = sobol.draw(1000)  # 1000 candidates in [0, 1]^d
+        lower_bounds = mobo.get_bounds()[0].cpu()
+        upper_bounds = mobo.get_bounds()[1].cpu()
+        x = lower_bounds + (upper_bounds - lower_bounds) * x
+        x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
+        # Calculate posterior samples
+        y = mobo.get_model().posterior(x).sample()
+        # Calculate pareto front
+        if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
+            pareto_mask = is_non_dominated(Y=y, maximize=True)
+        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
+            pareto_mask = is_non_dominated(Y=y, maximize=False)
+        else:
+            raise ValueError("Unknown optimization problem type.")
+        pareto = y[pareto_mask]
+        pareto = pareto.cpu().numpy()
+        axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
 
     # Bring inputs to CPU
     Y = mobo.get_Y().cpu().numpy()
@@ -165,7 +189,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, show=True
 
     # Plot Pareto Front
     mask = np.invert(mask)
-    axes.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs, label='Pareto Front')
+    axes.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs, label='Observed Pareto Front')
 
     # Add legend
     plt.legend()
@@ -178,7 +202,8 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, show=True
     plt.close(fig)
 
 
-def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, show=True):
+# TODO: the pareto front should be a surface in a 3d Space
+def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior=False, show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 3' objective matrix, where n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure with subplots
@@ -223,6 +248,31 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, show=True
         ax2.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
         ax3.scatter(y[:, 1], y[:, 2], **ground_truth_kwargs)
         ax4.scatter(y[:, 0], y[:, 2], **ground_truth_kwargs)
+
+    if posterior:
+        # Extract 1000 random samples
+        sobol = SobolEngine(dimension=mobo.get_X().shape[1], scramble=True)
+        x = sobol.draw(1000)  # 1000 candidates in [0, 1]^d
+        lower_bounds = mobo.get_bounds()[0].cpu()
+        upper_bounds = mobo.get_bounds()[1].cpu()
+        x = lower_bounds + (upper_bounds - lower_bounds) * x
+        x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
+        # Calculate posterior samples
+        y = mobo.get_model().posterior(x).sample()
+        # Calculate pareto front
+        if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
+            pareto_mask = is_non_dominated(Y=y, maximize=True)
+        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
+            pareto_mask = is_non_dominated(Y=y, maximize=False)
+        else:
+            raise ValueError("Unknown optimization problem type.")
+        pareto = y[pareto_mask]
+        pareto = pareto.cpu().numpy()
+        ax1.scatter(pareto[:, 0], pareto[:, 1], pareto[:, 2], **posterior_kwargs, label="Posterior Pareto Front")
+        ax2.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs)
+        ax3.scatter(pareto[:, 1], pareto[:, 2], **posterior_kwargs)
+        ax4.scatter(pareto[:, 0], pareto[:, 2], **posterior_kwargs)
+
 
     # Bring inputs to CPU
     Y = mobo.get_Y().cpu().numpy()
