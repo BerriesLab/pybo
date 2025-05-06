@@ -56,13 +56,13 @@ for i in range(n_iterations):
         # Instantiate a new MOBO
         mobo = Mobo(experiment_name=experiment_name)
         mobo.set_X(X)
-        mobo.set_Y(Y)
-        mobo.set_Yvar(Yvar)
+        mobo.set_Yobj(Y)
+        mobo.set_Yobj_var(Yvar)
         mobo.set_bounds(bounds)
         mobo.set_f0(problem)
         mobo.set_acquisition_function(AcquisitionFunctionType.qLogEHVI)
         mobo.set_optimization_problem_type(OptimizationProblemType.Maximization)
-        mobo.set_sampler(SamplerType.Sobol)
+        mobo.set_sampler_type(SamplerType.Sobol)
         mobo.set_batch_size(batch_size)
         mobo.set_MC_samples(monte_carlo_samples)
         mobo.set_raw_samples(raw_samples)
@@ -72,8 +72,8 @@ for i in range(n_iterations):
         mobo = Mobo.from_file()
         XY = load_dataset_from_csv()
         mobo.set_X(torch.tensor(XY[:, 0:-n_objectives]))
-        mobo.set_Y(torch.tensor(XY[:, -n_objectives:]))
-        mobo.set_Yvar(Yvar)
+        mobo.set_Yobj(torch.tensor(XY[:, -n_objectives:]))
+        mobo.set_Yobj_var(Yvar)
 
 
     mobo.optimize()

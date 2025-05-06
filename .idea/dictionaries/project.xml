@@ -2,7 +2,15 @@
   <dictionary name="project">
     <words>
       <w>acqf</w>
+      <w>edgecolors</w>
+      <w>facecolors</w>
+      <w>linestyle</w>
+      <w>mathbb</w>
+      <w>maxiter</w>
       <w>mlls</w>
+      <w>nehvi</w>
+      <w>ycon</w>
+      <w>yobj</w>
       <w>yvar</w>
     </words>
   </dictionary>

@@ -1,6 +1,8 @@
 import pickle
 import warnings
 import time
+from collections.abc import Callable
+
 import gpytorch.likelihoods
 import botorch
 from botorch.exceptions import BadInitialCandidatesWarning
@@ -13,7 +15,7 @@ from botorch.utils.multi_objective.box_decompositions import FastNondominatedPar
 from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
 from utils.cuda import get_device, get_supported_dtype
-from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType, TorchDeviceType
+from utils.types import SamplerType, OptimizationProblemType, TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
@@ -28,19 +30,30 @@ from utils.io import *
 
 class Mobo:
 
-    def __init__(self, experiment_name: str):
+    def __init__(
+            self,
+            experiment_name: str,
+            n_objectives: int,
+            n_constraints: int = 0
+    ):
 
         validate_experiment_name(experiment_name)
+        validate_n_objectives(n_objectives)
+        validate_n_constraints(n_constraints)
 
         self._experiment_name = experiment_name
+        self._n_objectives = n_objectives
+        self._n_constraints= n_constraints
         self._datetime = datetime.datetime.now()
         self._bounds: torch.Tensor | None = None  # of shape "2 x D"
         self._acquisition_function_type: AcquisitionFunctionType | None = None
         self._sampler_type = None
         self._f0: MultiObjectiveTestProblem | None = None
         self._X: torch.Tensor | None = None
-        self._Y: torch.Tensor | None = None
-        self._Yvar: torch.Tensor | None = None
+        self._Yobj: torch.Tensor | None = None
+        self._Ycon: torch.Tensor | None = None
+        self._Yobj_var: torch.Tensor | None = None
+        self._Ycon_var: torch.Tensor | None = None
 
         self._n_acqf_opt_iter: int = 500
         self._max_n_acqf_opt_restarts: int = 10
@@ -55,11 +68,13 @@ class Mobo:
         # Optimization State Attributes
         self._acquisition_function_instance: botorch.acquisition.AcquisitionFunction | None = None
         self._sampler_instance: NormalMCSampler | None = None
-        self._model: ModelListGP | None = None
+        self._model_obj: ModelListGP | None = None
+        self._model_con: ModelListGP | None = None
         self._mlls: list[ExactMarginalLogLikelihood] = []
         self._partitioning: NondominatedPartitioning | None = None
         self._pareto_front = None
         self._optimization_problem_type = None
+        self._constraints = None
         self._ref_point = None
         self._new_X = None  # The new X location
         self._hypervolume = []
@@ -73,6 +88,20 @@ class Mobo:
 
     def get_experiment_name(self):
         return self._experiment_name
+
+    def set_n_objectives(self, n_objectives: int):
+        validate_n_objectives(n_objectives)
+        self._n_objectives = n_objectives
+
+    def get_n_objectives(self):
+        return self._n_objectives
+
+    def set_n_constraints(self, n_constraints: int):
+        validate_n_constraints(n_constraints)
+        self._n_constraints = n_constraints
+
+    def get_n_constraints(self):
+        return self._n_constraints
 
     def set_datetime(self, date_time: datetime.datetime):
         validate_datetime(date_time)
@@ -88,19 +117,33 @@ class Mobo:
     def get_X(self):
         return self._X
 
-    def set_Y(self, Y: torch.Tensor):
-        validate_Y(Y)
-        self._Y = Y.to(self._device, self._dtype)
+    def set_Yobj(self, Yobj: torch.Tensor):
+        validate_Y(Yobj)
+        self._Yobj = Yobj.to(self._device, self._dtype)
 
-    def get_Y(self) -> torch.Tensor | None:
-        return self._Y
+    def get_Yobj(self) -> torch.Tensor | None:
+        return self._Yobj
 
-    def set_Yvar(self, Yvar: torch.Tensor | None = None):
-        validate_Yvar(Yvar)
-        self._Yvar = Yvar.to(self._device, self._dtype) if Yvar is not None else None
+    def set_Yobj_var(self, Yobj_var: torch.Tensor | None = None):
+        validate_Y_var(Yobj_var)
+        self._Yobj_var = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
 
-    def get_Yvar(self):
-        return self._Yvar
+    def get_Yobj_var(self):
+        return self._Yobj_var
+
+    def set_Ycon(self, Ycon: torch.Tensor):
+        validate_Y(Ycon)
+        self._Ycon = Ycon.to(self._device, self._dtype)
+
+    def get_Ycon(self):
+        return self._Ycon
+
+    def set_Ycon_var(self, Ycon_var: torch.Tensor | None = None):
+        validate_Y_var(Ycon_var)
+        self._Ycon_var = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
+
+    def get_Ycon_var(self):
+        return self._Ycon_var
 
     def get_new_X(self):
         return self._new_X
@@ -119,10 +162,10 @@ class Mobo:
         self._device = torch.device(device.value)
 
     def get_model(self):
-        return self._model
+        return self._model_obj
 
-    def set_acquisition_function(self, acquisition_function: AcquisitionFunctionType):
-        self._acquisition_function_type = acquisition_function
+    def set_acquisition_function(self, acquisition_function_type: AcquisitionFunctionType):
+        self._acquisition_function_type = acquisition_function_type
 
     def get_acquisition_function(self):
         return self._acquisition_function_type
@@ -133,7 +176,7 @@ class Mobo:
     def get_optimization_problem_type(self):
         return self._optimization_problem_type
 
-    def set_sampler(self, sampler):
+    def set_sampler_type(self, sampler):
         self._sampler_type = sampler
 
     def set_batch_size(self, batch_size:int):
@@ -164,27 +207,58 @@ class Mobo:
     def get_pareto(self):
         return self._pareto
 
+    def set_constraints(self, constraints: list[Callable]):
+        self._constraints = constraints
+
+    def get_constraints(self):
+        return self._constraints
+
+    def add_constraint(self, constraint: Callable):
+        if self._constraints is None:
+            self._constraints = []
+        self._constraints.append(constraint)
+
     """ Optimizer """
 
     def _initialize_model(self, verbose=True):
+        """ Build separate models for the objective and constraint functions."""
+
         if verbose:
             print("Initializing model...", end="")
 
-        models = []
-        for i in range(self._Y.shape[-1]):
-            models.append(
+        models_obj = []
+        for i in range(0, self._Yobj.shape[-1]):
+            models_obj.append(
                 SingleTaskGP(
                     self._X,
-                    self._Y[..., i: i + 1],
-                    self._Yvar[..., i: i + 1] if self._Yvar is not None else None,
+                    self._Yobj[..., i: i + 1],
+                    self._Yobj_var[..., i: i + 1] if self._Yobj_var is not None else None,
+                    input_transform=Normalize(d=self._X.shape[-1]),
+                    outcome_transform=Standardize(m=1),
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
+                ).to(device=self._device, dtype=self._dtype)
+            )
+
+        models_con = []
+        for i in range(0, self._Ycon.shape[-1]):
+            models_con.append(
+                SingleTaskGP(
+                    self._X,
+                    self._Ycon[..., i: i + 1],
+                    self._Ycon_var[..., i: i + 1] if self._Ycon_var is not None else None,
                     input_transform=Normalize(d=self._X.shape[-1]),
                     outcome_transform=Standardize(m=1),
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6))
                 ).to(device=self._device, dtype=self._dtype)
             )
+
         # Aggregate the models into a ModelListGP
-        self._model = ModelListGP(*models)
+        self._model_obj = ModelListGP(*models_obj)
+        self._model_con = ModelListGP(*models_con)
+        self._model = ModelListGP(*(models_obj + models_con))
         # Extract the Marginal Likelihood for each model
+        self._mll_obj = SumMarginalLogLikelihood(self._model_obj.likelihood, self._model_obj)
+        self._mll_con = SumMarginalLogLikelihood(self._model_con.likelihood, self._model_con)
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
         if verbose:
@@ -206,25 +280,27 @@ class Mobo:
 
         if self._acquisition_function_type.name == AcquisitionFunctionType.qEHVI.name:
             self._acquisition_function_instance = qExpectedHypervolumeImprovement(
-                model=self._model,
+                model=self._model_obj,
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
+                constraints=self._constraints
             )
 
         elif self._acquisition_function_type.name == AcquisitionFunctionType.qLogEHVI.name:
             self._acquisition_function_instance = qLogExpectedHypervolumeImprovement(
-                model=self._model,
+                model=self._model_obj,
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
+                constraints=self._constraints,
             )
 
         elif self._acquisition_function_type.name == AcquisitionFunctionType.qNEHVI:
-            if self._Yvar is None:
+            if self._Yobj_var is None:
                 raise ValueError("qNEHVI requires the observation noise variance (Yvar).")
-            self._acquisition_function_instance(
-                model=self._model,
+            self._acquisition_function_instance = qNoisyExpectedHypervolumeImprovement(
+                model=self._model_obj,
                 ref_point=self._ref_point,
                 X_baseline=normalize(self._X, self._bounds),
                 prune_baseline=True,
@@ -241,25 +317,27 @@ class Mobo:
         if verbose:
             print("Initializing partitioning function...", end="")
 
-        self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=self._Y)
+        self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
 
         if verbose:
             print(" Done.")
 
-    def _define_reference_point(self, verbose=True,):
+    def _define_reference_point(self, verbose=True, buffer=0.1):
         if verbose:
             print("Defining reference point...", end="")
 
         if self._optimization_problem_type == OptimizationProblemType.Maximization:
-            self._ref_point = (torch.max(self._Y, dim=0).values - 1).to(device=self._device, dtype=self._dtype)
+            worst = torch.min(self._Yobj, dim=0).values
+            self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device)
         elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-            self._ref_point = (torch.min(self._Y, dim=0).values + 1).to(device=self._device, dtype=self._dtype)
+            worst = torch.max(self._Yobj, dim=0).values
+            self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device)
 
         if verbose:
             print(" Done.")
 
     def _fit_model(self, restart_on_error=True, verbose=True,):
-        if not isinstance(self._model, ModelListGP):
+        if not isinstance(self._model_obj, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
         if verbose:
@@ -303,7 +381,7 @@ class Mobo:
         if verbose:
             print("Computing hypervolume...", end="")
 
-        bd = DominatedPartitioning(ref_point=self._ref_point, Y=self._Y)
+        bd = DominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
         volume = bd.compute_hypervolume().item()
         self._hypervolume.append(volume)
 
@@ -315,9 +393,9 @@ class Mobo:
             print("Finding Pareto front...", end="")
 
         if self._optimization_problem_type == OptimizationProblemType.Maximization:
-            self._pareto = is_non_dominated(self._Y, maximize=True)
+            self._pareto = is_non_dominated(self._Yobj, maximize=True)
         elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-            self._pareto = is_non_dominated(self._Y, maximize=False)
+            self._pareto = is_non_dominated(self._Yobj, maximize=False)
 
         if verbose:
             print(" Done.")
@@ -355,7 +433,7 @@ class Mobo:
     @classmethod
     def from_file(cls, filepath: str = None):
         """Load a MOBO instance from a file.
-        If no filepath provided, loads the most recent .dat file from current directory."""
+        If no filepath provided, loads the most recent .dat file from the current directory."""
         if filepath is None:
             files = glob.glob('*.dat')
             if not files:

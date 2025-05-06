@@ -1,15 +1,23 @@
 import matplotlib.pyplot as plt
 from botorch.utils.multi_objective import is_non_dominated
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from scipy.spatial import ConvexHull
 from torch.quasirandom import SobolEngine
-
+from botorch.utils.transforms import unnormalize
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
+from bayesian_optimization_for_gpu.samplers import draw_samples
 from utils.io import *
-from utils.types import OptimizationProblemType
+from utils.types import OptimizationProblemType, SamplerType
 
+# Plot properties
 pareto_kwargs = {'color': "tab:orange", 'marker': "x", 's': 100}
+pareto_line_kwargs = {'color': pareto_kwargs['color'], 'linestyle': '-', 'linewidth': 2}
+pareto_surface_kwargs = {'alpha':0.4, 'edgecolors':"black", 'linewidth':0.1}
 observation_kwargs = {'color': "tab:blue", 'marker': "o", 's': 70, "alpha":0.8, "edgecolors": "black"}
 ground_truth_kwargs = {'color': "black", 'marker': "o", 's': 10, "alpha": 0.1}
-posterior_kwargs = {'color': "tab:green", 'marker': "o", 's': 70, "alpha": 0.5, "edgecolors": "black"}
+posterior_kwargs = {'color': "tab:green", 'marker': "o", 's': 20, "alpha": 0.5, "edgecolors": "black"}
+posterior_line_kwargs = {'color':posterior_kwargs['color'], 'linestyle':'-', 'linewidth':2}
+posterior_surface_kwargs = {'alpha': 0.4, 'edgecolors': 'black', 'linewidths':0.1}
 
 
 # def _plot(self):
@@ -131,14 +139,12 @@ posterior_kwargs = {'color': "tab:green", 'marker': "o", 's': 70, "alpha": 0.5, 
 #                               alpha=0.2, cmap='coolwarm',
 #                               zorder=3)
 
-
-# TODO: the pareto front and posterior pareto should be a line in a 2d space
+#TODO: add 1st 2nd 3rd std dev to posterior plot
 def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior=False, show=True):
-    """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, whre n is the number of samples,
+    """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, where n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure
     fig, axes = plt.subplots(1, 1, figsize=(6, 6))
-    cm = plt.get_cmap('coolwarm')
     axes.set_xlabel('$f_{01}$')
     axes.set_ylabel('$f_{02}$')
     axes.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^2$')
@@ -148,48 +154,66 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         if not mobo.get_f0():
             raise ValueError("Ground truth not available.")
 
-        # Let's draw a number of random samples to plot the ground truth
-        dims = mobo.get_f0().num_objectives
-        sobol = SobolEngine(dimension=dims, scramble=True)
-        x = sobol.draw(n=int(1e4))
+        # Draw a number of random samples to plot the ground truth
+        dims = mobo.get_X().shape[-1]
+        x = draw_samples(SamplerType.Sobol, int(1e4), dims)
+        x = unnormalize(x, mobo.get_bounds().cpu())
         # Evaluate the objective function
-        y = mobo.get_f0()(x)
+        y = mobo.get_f0()(x)[..., 0:2]
         # Plot points in 3D
         axes.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
 
     if posterior:
         # Extract 1000 random samples
-        sobol = SobolEngine(dimension=mobo.get_X().shape[1], scramble=True)
-        x = sobol.draw(1000)  # 1000 candidates in [0, 1]^d
-        lower_bounds = mobo.get_bounds()[0].cpu()
-        upper_bounds = mobo.get_bounds()[1].cpu()
-        x = lower_bounds + (upper_bounds - lower_bounds) * x
+        dims = mobo.get_X().shape[-1]
+        x = draw_samples(SamplerType.Sobol, 1000, dims)
+        x = unnormalize(x, mobo.get_bounds().cpu())
         x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
         # Calculate posterior samples
         y = mobo.get_model().posterior(x).sample()
         # Calculate pareto front
         if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
             pareto_mask = is_non_dominated(Y=y, maximize=True)
+            pareto = y[pareto_mask]
+            pareto = pareto.cpu().numpy()
+            sorted_indices = np.argsort(-pareto[:, 0])
+
         elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
             pareto_mask = is_non_dominated(Y=y, maximize=False)
+            pareto = y[pareto_mask]
+            pareto = pareto.cpu().numpy()
+            sorted_indices = np.argsort(pareto[:, 0])
         else:
             raise ValueError("Unknown optimization problem type.")
-        pareto = y[pareto_mask]
-        pareto = pareto.cpu().numpy()
+        pareto = pareto[sorted_indices]
         axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
+        axes.plot(pareto[:, 0], pareto[:, 1], **posterior_line_kwargs)
+
 
     # Bring inputs to CPU
-    Y = mobo.get_Y().cpu().numpy()
+    y = mobo.get_Yobj().cpu().numpy()
     pareto = mobo.get_pareto().cpu().numpy()
 
     # Plot observations except Pareto front
-    mask = np.ones(len(Y), dtype=bool)
+    mask = np.ones(len(y), dtype=bool)
     mask[pareto] = False
-    axes.scatter(Y[mask, 0], Y[mask, 1], **observation_kwargs, label='Observations')
+    if np.any(mask):
+        axes.scatter(y[mask, 0], y[mask, 1], **observation_kwargs, label='Observations')
 
     # Plot Pareto Front
     mask = np.invert(mask)
-    axes.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs, label='Observed Pareto Front')
+    pareto = y[mask]
+    if np.any(mask):
+        # Sort points by x-coordinate (f1)
+        if mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
+            sorted_indices = np.argsort(pareto[:, 0])
+        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
+            sorted_indices = np.argsort(-pareto[:, 0])
+        else:
+            raise ValueError("Unknown optimization problem type.")
+        pareto = pareto[sorted_indices]
+        axes.scatter(pareto[:, 0], pareto[:, 1], **pareto_kwargs, label='Observed Pareto Front')
+        axes.plot(pareto[:, 0], pareto[:, 1], color=pareto_kwargs['color'], linestyle='-', linewidth=1)
 
     # Add legend
     plt.legend()
@@ -202,99 +226,128 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
     plt.close(fig)
 
 
-# TODO: the pareto front should be a surface in a 3d Space
+# TODO: implement a parallel coordinate plot
 def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior=False, show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 3' objective matrix, where n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure with subplots
-    fig = plt.figure(figsize=(24, 8))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 12), subplot_kw={'projection': '3d'})
+    fig.suptitle(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^3$')
+    # Define the views
+    views = {
+        'Iso': (30, 30, 'z'),
+        'XY': (90, -90, 'z'),
+        'XZ': (0, -90, 'y'),
+        'YZ': (0, 0, 'x'),
+    }
 
-    # 3D plot
-    ax1 = fig.add_subplot(141, projection='3d')
-    ax1.set_xlabel('$f_{01}$')
-    ax1.set_ylabel('$f_{02}$')
-    ax1.set_zlabel('$f_{03}$')
-    ax1.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^3$')
-
-    # 2D projections
-    ax2 = fig.add_subplot(142)
-    ax2.set_xlabel('$f_{01}$')
-    ax2.set_ylabel('$f_{02}$')
-    ax2.set_title('f1 vs f2 Projection')
-
-    ax3 = fig.add_subplot(143)
-    ax3.set_xlabel('$f_{02}$')
-    ax3.set_ylabel('$f_{03}$')
-    ax3.set_title('f2 vs f3 Projection')
-
-    ax4 = fig.add_subplot(144)
-    ax4.set_xlabel('$f_{01}$')
-    ax4.set_ylabel('$f_{03}$')
-    ax4.set_title('f1 vs f3 Projection')
-
-    # Plot ground truth if requested
-    if ground_truth:
-        if not mobo.get_f0():
-            raise ValueError("Ground truth not available.")
-
-        # Let's draw a number of random samples to plot the ground truth
-        dims = mobo.get_f0().num_objectives
-        sobol = SobolEngine(dimension=dims, scramble=True)
-        x = sobol.draw(n=int(1e4))
-        # Evaluate the objective function
-        y = mobo.get_f0()(x)
-        # Plot points in 3D
-        ax1.scatter(y[:, 0], y[:, 1], y[:, 2], **ground_truth_kwargs)
-        ax2.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
-        ax3.scatter(y[:, 1], y[:, 2], **ground_truth_kwargs)
-        ax4.scatter(y[:, 0], y[:, 2], **ground_truth_kwargs)
-
-    if posterior:
-        # Extract 1000 random samples
-        sobol = SobolEngine(dimension=mobo.get_X().shape[1], scramble=True)
-        x = sobol.draw(1000)  # 1000 candidates in [0, 1]^d
-        lower_bounds = mobo.get_bounds()[0].cpu()
-        upper_bounds = mobo.get_bounds()[1].cpu()
-        x = lower_bounds + (upper_bounds - lower_bounds) * x
-        x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
-        # Calculate posterior samples
-        y = mobo.get_model().posterior(x).sample()
-        # Calculate pareto front
-        if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
-            pareto_mask = is_non_dominated(Y=y, maximize=True)
-        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
-            pareto_mask = is_non_dominated(Y=y, maximize=False)
-        else:
-            raise ValueError("Unknown optimization problem type.")
-        pareto = y[pareto_mask]
-        pareto = pareto.cpu().numpy()
-        ax1.scatter(pareto[:, 0], pareto[:, 1], pareto[:, 2], **posterior_kwargs, label="Posterior Pareto Front")
-        ax2.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs)
-        ax3.scatter(pareto[:, 1], pareto[:, 2], **posterior_kwargs)
-        ax4.scatter(pareto[:, 0], pareto[:, 2], **posterior_kwargs)
+    # Titles and positions for each subplot
+    positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
 
 
-    # Bring inputs to CPU
-    Y = mobo.get_Y().cpu().numpy()
-    pareto = mobo.get_pareto().cpu().numpy()
 
-    # Plot observations except Pareto front
-    mask = np.ones(len(Y), dtype=bool)
-    mask[pareto] = False
-    ax1.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **observation_kwargs, label='Observations')
-    ax2.scatter(Y[mask, 0], Y[mask, 1], **observation_kwargs)
-    ax3.scatter(Y[mask, 1], Y[mask, 2], **observation_kwargs)
-    ax4.scatter(Y[mask, 0], Y[mask, 2], **observation_kwargs)
+    for title, (i, j) in zip(views.keys(), positions):
+        ax = axes[i, j]
+        ax.set_xlabel('$f_{01}$')
+        ax.set_ylabel('$f_{02}$')
+        ax.set_zlabel('$f_{03}$')
+        ax.set_title(title)
 
-    # Plot Pareto Front
-    mask = np.invert(mask)
-    ax1.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **pareto_kwargs, label='Pareto Front')
-    ax2.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs)
-    ax3.scatter(Y[mask, 1], Y[mask, 2], **pareto_kwargs)
-    ax4.scatter(Y[mask, 0], Y[mask, 1], **pareto_kwargs)
+        # Set the view angle
+        elev, azim, vertical_ax = views[title]
+        ax.view_init(elev=elev, azim=azim, vertical_axis=vertical_ax)
 
-    # Add legend to main 3D plot
-    ax1.legend()
+        # Plot ground truth if requested
+        if ground_truth:
+            if not mobo.get_f0():
+                raise ValueError("Ground truth not available.")
+
+            # Let's draw a number of random samples to plot the ground truth
+            dims = mobo.get_f0().num_objectives
+            sobol = SobolEngine(dimension=dims, scramble=True)
+            x = sobol.draw(n=int(1e4))
+            # Evaluate the objective function
+            y = mobo.get_f0()(x)
+            # Plot points in 3D
+            ax.scatter(y[:, 0], y[:, 1], y[:, 2], **ground_truth_kwargs)
+
+
+        if posterior:
+            # Extract 1000 random samples
+            sobol = SobolEngine(dimension=mobo.get_X().shape[1], scramble=True)
+            x = sobol.draw(1000)  # 1000 candidates in [0, 1]^d
+            lower_bounds = mobo.get_bounds()[0].cpu()
+            upper_bounds = mobo.get_bounds()[1].cpu()
+            x = lower_bounds + (upper_bounds - lower_bounds) * x
+            x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
+            # Calculate posterior samples
+            y = mobo.get_model().posterior(x).sample()
+            # Calculate pareto front
+            if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
+                pareto_mask = is_non_dominated(Y=y, maximize=True)
+            elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
+                pareto_mask = is_non_dominated(Y=y, maximize=False)
+            else:
+                raise ValueError("Unknown optimization problem type.")
+            pareto = y[pareto_mask]
+            pareto = pareto.cpu().numpy()
+            hull = ConvexHull(pareto)
+            surface_simplices = hull.simplices
+            # Light source direction (normalized)
+            light_dir = np.array([1, 1, 2])
+            light_dir = light_dir / np.linalg.norm(light_dir)
+            vertices = [pareto[simplex] for simplex in surface_simplices]
+            face_colors = []
+            for simplex in hull.simplices:
+                v0, v1, v2 = pareto[simplex]  # Get the three vertices
+                # Calculate normal vector
+                normal = np.cross(v1 - v0, v2 - v0)
+                normal = normal / np.linalg.norm(normal)
+                # Calculate shading
+                shade = np.dot(normal, light_dir)
+                shade = np.clip(shade, 0.3, 0.7)
+                color = plt.cm.Greens(shade)
+                face_colors.append(color)
+            poly_collection = Poly3DCollection(vertices, **posterior_surface_kwargs, facecolors=face_colors)
+            ax.add_collection3d(poly_collection)
+            ax.scatter(pareto[:, 0], pareto[:, 1], pareto[:, 2], **posterior_kwargs, label="Posterior Pareto Front")
+
+        # Bring inputs to CPU
+        Y = mobo.get_Yobj().cpu().numpy()
+        pareto = mobo.get_pareto().cpu().numpy()
+
+        # Plot observations except Pareto front
+        mask = np.ones(len(Y), dtype=bool)
+        mask[pareto] = False
+        ax.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **observation_kwargs, label='Observations')
+
+        # Plot Pareto Front
+        mask = np.invert(mask)
+        pareto = Y[mask]
+        hull = ConvexHull(pareto)
+        surface_simplices = hull.simplices
+        # Light source direction (normalized)
+        light_dir = np.array([1, 1, 2])
+        light_dir = light_dir / np.linalg.norm(light_dir)
+        vertices = [pareto[simplex] for simplex in surface_simplices]
+        face_colors = []
+        for simplex in hull.simplices:
+            v0, v1, v2 = pareto[simplex]  # Get the three vertices
+            # Calculate normal vector
+            normal = np.cross(v1 - v0, v2 - v0)
+            normal = normal / np.linalg.norm(normal)
+            # Calculate shading
+            shade = np.dot(normal, light_dir)
+            shade = np.clip(shade, 0.3, 0.7)
+            color = plt.cm.Oranges(shade)
+            face_colors.append(color)
+        poly_collection = Poly3DCollection(vertices, **pareto_surface_kwargs, facecolors=face_colors)
+        ax.add_collection3d(poly_collection)
+        ax.scatter(Y[mask, 0], Y[mask, 1], Y[mask, 2], **pareto_kwargs, label='Pareto Front')
+
+        # Add legend
+        if i == 0 and j == 0:
+            ax.legend()
 
     plt.tight_layout()
     filepath = compose_figure_filename()

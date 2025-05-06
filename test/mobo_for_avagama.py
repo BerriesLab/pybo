@@ -1,23 +1,26 @@
 from torch.quasirandom import SobolEngine
+
+from bayesian_optimization_for_gpu.constraints import constraint_lower, constraint_upper
 from bayesian_optimization_for_gpu.latin_hypercube_sampling import LatinHypercubeSampling
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
 from utils.cuda import *
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2
-from botorch.test_functions.multi_objective import BraninCurrin
+from botorch.test_functions.multi_objective import C2DTLZ2
 
-experiment_name = "test_mobo_from_R3_to_R2"
-main_directory = f"../data"
+experiment_name = "test_mobo_from_RN_to_R2_with_constraints"
+main_directory = f"C:/Users/BerettaDavide/PycharmProjects/inspire/data"
 initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
-""" Define the problem and bounds"""
+""" Define the problem, bounds and constraints"""
 n_objectives = 2
-n_dimensions = 2
-problem = BraninCurrin(negate=True)
-bounds = problem.bounds
+n_dimensions = 4
+n_constraints = 1  # The constraints must be on the last columns of the tensor
+bounds =
+constraints = [constraint_lower, constraint_upper]
 
 """ Define the optimization parameters """
 n_init_samples = 20
@@ -41,8 +44,9 @@ save_dataset_to_csv(X)
 
 """ Simulate experiments """
 Y = problem(X)
+Ycon = problem(X)[..., -1:]
 Yvar = None
-XY = np.concatenate((X.numpy(), Y.numpy()), axis=1)
+XY = np.concatenate((X.numpy(), Y.numpy(), Ycon.numpy()), axis=1)
 save_dataset_to_csv(XY)
 
 
@@ -55,13 +59,15 @@ for i in range(n_iterations):
         # Instantiate a new MOBO
         mobo = Mobo(experiment_name="test_mobo_from_R3_to_R2")
         mobo.set_X(X)
-        mobo.set_Y(Y)
-        mobo.set_Yvar(Yvar)
+        mobo.set_Yobj(Y)
+        mobo.set_Yobj_var(Yvar)
+        mobo.set_Ycon(Ycon)
         mobo.set_bounds(bounds)
         mobo.set_f0(problem)
-        mobo.set_optimization_problem_type(OptimizationProblemType.Maximization)
+        mobo.set_constraints(constraints)
+        mobo.set_optimization_problem_type(OptimizationProblemType.Minimization)
         mobo.set_acquisition_function(AcquisitionFunctionType.qLogEHVI)
-        mobo.set_sampler(SamplerType.Sobol)
+        mobo.set_sampler_type(SamplerType.Sobol)
         mobo.set_batch_size(batch_size)
         mobo.set_MC_samples(monte_carlo_samples)
         mobo.set_raw_samples(raw_samples)
@@ -71,8 +77,8 @@ for i in range(n_iterations):
         mobo = Mobo.from_file()
         XY = load_dataset_from_csv()
         mobo.set_X(torch.tensor(XY[:, 0:-n_objectives]))
-        mobo.set_Y(torch.tensor(XY[:, -n_objectives:]))
-        mobo.set_Yvar(Yvar)
+        mobo.set_Yobj(torch.tensor(XY[:, -n_objectives:]))
+        mobo.set_Yobj_var(Yvar)
 
 
     mobo.optimize()
@@ -90,4 +96,3 @@ for i in range(n_iterations):
     """ Save to csv """
     XY = np.concatenate((X, Y), axis=1)
     save_dataset_to_csv(XY)
-

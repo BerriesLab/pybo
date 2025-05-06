@@ -56,13 +56,13 @@ def _plot_from_R1_to_R1(self):
     self._ax.vlines(self._new_X, ymin=y_min, ymax=y_max, color='red', alpha=0.3, linestyle="--", label="New X")
 
     # Plot all observations except minimum
-    min_y_idx = np.argmin(self._Y)
-    mask = np.ones(len(self._Y), dtype=bool)
+    min_y_idx = np.argmin(self._Yobj)
+    mask = np.ones(len(self._Yobj), dtype=bool)
     mask[min_y_idx] = False
-    self._ax.scatter(self._X[mask], self._Y[mask], marker="o", s=50, color='red', label='Observations')
+    self._ax.scatter(self._X[mask], self._Yobj[mask], marker="o", s=50, color='red', label='Observations')
 
     # Plot minimum Y value
-    self._ax.scatter(self._X[min_y_idx], self._Y[min_y_idx], marker='*', s=200, color='green', label='Min Y')
+    self._ax.scatter(self._X[min_y_idx], self._Yobj[min_y_idx], marker='*', s=200, color='green', label='Min Y')
     self._ax.legend()
 
 
@@ -96,15 +96,15 @@ def _plot_from_R2_to_R1(self):
     self._ax.plot(x_line, y_line, z_line, 'r--', alpha=0.5, label='New Location')
 
     # Plot all observations except minimum
-    min_y_idx = np.argmin(self._Y)
-    mask = np.ones(len(self._Y), dtype=bool)
+    min_y_idx = np.argmin(self._Yobj)
+    mask = np.ones(len(self._Yobj), dtype=bool)
     mask[min_y_idx] = False
-    self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Y[mask, 0], c='red', marker='o', s=50,
+    self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Yobj[mask, 0], c='red', marker='o', s=50,
                      label='Observations')
 
     # Plot minimum Y value
     mask = np.invert(mask)
-    self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Y[mask, 0], c='green', marker='*', s=200, label='Min Y')
+    self._ax.scatter(self._X[mask, 0], self._X[mask, 1], self._Yobj[mask, 0], c='green', marker='*', s=200, label='Min Y')
 
     # Plot posterior
     self._predict_gaussian_process_on_domain()
@@ -131,7 +131,7 @@ def _plot_from_RN_to_R2(self):
     self._ax.set_xlabel('$f_{01}$')
     self._ax.set_ylabel('$f_{02}$')
     # Plot observations
-    self._ax.scatter(self._Y[:, 0], self._Y[:, 1], marker="o", s=50, color='red', label='Observations')
+    self._ax.scatter(self._Yobj[:, 0], self._Yobj[:, 1], marker="o", s=50, color='red', label='Observations')
     # Plot Pareto Front
     self._ax.scatter(self._pareto_front[:, 0], self._pareto_front[:, 1], marker="x", s=50, color='olive',
                      label='Pareto Front')
