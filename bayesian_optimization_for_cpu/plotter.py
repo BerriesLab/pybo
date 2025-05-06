@@ -37,8 +37,8 @@ def _plot_from_R1_to_R1(self):
     self._build_domain_from_bounds()
 
     # Plot objective function if known
-    if self._f0:
-        self._ax.plot(self._domain, self._f0[0](self._domain), color="black", linestyle="--", label=r"True $f_0$")
+    if self._true_objective:
+        self._ax.plot(self._domain, self._true_objective[0](self._domain), color="black", linestyle="--", label=r"True $f_0$")
 
     # Plot posterior
     self._predict_gaussian_process_on_domain()
@@ -81,12 +81,12 @@ def _plot_from_R2_to_R1(self):
     self._build_domain_from_bounds()
 
     # Plot objective function if known
-    if self._f0 and all([isinstance(f, Callable) for f in self._f0]):
+    if self._true_objective and all([isinstance(f, Callable) for f in self._true_objective]):
         x_grid = np.linspace(self._bounds[0][0], self._bounds[0][1], 100)
         y_grid = np.linspace(self._bounds[1][0], self._bounds[1][1], 100)
         X, Y = np.meshgrid(x_grid, y_grid)
         points = np.c_[X.ravel(), Y.ravel()]
-        Z = self._f0[0](points).reshape(X.shape)
+        Z = self._true_objective[0](points).reshape(X.shape)
         self._ax.plot_wireframe(X, Y, Z, lw=0.5, alpha=0.4, color='black', label=r"True $f_0$")
 
     # Plot new X location with vertical line

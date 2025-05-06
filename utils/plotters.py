@@ -10,13 +10,32 @@ from utils.io import *
 from utils.types import OptimizationProblemType, SamplerType
 
 # Plot properties
-pareto_kwargs = {'color': "tab:orange", 'marker': "x", 's': 100}
-pareto_line_kwargs = {'color': pareto_kwargs['color'], 'linestyle': '-', 'linewidth': 2}
+pareto_line_kwargs = {'color': 'tab:orange',
+                      'linestyle': '-',
+                      'linewidth': 2,
+                      'marker': 'o',
+                      'markersize': 8,
+                      'markerfacecolor': 'tab:orange',
+                      'markeredgecolor': 'black',
+                      'alpha': 0.8}
 pareto_surface_kwargs = {'alpha':0.4, 'edgecolors':"black", 'linewidth':0.1}
-observation_kwargs = {'color': "tab:blue", 'marker': "o", 's': 70, "alpha":0.8, "edgecolors": "black"}
-ground_truth_kwargs = {'color': "black", 'marker': "o", 's': 10, "alpha": 0.1}
-posterior_kwargs = {'color': "tab:green", 'marker': "o", 's': 20, "alpha": 0.5, "edgecolors": "black"}
-posterior_line_kwargs = {'color':posterior_kwargs['color'], 'linestyle':'-', 'linewidth':2}
+observation_kwargs = {'color': "tab:blue",
+                      'marker': "o",
+                      's': 70,
+                      "alpha":0.8,
+                      "edgecolors": "black"}
+ground_truth_kwargs = {'color': "black",
+                       'marker': "o",
+                       's': 10,
+                       "alpha": 0.1}
+posterior_line = {'color': 'tab:green',
+                  'linestyle': '-',
+                  'linewidth':2,
+                  'marker': 'o',
+                  'markersize': 8,
+                  'markerfacecolor': 'tab:green',
+                  'markeredgecolor': 'black',
+                  'alpha': 0.8}
 posterior_surface_kwargs = {'alpha': 0.4, 'edgecolors': 'black', 'linewidths':0.1}
 
 
@@ -151,7 +170,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
 
     # Plot ground truth if requested
     if ground_truth:
-        if not mobo.get_f0():
+        if not mobo.get_true_objective():
             raise ValueError("Ground truth not available.")
 
         # Draw a number of random samples to plot the ground truth
@@ -159,7 +178,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         x = draw_samples(SamplerType.Sobol, int(1e4), dims)
         x = unnormalize(x, mobo.get_bounds().cpu())
         # Evaluate the objective function
-        y = mobo.get_f0()(x)[..., 0:2]
+        y = mobo.get_true_objective()(x)[..., 0:2]
         # Plot points in 3D
         axes.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
 
@@ -186,8 +205,8 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         else:
             raise ValueError("Unknown optimization problem type.")
         pareto = pareto[sorted_indices]
-        axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
-        axes.plot(pareto[:, 0], pareto[:, 1], **posterior_line_kwargs)
+        # axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
+        axes.plot(pareto[:, 0], pareto[:, 1], **posterior_line, label="Posterior Pareto Front")
 
 
     # Bring inputs to CPU
@@ -212,8 +231,8 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         else:
             raise ValueError("Unknown optimization problem type.")
         pareto = pareto[sorted_indices]
-        axes.scatter(pareto[:, 0], pareto[:, 1], **pareto_kwargs, label='Observed Pareto Front')
-        axes.plot(pareto[:, 0], pareto[:, 1], color=pareto_kwargs['color'], linestyle='-', linewidth=1)
+        # axes.scatter(pareto[:, 0], pareto[:, 1], **pareto_kwargs, label='Observed Pareto Front')
+        axes.plot(pareto[:, 0], pareto[:, 1], **pareto_line_kwargs, label='Observed Pareto Front')
 
     # Add legend
     plt.legend()
@@ -259,15 +278,15 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior
 
         # Plot ground truth if requested
         if ground_truth:
-            if not mobo.get_f0():
+            if not mobo.get_true_objective():
                 raise ValueError("Ground truth not available.")
 
             # Let's draw a number of random samples to plot the ground truth
-            dims = mobo.get_f0().num_objectives
+            dims = mobo.get_true_objective().num_objectives
             sobol = SobolEngine(dimension=dims, scramble=True)
             x = sobol.draw(n=int(1e4))
             # Evaluate the objective function
-            y = mobo.get_f0()(x)
+            y = mobo.get_true_objective()(x)
             # Plot points in 3D
             ax.scatter(y[:, 0], y[:, 1], y[:, 2], **ground_truth_kwargs)
 

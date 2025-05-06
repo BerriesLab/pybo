@@ -21,7 +21,7 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
-    qLogExpectedHypervolumeImprovement
+    qLogExpectedHypervolumeImprovement, IdentityMCMultiOutputObjective
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from gpytorch.constraints import GreaterThan
 from bayesian_optimization_for_gpu.validators import *
@@ -48,7 +48,8 @@ class Mobo:
         self._bounds: torch.Tensor | None = None  # of shape "2 x D"
         self._acquisition_function_type: AcquisitionFunctionType | None = None
         self._sampler_type = None
-        self._f0: MultiObjectiveTestProblem | None = None
+        self._true_objective: MultiObjectiveTestProblem | None = None
+        self._objective = None
         self._X: torch.Tensor | None = None
         self._Yobj: torch.Tensor | None = None
         self._Ycon: torch.Tensor | None = None
@@ -170,7 +171,7 @@ class Mobo:
     def get_acquisition_function(self):
         return self._acquisition_function_type
 
-    def set_optimization_problem_type(self, optimization_problem_type: OptimizationProblemType):
+    def set_optimization_problem(self, optimization_problem_type: OptimizationProblemType):
         self._optimization_problem_type = optimization_problem_type
 
     def get_optimization_problem_type(self):
@@ -198,11 +199,17 @@ class Mobo:
     def get_raw_samples(self):
         return self._raw_samples
 
-    def set_f0(self, f0: MultiObjectiveTestProblem):
-        self._f0 = f0
+    def set_true_objective(self, f0: MultiObjectiveTestProblem):
+        self._true_objective = f0
 
-    def get_f0(self):
-        return self._f0
+    def get_true_objective(self):
+        return self._true_objective
+
+    def set_objective(self, objective: Callable):
+        self._objective = objective
+
+    def get_objective(self):
+        return self._objective
 
     def get_pareto(self):
         return self._pareto
@@ -293,6 +300,7 @@ class Mobo:
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
+                objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
                 constraints=self._constraints,
             )
 

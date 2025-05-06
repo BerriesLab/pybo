@@ -1,27 +1,28 @@
-import torch
 from botorch.utils.transforms import unnormalize
-from bayesian_optimization_for_gpu.constraints import LowerBound, UpperBound
+from bayesian_optimization_for_gpu.constraints import UpperBound
 from bayesian_optimization_for_gpu.mobo_gpu import Mobo
+from bayesian_optimization_for_gpu.objectives import IdentityMCMultiOutputObjectiveWrapper
 from bayesian_optimization_for_gpu.samplers import draw_samples
 from utils.cuda import *
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2
-from botorch.test_functions.multi_objective import Penicillin
+from botorch.test_functions.multi_objective import C2DTLZ2
 
+#TODO: implement hypervolume improvement metrics to test script
 
-experiment_name = "test_mobo_from_RN_to_R2_with_constraints"
+experiment_name = "test0_c2dtlz2"
 main_directory = f"../data"
 initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
 """ Define the problem, bounds and constraints"""
-problem = Penicillin()
 n_objectives = 2
-n_dimensions = 7
+n_dimensions = 4
+problem = C2DTLZ2(dim=n_dimensions, num_objectives=n_objectives, negate=True)
 bounds = problem.bounds
-constraints = [UpperBound(1e6)]
+constraints = [UpperBound(0)]
 
 """ Define the optimization parameters """
 n_init_samples = 100
@@ -65,6 +66,7 @@ for i in range(n_iterations):
         mobo.set_constraints(constraints=constraints)
         mobo.set_optimization_problem(optimization_problem_type=OptimizationProblemType.Minimization)
         mobo.set_acquisition_function(acquisition_function_type=AcquisitionFunctionType.qLogEHVI)
+        mobo.set_objective(IdentityMCMultiOutputObjectiveWrapper(outcomes=range(n_objectives)))
         mobo.set_sampler_type(sampler=SamplerType.Sobol)
         mobo.set_batch_size(batch_size=batch_size)
         mobo.set_MC_samples(MC_samples=monte_carlo_samples)

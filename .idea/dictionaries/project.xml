@@ -5,6 +5,9 @@
       <w>edgecolors</w>
       <w>facecolors</w>
       <w>linestyle</w>
+      <w>markeredgecolor</w>
+      <w>markerfacecolor</w>
+      <w>markersize</w>
       <w>mathbb</w>
       <w>maxiter</w>
       <w>mlls</w>

@@ -1,8 +1,7 @@
 import os
 import cv2
 
-DEFAULT_OUTPUT_VIDEO_PATH = 'bo_2d_test02.mp4'  # Centralized filename for the output video
-DEFAULT_INPUT_FILENAME_PREFIX = "test_2d_optimization - 2025-04-22_11-36-13"
+DEFAULT_OUTPUT_VIDEO_PATH = 'movie.mp4'  # Centralized filename for the output video
 
 
 def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""):
@@ -16,7 +15,8 @@ def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""
         prefix (str, optional): Common prefix for image filenames to include. Defaults to an empty string.
     """
     images = [img for img in os.listdir(image_folder)
-              if img.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) and img.startswith(prefix)]
+              if img.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
+    print(images)
     images.sort()  # Sort the images to ensure correct order
 
     if not images:
@@ -44,8 +44,8 @@ def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""
 
 if __name__ == "__main__":
     # Example usage:
-    image_folder = '../data'  # Replace with the path to your image folder
-    output_video_path = DEFAULT_OUTPUT_VIDEO_PATH  # Use the centralized output filename
+    image_folder = r'C:\Users\BerettaDavide\PycharmProjects\inspire\data\2025-05-06_17-13-33 - test0_c2dtlz2'
+    output_video_path = image_folder + r"\movie.mp4" # Use the centralized output filename
     fps = 1.0  # You can adjust the frames per second as needed
 
     # Create a dummy image folder and images for demonstration
@@ -57,5 +57,5 @@ if __name__ == "__main__":
             # Create a dummy image (black with a number on it)
             img = np.zeros((100, 100, 3), dtype=np.uint8)
             cv2.putText(img, str(i), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            cv2.imwrite(os.path.join(image_folder, f'image_{i:02d}.png'), img)
-    create_video_from_images(image_folder, output_video_path, fps, prefix=DEFAULT_INPUT_FILENAME_PREFIX)
+            cv2.imwrite(os.path.join(image_folder, f'image_{i:02d}'), img)
+    create_video_from_images(image_folder, output_video_path, fps)
