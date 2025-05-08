@@ -2,10 +2,13 @@ import torch
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
 from utils.types import SamplerType
+from botorch.utils.transforms import unnormalize
+
 
 
 def draw_samples(
-        sampler_type: SamplerType = SamplerType.LatinHypercube, 
+        sampler_type: SamplerType,
+        bounds: torch.Tensor,
         n_samples: int = 1000,
         n_dimensions: int = 2,
 ) -> torch.Tensor:
@@ -21,5 +24,7 @@ def draw_samples(
     
     else:
         raise ValueError("Invalid initial sampling type.")
-    
+
+    x = unnormalize(x, bounds=bounds)
+
     return x

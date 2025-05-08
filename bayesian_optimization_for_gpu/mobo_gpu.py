@@ -10,7 +10,7 @@ from botorch.sampling import SobolQMCNormalSampler
 from botorch.sampling.normal import NormalMCSampler
 
 from botorch.test_functions.base import MultiObjectiveTestProblem
-from botorch.utils.multi_objective import is_non_dominated
+from botorch.utils.multi_objective import is_non_dominated, hypervolume, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning, DominatedPartitioning
 from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
@@ -21,7 +21,7 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
-    qLogExpectedHypervolumeImprovement, IdentityMCMultiOutputObjective
+    qLogExpectedHypervolumeImprovement, IdentityMCMultiOutputObjective, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from gpytorch.constraints import GreaterThan
 from bayesian_optimization_for_gpu.validators import *
@@ -30,20 +30,11 @@ from utils.io import *
 
 class Mobo:
 
-    def __init__(
-            self,
-            experiment_name: str,
-            n_objectives: int,
-            n_constraints: int = 0
-    ):
+    def __init__(self, experiment_name: str):
 
         validate_experiment_name(experiment_name)
-        validate_n_objectives(n_objectives)
-        validate_n_constraints(n_constraints)
 
         self._experiment_name = experiment_name
-        self._n_objectives = n_objectives
-        self._n_constraints= n_constraints
         self._datetime = datetime.datetime.now()
         self._bounds: torch.Tensor | None = None  # of shape "2 x D"
         self._acquisition_function_type: AcquisitionFunctionType | None = None
@@ -78,6 +69,8 @@ class Mobo:
         self._constraints = None
         self._ref_point = None
         self._new_X = None  # The new X location
+
+        # Test metrics
         self._hypervolume = []
 
     """ Setters and getters """
@@ -163,7 +156,8 @@ class Mobo:
         self._device = torch.device(device.value)
 
     def get_model(self):
-        return self._model_obj
+        return self._model
+        #return self._model_obj
 
     def set_acquisition_function(self, acquisition_function_type: AcquisitionFunctionType):
         self._acquisition_function_type = acquisition_function_type
@@ -225,47 +219,37 @@ class Mobo:
             self._constraints = []
         self._constraints.append(constraint)
 
+    def get_hypervolume(self):
+        return self._hypervolume
+
     """ Optimizer """
 
     def _initialize_model(self, verbose=True):
-        """ Build separate models for the objective and constraint functions."""
+        """ Define models for objectives and constraints."""
 
         if verbose:
             print("Initializing model...", end="")
 
+        train_x = normalize(self._X, self._bounds)
+        train_y = torch.cat((self._Yobj, self._Ycon), dim=-1)
+        if self._Yobj_var is not None and self._Ycon_var is not None:
+            train_y_var = torch.cat((self._Yobj_var, self._Ycon_var), dim=-1)
+        else:
+            train_y_var = None
+
         models_obj = []
-        for i in range(0, self._Yobj.shape[-1]):
+        for i in range(0, train_y.shape[-1]):
             models_obj.append(
                 SingleTaskGP(
-                    self._X,
-                    self._Yobj[..., i: i + 1],
-                    self._Yobj_var[..., i: i + 1] if self._Yobj_var is not None else None,
-                    input_transform=Normalize(d=self._X.shape[-1]),
-                    outcome_transform=Standardize(m=1),
+                    train_x,
+                    train_y[..., i: i + 1],
+                    train_y_var[..., i: i + 1] if self._Yobj_var is not None and self._Ycon_var is not None else None,
+                    # input_transform=Normalize(d=self._X.shape[-1]),
+                    # outcome_transform=Standardize(m=1),
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
-                ).to(device=self._device, dtype=self._dtype)
+                )
             )
-
-        models_con = []
-        for i in range(0, self._Ycon.shape[-1]):
-            models_con.append(
-                SingleTaskGP(
-                    self._X,
-                    self._Ycon[..., i: i + 1],
-                    self._Ycon_var[..., i: i + 1] if self._Ycon_var is not None else None,
-                    input_transform=Normalize(d=self._X.shape[-1]),
-                    outcome_transform=Standardize(m=1),
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6))
-                ).to(device=self._device, dtype=self._dtype)
-            )
-
-        # Aggregate the models into a ModelListGP
-        self._model_obj = ModelListGP(*models_obj)
-        self._model_con = ModelListGP(*models_con)
-        self._model = ModelListGP(*(models_obj + models_con))
-        # Extract the Marginal Likelihood for each model
-        self._mll_obj = SumMarginalLogLikelihood(self._model_obj.likelihood, self._model_obj)
-        self._mll_con = SumMarginalLogLikelihood(self._model_con.likelihood, self._model_con)
+        self._model = ModelListGP(*models_obj)
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
         if verbose:
@@ -287,7 +271,7 @@ class Mobo:
 
         if self._acquisition_function_type.name == AcquisitionFunctionType.qEHVI.name:
             self._acquisition_function_instance = qExpectedHypervolumeImprovement(
-                model=self._model_obj,
+                model=self._model,
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
@@ -296,7 +280,7 @@ class Mobo:
 
         elif self._acquisition_function_type.name == AcquisitionFunctionType.qLogEHVI.name:
             self._acquisition_function_instance = qLogExpectedHypervolumeImprovement(
-                model=self._model_obj,
+                model=self._model, #self._model_obj,
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
@@ -304,15 +288,26 @@ class Mobo:
                 constraints=self._constraints,
             )
 
-        elif self._acquisition_function_type.name == AcquisitionFunctionType.qNEHVI:
-            if self._Yobj_var is None:
-                raise ValueError("qNEHVI requires the observation noise variance (Yvar).")
+        elif self._acquisition_function_type.name == AcquisitionFunctionType.qNEHVI.name:
+
             self._acquisition_function_instance = qNoisyExpectedHypervolumeImprovement(
-                model=self._model_obj,
+                model=self._model,
+                ref_point=self._ref_point,
+                X_baseline=normalize(self._X, self._bounds),
+                sampler=self._sampler_instance,
+                prune_baseline=True,
+                objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
+                constraints=self._constraints,
+            )
+        elif self._acquisition_function_type.name == AcquisitionFunctionType.qLogNEHVI.name:
+            self._acquisition_function_instance = qLogNoisyExpectedHypervolumeImprovement(
+                model=self._model,
                 ref_point=self._ref_point,
                 X_baseline=normalize(self._X, self._bounds),
                 prune_baseline=True,
                 sampler=self._sampler_instance,
+                objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
+                constraints=self._constraints,
             )
 
         else:
@@ -330,22 +325,25 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _define_reference_point(self, verbose=True, buffer=0.1):
+    def _define_reference_point(self, verbose=True, buffer=0.25):
         if verbose:
             print("Defining reference point...", end="")
 
-        if self._optimization_problem_type == OptimizationProblemType.Maximization:
-            worst = torch.min(self._Yobj, dim=0).values
-            self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device)
-        elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-            worst = torch.max(self._Yobj, dim=0).values
-            self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device)
+        self._ref_point = torch.tensor(self._true_objective._ref_point).to(self._device)
+        print(self._ref_point)
+
+        # if self._optimization_problem_type == OptimizationProblemType.Maximization:
+        #     worst = torch.min(self._Yobj, dim=0).values
+        #     self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device)
+        # elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+        #     worst = torch.max(self._Yobj, dim=0).values
+        #     self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device)
 
         if verbose:
             print(" Done.")
 
     def _fit_model(self, restart_on_error=True, verbose=True,):
-        if not isinstance(self._model_obj, ModelListGP):
+        if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
         if verbose:
@@ -376,7 +374,7 @@ class Mobo:
             bounds=self._bounds,
             q=self._batch_size,
             num_restarts=self._max_n_acqf_opt_restarts,
-            raw_samples=self._raw_samples,  # n x q x dim
+            raw_samples=self._raw_samples,  # used for heuristic initialization
             options={"maxiter": self._n_acqf_opt_iter, "disp": True},
             sequential=True,
         )
@@ -389,21 +387,38 @@ class Mobo:
         if verbose:
             print("Computing hypervolume...", end="")
 
-        bd = DominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
-        volume = bd.compute_hypervolume().item()
+        if self._pareto.shape[0] > 0:
+            hv = Hypervolume(self._ref_point)
+            volume = hv.compute(self._pareto)
+        else:
+            volume = 0
         self._hypervolume.append(volume)
+
+        # volume = bd.compute_hypervolume().item()
+        # self._hypervolume.append(volume)
+        # volume = hv
+        # bd = DominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
 
         if verbose:
             print(" Done.")
 
-    def _find_pareto(self, verbose=True):
+    def _compute_pareto_front(self, verbose=True):
         if verbose:
             print("Finding Pareto front...", end="")
 
-        if self._optimization_problem_type == OptimizationProblemType.Maximization:
-            self._pareto = is_non_dominated(self._Yobj, maximize=True)
-        elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-            self._pareto = is_non_dominated(self._Yobj, maximize=False)
+        feasibility_mask = (self._Ycon <= 0).all(dim=-1)
+        feasible_Yobj = self._Yobj[feasibility_mask]
+        if feasible_Yobj.shape[0] > 0:
+            #self._optimization_problem_type == OptimizationProblemType.Maximization:
+            pareto_mask = is_non_dominated(feasible_Yobj, maximize=True)
+            #elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+            #    pareto_mask = is_non_dominated(feasible_Yobj, maximize=False)
+            self._pareto = feasible_Yobj[pareto_mask]
+            hv = Hypervolume(self._ref_point)
+            volume = hv.compute(self._pareto)
+        else:
+            volume = 0
+        self._hypervolume.append(volume)
 
         if verbose:
             print(" Done.")
@@ -422,12 +437,13 @@ class Mobo:
         self._fit_model(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
         self._optimize_acquisition_function(verbose=verbose)
-        self._find_pareto(verbose=verbose)
-        self._compute_hypervolume(verbose=verbose)
+        self._compute_pareto_front(verbose=verbose)
+        #self._compute_hypervolume(verbose=verbose)
         t1 = time.monotonic()
 
         if verbose:
             print(f"Calculation Time = {t1 - t0:>4.2f}\n"
+                  f"Hypervolume = {self._hypervolume[-1]:>4.2f}\n"
                   f"New X: {self._new_X}\n\n")
 
     """ I/O """

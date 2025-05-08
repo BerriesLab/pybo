@@ -5,6 +5,7 @@ class AcquisitionFunctionType(Enum):
     qEHVI = "qEHVI"
     qLogEHVI = "qLogEHVI"
     qNEHVI = "qNEHVI"
+    qLogNEHVI = "qLogNEHVI"
 
     @classmethod
     def values(cls):

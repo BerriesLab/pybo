@@ -375,3 +375,18 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior
     if show:
         plt.show()
     plt.close(fig)
+
+
+def plot_log_hypervolume_difference(mobo: Mobo, show=False):
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    ax.set_xlabel("number of observations (beyond initial points)")
+    ax.set_ylabel("Log Hypervolume Difference")
+    x = range(len(mobo.get_hypervolume()))
+    hv = np.array(mobo.get_hypervolume())
+    max_hv = mobo.get_true_objective().max_hv
+    dy = np.log10(max_hv - hv)
+    ax.errorbar(x, dy, linewidth=2,)
+    ax.legend()
+    if show:
+        plt.show()
