@@ -525,9 +525,9 @@ class MultiObjectiveBayesianOptimization:
     @staticmethod
     def _validate_f0(f0, n_objectives):
         if f0 and not len(f0) == n_objectives:
-            raise ValueError("The number of objective functions must match the number of objectives in f0.")
+            raise ValueError("The number of objective functions must match the number of objectives in true_objective.")
         if f0 and not all([isinstance(f, Callable) for f in f0]):
-            raise ValueError("f0 must be a list of callable.")
+            raise ValueError("true_objective must be a list of callable.")
 
     @staticmethod
     def _validate_bounds(bounds):

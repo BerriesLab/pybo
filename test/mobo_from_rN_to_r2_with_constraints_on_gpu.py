@@ -16,7 +16,7 @@ initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
-""" Define the problem, bounds and constraints"""
+""" Define the true_objective, bounds and constraints"""
 problem = Penicillin()
 n_objectives = 2
 n_dimensions = 7
@@ -61,7 +61,7 @@ for i in range(n_iterations):
         mobo.set_Ycon(Ycon=Ycon)
         mobo.set_Ycon_var(Ycon_var=Ycon_var)
         mobo.set_bounds(bounds=bounds)
-        mobo.set_true_objective(f0=problem)
+        mobo.set_true_objective(true_objective=problem)
         mobo.set_constraints(constraints=constraints)
         mobo.set_optimization_problem(optimization_problem_type=OptimizationProblemType.Minimization)
         mobo.set_acquisition_function(acquisition_function_type=AcquisitionFunctionType.qLogEHVI)

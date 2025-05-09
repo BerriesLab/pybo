@@ -12,7 +12,7 @@ def get_device():
     elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
         print("MPS device found and built.")
         device = torch.device("mps")
-        print_cuda_device_name(device)
+        print(f"Running on {device.type.upper()} device")
         return device
 
     else:

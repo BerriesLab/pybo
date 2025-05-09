@@ -5,7 +5,6 @@ from utils.types import SamplerType
 from botorch.utils.transforms import unnormalize
 
 
-
 def draw_samples(
         sampler_type: SamplerType,
         bounds: torch.Tensor,

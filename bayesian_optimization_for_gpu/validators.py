@@ -1,7 +1,7 @@
 import datetime
 
 import torch
-from utils.types import AcquisitionFunctionType
+from utils.types import AcquisitionFunctionType, OptimizationProblemType
 
 
 def validate_experiment_name(name: str):
@@ -50,3 +50,8 @@ def validate_bounds(bounds: torch.Tensor):
         raise ValueError("Bounds must be a torch.tensor.")
     if bounds.shape[0] != 2:
         raise ValueError("Bounds must be a 2 x D tensor.")
+
+
+def validate_optimization_problem(optimization_problem_type: OptimizationProblemType):
+    if not isinstance(optimization_problem_type, OptimizationProblemType):
+        raise ValueError("optimization_problem_type must be a OptimizationProblemType.")

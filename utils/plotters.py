@@ -203,7 +203,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
             pareto = pareto.cpu().numpy()
             sorted_indices = np.argsort(pareto[:, 0])
         else:
-            raise ValueError("Unknown optimization problem type.")
+            raise ValueError("Unknown optimization true_objective type.")
         pareto = pareto[sorted_indices]
         # axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
         axes.plot(pareto[:, 0], pareto[:, 1], **posterior_line, label="Posterior Pareto Front")
@@ -229,7 +229,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         elif mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
             sorted_indices = np.argsort(-pareto[:, 0])
         else:
-            raise ValueError("Unknown optimization problem type.")
+            raise ValueError("Unknown optimization true_objective type.")
         pareto = pareto[sorted_indices]
         # axes.scatter(pareto[:, 0], pareto[:, 1], **pareto_kwargs, label='Observed Pareto Front')
         axes.plot(pareto[:, 0], pareto[:, 1], **pareto_line_kwargs, label='Observed Pareto Front')
@@ -307,7 +307,7 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior
             elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
                 pareto_mask = is_non_dominated(Y=y, maximize=False)
             else:
-                raise ValueError("Unknown optimization problem type.")
+                raise ValueError("Unknown optimization true_objective type.")
             pareto = y[pareto_mask]
             pareto = pareto.cpu().numpy()
             hull = ConvexHull(pareto)

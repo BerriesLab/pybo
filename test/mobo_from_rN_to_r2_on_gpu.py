@@ -13,7 +13,7 @@ initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
-""" Define the problem and bounds"""
+""" Define the true_objective and bounds"""
 n_objectives = 2
 n_dimensions = 2
 problem = BraninCurrin(negate=True)

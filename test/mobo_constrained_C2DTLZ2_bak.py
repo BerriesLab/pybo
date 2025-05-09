@@ -57,40 +57,36 @@ mobo.set_Yobj(Yobj=Yobj)
 mobo.set_Yobj_var(Yobj_var=Yobj_var)
 mobo.set_Ycon(Ycon=Ycon)
 mobo.set_Ycon_var(Ycon_var=Ycon_var)
-mobo.set_optimization_problem(optimization_problem_type=OptimizationProblemType.Maximization)
 mobo.set_bounds(bounds=bounds)
 mobo.set_true_objective(true_objective=true_objective)
 mobo.set_objective(objective=objective)
 mobo.set_constraints(constraints=constraints)
+mobo.set_optimization_problem(optimization_problem_type=OptimizationProblemType.Maximization)
 mobo.set_acquisition_function(acquisition_function_type=AcquisitionFunctionType.qNEHVI)
 mobo.set_sampler_type(sampler=SamplerType.Sobol)
-mobo.set_raw_samples(raw_samples=raw_samples)
 mobo.set_batch_size(batch_size=batch_size)
 mobo.set_MC_samples(MC_samples=monte_carlo_samples)
-
+mobo.set_raw_samples(raw_samples=raw_samples)
 
 for i in range(n_iterations):
 
-    print("\n\n")
     print(f"*** Iteration {mobo.get_iteration_number() + 1} ***")
 
     if i > 0:
-        mobo.set_X(X=X)
-        mobo.set_Yobj(Yobj=Yobj)
-        mobo.set_Ycon(Ycon=Ycon)
+        mobo.set_X(X)
+        mobo.set_Yobj(Yobj)
+        mobo.set_Ycon(Ycon)
         #mobo = Mobo.from_file()
         #mobo.load_dataset_from_csv()
 
     mobo.optimize()
-    #mobo.to_file()
+    mobo.to_file()
     # plot_multi_objective_from_RN_to_R2(mobo, ground_truth=True, posterior=True, show=False)
 
     """ Simulate experiment at new X """
     new_X = mobo.get_new_X()
     new_Yobj = true_objective(new_X)
     new_Ycon = -true_objective.evaluate_slack(new_X)
-    print(f"New Yobj: {new_Yobj}")
-    print(f"New Ycon: {new_Ycon}")
 
     """ Save to csv """
     X = torch.cat([X.to(mobo.get_device(), mobo.get_dtype()), new_X], dim=0)

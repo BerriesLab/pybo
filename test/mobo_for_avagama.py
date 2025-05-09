@@ -15,7 +15,7 @@ initial_sampling_type = SamplerType.LatinHypercube
 directory = create_experiment_directory(main_directory, experiment_name)
 os.chdir(directory)
 
-""" Define the problem, bounds and constraints"""
+""" Define the true_objective, bounds and constraints"""
 n_objectives = 2
 n_dimensions = 4
 n_constraints = 1  # The constraints must be on the last columns of the tensor
