@@ -31,6 +31,7 @@ from utils.io import *
 
 class Mobo:
 
+    # TODO: add initialization parameters
     def __init__(self, experiment_name: str):
 
         validate_experiment_name(experiment_name)
@@ -158,6 +159,10 @@ class Mobo:
         return self._acquisition_function_type
 
     def set_optimization_problem(self, optimization_problem_type: OptimizationProblemType):
+        """ Set the optimization problem as maximization or minimization. Note that
+        BoTorch supports natively only maximization problems, therefore this setting is
+        used to negate the objective function and choose appropriate values for the
+        reference point."""
         validate_optimization_problem(optimization_problem_type)
         self._optimization_problem_type = optimization_problem_type
 

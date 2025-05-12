@@ -6,7 +6,7 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
 from botorch.test_functions.multi_objective import BraninCurrin
 
 
-experiment_name = "test_branincurrin_50iter_2q_1024mc_512rs"
+experiment_name = "test_branincurrin_50iter_1q_512mc_256rs"
 main_directory = f"../data"
 initial_sampling_type = SamplerType.Sobol
 directory = create_experiment_directory(main_directory, experiment_name)
@@ -18,14 +18,14 @@ n_objectives = true_objective.num_objectives
 n_dimensions = true_objective.dim
 bounds = true_objective.bounds
 constraints = None  # Must be an empty list for no constraints
-objective = None # IdentityMCMultiOutputObjective(outcomes=(0, 1))
+objective = None  # IdentityMCMultiOutputObjective(outcomes=(0, 1))
 
 """ Define the optimization parameters """
 n_init_samples = 2 * (n_dimensions + 1)
 n_iterations = 50
-batch_size = 2
-monte_carlo_samples = 1024
-raw_samples = 512
+batch_size = 1
+monte_carlo_samples = 512
+raw_samples = 256
 optimization_problem_type = OptimizationProblemType.Maximization
 acquisition_function_type = AcquisitionFunctionType.qNEHVI
 sampler_type = SamplerType.Sobol
@@ -45,6 +45,7 @@ Ycon = None
 Ycon_var = None
 
 """ Main optimization loop """
+# TODO: consider changing init style and requires a set of parameters
 mobo = Mobo(experiment_name=experiment_name)
 mobo.set_X(X=X)
 mobo.set_Yobj(Yobj=Yobj)
@@ -75,8 +76,8 @@ for i in range(n_iterations):
         ref_point=True,
         ground_truth=True,
         posterior=True,
-        f1_lims=(-400, 10),
-        f2_lims=(-20, 5),
+        f1_lims=(-250, 10),
+        f2_lims=(-15, 0),
         show=False
     )
 

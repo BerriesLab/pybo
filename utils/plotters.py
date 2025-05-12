@@ -299,7 +299,7 @@ def plot_multi_objective_from_RN_to_R2(
     plt.legend()
 
     filepath = compose_figure_filename()
-    fig.savefig(filepath + ".png", dpi=300, bbox_inches='tight')
+    fig.savefig(filepath, dpi=300, bbox_inches='tight', format='png')
 
     if show:
         plt.show()
@@ -451,7 +451,7 @@ def plot_log_hypervolume_difference(mobo: Mobo, show=False):
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="_hv_diff")
-    fig.savefig(filepath + ".png", dpi=300, bbox_inches='tight')
+    fig.savefig(filepath, dpi=300, bbox_inches='tight', format='png')
 
     if show:
         plt.show()
