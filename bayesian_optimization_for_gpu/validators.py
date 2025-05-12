@@ -1,6 +1,7 @@
 import datetime
 
 import torch
+
 from utils.types import AcquisitionFunctionType, OptimizationProblemType
 
 
@@ -28,16 +29,21 @@ def validate_X(X: torch.Tensor):
     if not isinstance(X, torch.Tensor):
         raise ValueError("X must be a torch.Tensor.")
 
-
-def validate_Y(Y: torch.Tensor):
+def validate_Yobj(Y: torch.Tensor):
     if not isinstance(Y, torch.Tensor):
         raise ValueError("Y must be a torch.Tensor.")
 
+def validate_Ycon(Ycon: torch.Tensor):
+    if Ycon is not None and not isinstance(Ycon, torch.Tensor):
+        raise ValueError("Ycon must be None or a torch.tensor.")
 
-def validate_Y_var(Yvar: torch.Tensor):
+def validate_Yobj_var(Yvar: torch.Tensor):
     if Yvar is not None and not isinstance(Yvar, torch.Tensor):
         raise ValueError("Yvar must be None or a torch.tensor.")
 
+def validate_Ycon_var(Ycon_var: torch.Tensor):
+    if Ycon_var is not None and not isinstance(Ycon_var, torch.Tensor):
+        raise ValueError("Ycon_var must be None or a torch.tensor.")
 
 def validate_acquisition_function(acquisition_function: AcquisitionFunctionType):
     if not isinstance(acquisition_function, AcquisitionFunctionType):

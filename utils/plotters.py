@@ -9,34 +9,60 @@ from bayesian_optimization_for_gpu.samplers import draw_samples
 from utils.io import *
 from utils.types import OptimizationProblemType, SamplerType
 
-# Plot properties
-pareto_line_kwargs = {'color': 'tab:orange',
-                      'linestyle': '-',
-                      'linewidth': 2,
-                      'marker': 'o',
-                      'markersize': 8,
-                      'markerfacecolor': 'tab:orange',
-                      'markeredgecolor': 'black',
-                      'alpha': 0.8}
-pareto_surface_kwargs = {'alpha':0.4, 'edgecolors':"black", 'linewidth':0.1}
-observation_kwargs = {'color': "tab:blue",
-                      'marker': "o",
-                      's': 70,
-                      "alpha":0.8,
-                      "edgecolors": "black"}
-ground_truth_kwargs = {'color': "black",
-                       'marker': "o",
-                       's': 10,
-                       "alpha": 0.1}
-posterior_line = {'color': 'tab:green',
-                  'linestyle': '-',
-                  'linewidth':2,
-                  'marker': 'o',
-                  'markersize': 8,
-                  'markerfacecolor': 'tab:green',
-                  'markeredgecolor': 'black',
-                  'alpha': 0.8}
-posterior_surface_kwargs = {'alpha': 0.4, 'edgecolors': 'black', 'linewidths':0.1}
+observation_kwargs = {
+    'color': "tab:orange",
+    'marker': "o",
+    's': 70,
+    "alpha":0.6,
+    "edgecolors": "black",
+    'label': 'Observations'
+}
+observed_pareto_kwargs = {
+    'color': 'black',
+    'linestyle': '-',
+    'linewidth': 2,
+    'marker': 'o',
+    'markersize': 8,
+    'markerfacecolor': 'tab:orange',
+    'markeredgecolor': 'black',
+    'alpha': 0.9,
+    'label': 'Observed Pareto Front'
+}
+
+ref_point_kwargs = {
+    'color': 'red',
+    'marker': 'x',
+    's': 70,
+    'alpha': 0.8,
+    'label': 'Reference Point'
+}
+ground_truth_kwargs = {
+    'color': "black",
+    'marker': "o",
+    's': 10,
+    "alpha": 0.1
+}
+posterior_pareto_kwargs = {
+    'color': 'tab:green',
+    'linestyle': '-',
+    'linewidth':2,
+    'marker': 'o',
+    'markersize': 8,
+    'markerfacecolor': 'tab:green',
+    'markeredgecolor': 'black',
+    'alpha': 0.6,
+    'label': 'Posterior Pareto Front'
+}
+pareto_surface_kwargs = {
+    'alpha':0.4,
+    'edgecolors':"black",
+    'linewidth':0.1
+}
+posterior_surface_kwargs = {
+    'alpha': 0.4,
+    'edgecolors': 'black',
+    'linewidths':0.1
+}
 
 
 # def _plot(self):
@@ -159,7 +185,14 @@ posterior_surface_kwargs = {'alpha': 0.4, 'edgecolors': 'black', 'linewidths':0.
 #                               zorder=3)
 
 #TODO: add 1st 2nd 3rd std dev to posterior plot
-def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior=False, show=True):
+def plot_multi_objective_from_RN_to_R2(
+        mobo: Mobo,
+        f1_lims=None,
+        f2_lims=None,
+        ground_truth=False,
+        posterior=False,
+        ref_point=False,
+        show=True):
     """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, where n is the number of samples,
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure
@@ -167,6 +200,10 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
     axes.set_xlabel('$f_{01}$')
     axes.set_ylabel('$f_{02}$')
     axes.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^2$')
+    if f1_lims is not None and isinstance(f1_lims, tuple):
+        axes.set_xlim(f1_lims[0], f1_lims[1])
+    if f2_lims is not None and isinstance(f2_lims, tuple):
+        axes.set_ylim(f2_lims[0], f2_lims[1])
 
     # Plot ground truth if requested
     if ground_truth:
@@ -175,54 +212,79 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
 
         # Draw a number of random samples to plot the ground truth
         dims = mobo.get_X().shape[-1]
-        x = draw_samples(SamplerType.Sobol, int(1e4), dims)
+        x = draw_samples(
+            sampler_type=SamplerType.Sobol,
+            bounds=mobo.get_bounds().cpu(),
+            n_samples=int(1e3),
+            n_dimensions=dims
+        )
         x = unnormalize(x, mobo.get_bounds().cpu())
         # Evaluate the objective function
-        y = mobo.get_true_objective()(x)[..., 0:2]
+        y = mobo.get_true_objective()(x)
         # Plot points in 3D
         axes.scatter(y[:, 0], y[:, 1], **ground_truth_kwargs)
+
+    if ref_point:
+        ref_point = mobo.get_ref_point().cpu().numpy()
+        plt.scatter(ref_point[0], ref_point[1], **ref_point_kwargs)
 
     if posterior:
         # Extract 1000 random samples
         dims = mobo.get_X().shape[-1]
-        x = draw_samples(SamplerType.Sobol, 1000, dims)
+        x = draw_samples(
+            sampler_type=SamplerType.Sobol,
+            bounds=mobo.get_bounds().cpu(),
+            n_samples=int(1e3),
+            n_dimensions=dims
+        )
         x = unnormalize(x, mobo.get_bounds().cpu())
         x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
         # Calculate posterior samples
-        y = mobo.get_model().posterior(x).sample()
-        # Calculate pareto front
+        posterior = mobo.get_model().posterior(x)
+        mean = posterior.mean
+        std = posterior.variance.sqrt()
+        # samples = posterior.sample()
+
+        # Calculate pareto front for mean and samples
         if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
-            pareto_mask = is_non_dominated(Y=y, maximize=True)
-            pareto = y[pareto_mask]
-            pareto = pareto.cpu().numpy()
-            sorted_indices = np.argsort(-pareto[:, 0])
+            mean_mask = is_non_dominated(Y=mean, maximize=True)
+            mean_pareto = mean[mean_mask].detach().cpu().numpy()
+            std_pareto = std[mean_mask].detach().cpu().numpy()
+            mean_sorted = np.argsort(-mean_pareto[:, 0])
 
         elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
-            pareto_mask = is_non_dominated(Y=y, maximize=False)
-            pareto = y[pareto_mask]
-            pareto = pareto.cpu().numpy()
-            sorted_indices = np.argsort(pareto[:, 0])
+            mean_mask = is_non_dominated(Y=mean, maximize=False)
+            mean_pareto = mean[mean_mask].detach().cpu().numpy()
+            std_pareto = std[mean_mask].detach().cpu().numpy()
+            mean_sorted = np.argsort(mean_pareto[:, 0])
         else:
             raise ValueError("Unknown optimization true_objective type.")
-        pareto = pareto[sorted_indices]
-        # axes.scatter(pareto[:, 0], pareto[:, 1], **posterior_kwargs, label="Posterior Pareto Front")
-        axes.plot(pareto[:, 0], pareto[:, 1], **posterior_line, label="Posterior Pareto Front")
 
+        mean_pareto = mean_pareto[mean_sorted]
+        std_pareto = std_pareto[mean_sorted]
 
-    # Bring inputs to CPU
-    y = mobo.get_Yobj().cpu().numpy()
-    pareto = mobo.get_pareto().cpu().numpy()
+        # Plot std dev bands
+        for i in range(3, 0, -1):
+            axes.fill_between(mean_pareto[:, 0],
+                              mean_pareto[:, 1] - i * std_pareto[:, 1],
+                              mean_pareto[:, 1] + i * std_pareto[:, 1],
+                              alpha=0.2,
+                              color='tab:green',
+                              label=f'{i}σ' if i == 1 else None)
+
+        axes.plot(mean_pareto[:, 0], mean_pareto[:, 1], **posterior_pareto_kwargs)
+
 
     # Plot observations except Pareto front
-    mask = np.ones(len(y), dtype=bool)
-    mask[pareto] = False
-    if np.any(mask):
-        axes.scatter(y[mask, 0], y[mask, 1], **observation_kwargs, label='Observations')
+    y = mobo.get_Yobj().cpu().numpy()
+    mask = mobo.get_pareto_mask().cpu().numpy()
+    inverted_mask = np.invert(mask)
+    if len(inverted_mask) > 0:
+        axes.scatter(y[inverted_mask, 0], y[inverted_mask, 1], **observation_kwargs)
 
     # Plot Pareto Front
-    mask = np.invert(mask)
-    pareto = y[mask]
-    if np.any(mask):
+    if len(mask) > 0:
+        pareto = y[mask]
         # Sort points by x-coordinate (f1)
         if mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
             sorted_indices = np.argsort(pareto[:, 0])
@@ -231,8 +293,7 @@ def plot_multi_objective_from_RN_to_R2(mobo: Mobo, ground_truth=False, posterior
         else:
             raise ValueError("Unknown optimization true_objective type.")
         pareto = pareto[sorted_indices]
-        # axes.scatter(pareto[:, 0], pareto[:, 1], **pareto_kwargs, label='Observed Pareto Front')
-        axes.plot(pareto[:, 0], pareto[:, 1], **pareto_line_kwargs, label='Observed Pareto Front')
+        axes.plot(pareto[:, 0], pareto[:, 1], **observed_pareto_kwargs)
 
     # Add legend
     plt.legend()
@@ -369,7 +430,7 @@ def plot_multi_objective_from_RN_to_R3(mobo: Mobo, ground_truth=False, posterior
             ax.legend()
 
     plt.tight_layout()
-    filepath = compose_figure_filename()
+    filepath = compose_figure_filename(postfix='_multi_objective')
     fig.savefig(filepath + ".png", dpi=300, bbox_inches='tight')
 
     if show:
@@ -382,11 +443,16 @@ def plot_log_hypervolume_difference(mobo: Mobo, show=False):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("number of observations (beyond initial points)")
     ax.set_ylabel("Log Hypervolume Difference")
-    x = range(len(mobo.get_hypervolume()))
+    x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     hv = np.array(mobo.get_hypervolume())
     max_hv = mobo.get_true_objective().max_hv
     dy = np.log10(max_hv - hv)
     ax.errorbar(x, dy, linewidth=2,)
-    ax.legend()
+
+    plt.tight_layout()
+    filepath = compose_figure_filename(postfix="_hv_diff")
+    fig.savefig(filepath + ".png", dpi=300, bbox_inches='tight')
+
     if show:
         plt.show()
+    plt.close(fig)

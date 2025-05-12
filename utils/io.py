@@ -74,8 +74,8 @@ def compose_model_filename():
     return compose_filename() + ".dat"
 
 
-def compose_figure_filename():
-    return compose_filename() + ".png"
+def compose_figure_filename(postfix: str = ""):
+    return compose_filename() + postfix + ".png"
 
 
 def compose_dataset_filename():

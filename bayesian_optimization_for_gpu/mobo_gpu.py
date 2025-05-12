@@ -15,7 +15,6 @@ from botorch.utils.multi_objective import is_non_dominated, hypervolume, Hypervo
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning, DominatedPartitioning
 from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
-
 from utils.cuda import get_device, get_supported_dtype
 from utils.types import SamplerType, OptimizationProblemType, TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
@@ -67,6 +66,7 @@ class Mobo:
         self._model: ModelListGP | None = None
         self._mlls: list[ExactMarginalLogLikelihood] = []
         self._pareto_front = None
+        self._pareto_mask = None
         self._constraints = None
         self._ref_point: torch.Tensor = None
         self._new_X: torch.Tensor = None  # The new X location
@@ -102,28 +102,28 @@ class Mobo:
         return self._X
 
     def set_Yobj(self, Yobj: torch.Tensor):
-        validate_Y(Yobj)
+        validate_Yobj(Yobj)
         self._Yobj = Yobj.to(self._device, self._dtype)
 
     def get_Yobj(self) -> torch.Tensor | None:
         return self._Yobj
 
     def set_Yobj_var(self, Yobj_var: torch.Tensor | None = None):
-        validate_Y_var(Yobj_var)
+        validate_Yobj_var(Yobj_var)
         self._Yobj_var = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
 
     def get_Yobj_var(self):
         return self._Yobj_var
 
-    def set_Ycon(self, Ycon: torch.Tensor):
-        validate_Y(Ycon)
-        self._Ycon = Ycon.to(self._device, self._dtype)
+    def set_Ycon(self, Ycon: torch.Tensor | None):
+        validate_Ycon(Ycon)
+        self._Ycon = Ycon.to(self._device, self._dtype) if Ycon is not None else None
 
     def get_Ycon(self):
         return self._Ycon
 
     def set_Ycon_var(self, Ycon_var: torch.Tensor | None = None):
-        validate_Y_var(Ycon_var)
+        validate_Yobj_var(Ycon_var)
         self._Ycon_var = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
 
     def get_Ycon_var(self):
@@ -164,8 +164,8 @@ class Mobo:
     def get_optimization_problem_type(self):
         return self._optimization_problem_type
 
-    def set_sampler_type(self, sampler):
-        self._sampler_type = sampler
+    def set_sampler_type(self, sampler_type: SamplerType):
+        self._sampler_type = sampler_type
 
     def set_batch_size(self, batch_size: int):
         """ Set the number of candidates to be generated in each optimization step."""
@@ -188,11 +188,12 @@ class Mobo:
 
     def set_true_objective(self, true_objective: MultiObjectiveTestProblem):
         self._true_objective = true_objective
+        self._true_objective.to(self._device, self._dtype)
 
     def get_true_objective(self):
         return self._true_objective
 
-    def set_objective(self, objective: Callable):
+    def set_objective(self, objective: Callable or None):
         self._objective = objective
 
     def get_objective(self):
@@ -201,7 +202,10 @@ class Mobo:
     def get_pareto(self):
         return self._pareto_front
 
-    def set_constraints(self, constraints: list[Callable]):
+    def get_pareto_mask(self):
+        return self._pareto_mask
+
+    def set_constraints(self, constraints: list[Callable] or None = None):
         self._constraints = constraints
 
     def get_constraints(self):
@@ -218,21 +222,17 @@ class Mobo:
     def get_iteration_number(self):
         return self._n_iterations
 
-    """ Optimizer """
+    def get_ref_point(self):
+        return self._ref_point
 
+    """ Optimizer """
     def _initialize_model(self, verbose=True):
         """ Define models for objectives and constraints."""
 
         if verbose:
             print("Initializing model...", end="")
 
-        # Normalize X data and concatenate objectives and constraints
-        train_x = normalize(self._X, self._bounds)
-        train_y = torch.cat((self._Yobj, self._Ycon), dim=-1)
-        if self._Yobj_var is not None and self._Ycon_var is not None:
-            train_y_var = torch.cat((self._Yobj_var, self._Ycon_var), dim=-1)
-        else:
-            train_y_var = None
+        train_x, train_y, train_y_var = self._prepare_training_dataset()
 
         # Initialize models
         models = []
@@ -241,7 +241,7 @@ class Mobo:
                 SingleTaskGP(
                     train_x,
                     train_y[..., i: i + 1],
-                    train_y_var[..., i: i + 1] if self._Yobj_var is not None and self._Ycon_var is not None else None,
+                    train_y_var[..., i: i + 1] if train_y_var is not None else None,
                     # input_transform=Normalize(d=self._X.shape[-1]),
                     outcome_transform=Standardize(m=1),
                     # likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
@@ -252,6 +252,28 @@ class Mobo:
 
         if verbose:
             print(" Done.")
+
+    def _prepare_training_dataset(self):
+        """Prepare normalized training data by combining objectives and constraints."""
+
+        # Normalize input features
+        train_x = normalize(self._X, self._bounds)
+
+        # Combine objectives and constraints if they exist
+        train_y = (
+            torch.cat((self._Yobj, self._Ycon), dim=-1)
+            if self._Ycon is not None
+            else self._Yobj
+        )
+
+        # Combine variances if variances exist
+        train_y_var = None
+        if self._Yobj_var is not None and self._Ycon_var is not None:
+            train_y_var = torch.cat((self._Yobj_var, self._Ycon_var), dim=-1)
+        elif self._Yobj_var is not None:
+            train_y_var = self._Yobj_var
+    
+        return train_x, train_y, train_y_var
 
     def _initialize_sampler(self, verbose=True,):
         if verbose:
@@ -295,8 +317,9 @@ class Mobo:
                 sampler=self._sampler_instance,
                 prune_baseline=True,
                 objective=self._objective,
-                constraints=[lambda Z: Z[..., -1]]  # self._constraints,
+                constraints=self._constraints,
             )
+
         elif self._acquisition_function_type == AcquisitionFunctionType.qLogNEHVI:
             self._acquisition_function_instance = qLogNoisyExpectedHypervolumeImprovement(
                 model=self._model,
@@ -329,7 +352,7 @@ class Mobo:
 
         # The reference point is calculated only for the first iteration step
         if self._n_iterations == 0:
-            self._ref_point = torch.tensor(self._true_objective._ref_point).to(self._device)
+            self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
 
         # if self._optimization_problem_type == OptimizationProblemType.Maximization:
         #     worst = torch.min(self._Yobj, dim=0).values
@@ -399,23 +422,31 @@ class Mobo:
     def _compute_pareto_front(self, verbose=True):
         if verbose:
             print("Finding Pareto front...", end="")
-        
-        feasibility_mask = (self._Ycon <= 0).all(dim=-1)
-        feasible_Yobj = self._Yobj[feasibility_mask]
+
+        # Handle unconstrained cases.
+        if self._Ycon is None:
+            feasible_Yobj = self._Yobj
+        # Handle constrained cases.
+        else:
+            feasibility_mask = (self._Ycon <= 0).all(dim=-1)
+            feasible_Yobj = self._Yobj[feasibility_mask]
+
         if feasible_Yobj.shape[0] > 0:
             # Distinguish maximization and minimization problems
             if self._optimization_problem_type == OptimizationProblemType.Maximization:
-                pareto_mask = is_non_dominated(feasible_Yobj, maximize=True)
+                self._pareto_mask = is_non_dominated(feasible_Yobj, maximize=True)
             elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-                pareto_mask = is_non_dominated(feasible_Yobj, maximize=False)
+                self._pareto_mask = is_non_dominated(feasible_Yobj, maximize=False)
             else:
                 raise ValueError(f"Invalid optimization problem type: {self._optimization_problem_type}")
-            self._pareto_front = feasible_Yobj[pareto_mask]
+            self._pareto_front = feasible_Yobj[self._pareto_mask]
         else:
             self._pareto_front = torch.empty(0, self._Yobj.shape[-1]).to(self._device)
+            self._pareto_mask = torch.empty(0, dtype=torch.bool).to(self._device)
 
         if verbose:
             print(" Done.")
+
 
     def optimize(self, verbose=True):
 
@@ -443,6 +474,27 @@ class Mobo:
                   f"Hypervolume = {self._hypervolume[-1]:>4.2f}\n"
                   f"New X: {self._new_X}")
 
+    def update_XY(
+            self,
+            new_X: torch.Tensor,
+            new_Yobj: torch.Tensor,
+            new_Yobj_var: torch.Tensor or None = None,
+            new_Ycon: torch.Tensor or None = None,
+            new_Ycon_var=None
+    ) -> None:
+
+        if new_X is not None:
+            self._X = torch.cat([self._X, new_X], dim=0)
+        if new_Yobj is not None:
+            self._Yobj = torch.cat([self._Yobj, new_Yobj], dim=0)
+        if new_Yobj_var is not None:
+            self._Yobj_var = torch.cat([self._Yobj_var, new_Yobj_var], dim=0)
+        if new_Ycon is not None:
+            self._Ycon = torch.cat([self._Ycon, new_Ycon], dim=0)
+        if new_Ycon_var is not None:
+            self._Ycon_var = torch.cat([self._Ycon_var, new_Ycon_var], dim=0)
+
+
     """ I/O """
     
     def to_file(self):
@@ -451,6 +503,20 @@ class Mobo:
             pickle.dump(self, file)
         return filepath
 
+    def save_dataset_to_csv(self):
+
+        XY = torch.cat([self._X, self._Yobj], dim=-1)
+        if self._Yobj_var is not None:
+            XY = torch.cat([XY, self._Yobj_var], dim=-1)
+        if self._Ycon is not None:
+            XY = torch.cat([XY, self._Ycon], dim=-1)
+            if self._Ycon_var is not None:
+                XY = torch.cat([XY, self._Ycon_var], dim=-1)
+
+        XY = XY.detach().cpu().numpy()
+        filepath = compose_dataset_filename()
+        np.savetxt(filepath, XY, delimiter=",", comments="")
+    
     def load_dataset_from_csv(self, filepath: str or None = None):
         if filepath is None:
             csv_files = list(Path('.').glob('*.csv'))
