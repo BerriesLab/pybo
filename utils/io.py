@@ -1,10 +1,7 @@
 import datetime
-import os
-import glob
 import numpy as np
 from pathlib import Path
 import torch
-
 
 def create_experiment_directory(main_directory: Path or str, experiment_name: str):
     if isinstance(main_directory, str):
@@ -60,24 +57,20 @@ def load_dataset_from_csv(filepath: str or None = None, device: str = "cpu"):
         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
 
     xy = np.loadtxt(filepath, delimiter=",")
-
-
     return torch.Tensor(xy)
 
+def compose_filename(iteration_number: int or None = None):
+    if iteration_number is None:
+        return ''
+    else:
+        return f'{iteration_number:04d}'
 
-def compose_filename():
-    date_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return f'{date_time}'
+def compose_model_filename(iteration_number: int or None = None):
+    return compose_filename(iteration_number) + ".dat"
 
+def compose_figure_filename(iteration_number: int or None = None, postfix: str = ""):
+    return compose_filename(iteration_number) + postfix + ".png"
 
-def compose_model_filename():
-    return compose_filename() + ".dat"
-
-
-def compose_figure_filename(postfix: str = ""):
-    return compose_filename() + postfix + ".png"
-
-
-def compose_dataset_filename():
-    return compose_filename() + ".csv"
+def compose_dataset_filename(iteration_number: int or None = None):
+    return compose_filename(iteration_number) + ".csv"
 

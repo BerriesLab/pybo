@@ -66,7 +66,7 @@ mobo.set_acquisition_function(acquisition_function_type=AcquisitionFunctionType.
 mobo.set_sampler_type(sampler=SamplerType.Sobol)
 mobo.set_raw_samples(raw_samples=raw_samples)
 mobo.set_batch_size(batch_size=batch_size)
-mobo.set_MC_samples(MC_samples=monte_carlo_samples)
+mobo.set_mc_samples(MC_samples=monte_carlo_samples)
 
 
 for i in range(n_iterations):

@@ -1,13 +1,15 @@
 import pickle
 import warnings
 import time
-import glob
-import os
+from collections.abc import Callable
 
+import gpytorch.likelihoods
 import botorch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
+from botorch.sampling.normal import NormalMCSampler
+
 from botorch.test_functions.base import MultiObjectiveTestProblem
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning, DominatedPartitioning
@@ -22,93 +24,58 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
     qLogExpectedHypervolumeImprovement, IdentityMCMultiOutputObjective, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
+from gpytorch.constraints import GreaterThan
 from bayesian_optimization_for_gpu.validators import *
 from utils.io import *
 
 
 class Mobo:
 
-    def __init__(
-            self,
-            experiment_name: str,
-            X: torch.Tensor,
-            Yobj: torch.Tensor,
-            bounds: torch.Tensor,
-            objective: Callable | None,
-            Yobj_var: torch.Tensor | None = None,
-            Ycon: torch.Tensor | None = None,
-            Ycon_var: torch.Tensor | None = None,
-            optimization_problem_type: OptimizationProblemType = OptimizationProblemType.Maximization,
-            true_objective: MultiObjectiveTestProblem | None = None,
-            constraints: list[Callable] | None = None,
-            acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qEHVI,
-            sampler_type: SamplerType = SamplerType.Sobol,
-            batch_size: int = 1,
-            mc_samples: int = 1024,
-            raw_samples: int = 512,
-            n_acqf_opt_iter: int = 500,  # Number of iterations for acquisition function optimization
-            max_n_acqf_opt_restarts: int = 10  # Max number of restarts for acquisition function optimization
-    ):
+    # TODO: add initialization parameters
+    def __init__(self, experiment_name: str):
 
-        # Validate input arguments
         validate_experiment_name(experiment_name)
-        validate_X(X)
-        validate_Yobj(Yobj)
-        validate_bounds(bounds)
-        validate_objective(objective)
-        validate_true_objective(true_objective)
-        validate_optimization_problem(optimization_problem_type)
-        validate_constraints(constraints)
-        validate_acquisition_function(acquisition_function_type)
-        validate_sampler_type(sampler_type)
-        validate_batch_size(batch_size)
-        validate_mc_samples(mc_samples)
-        validate_raw_samples(raw_samples)
-        validate_n_acqf_opt_iter(n_acqf_opt_iter)
-        validate_max_n_acqf_opt_restarts(max_n_acqf_opt_restarts)
 
-        # Experiment Name Attributes
-        self._experiment_name = experiment_name  # A name used when saving results to file
-        self._datetime = datetime.datetime.now()  # A datetime stamp used when saving results to file
+        self._experiment_name = experiment_name
+        self._datetime = datetime.datetime.now()
+        self._bounds: torch.Tensor | None = None  # of shape "2 x d"
 
-        # Device Attributes
-        self._device = get_device()  # The device used for computation (e.g., GPU, CPU or MPS)
-        self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from the device type
+        self._X: torch.Tensor | None = None
+        self._Yobj: torch.Tensor | None = None
+        self._Ycon: torch.Tensor | None = None
+        self._Yobj_var: torch.Tensor | None = None
+        self._Ycon_var: torch.Tensor | None = None
 
-        # Problem Attributes
-        self._X: torch.Tensor = X.to(self._device, self._dtype)  # Input variables
-        self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype)  # Objective observables
-        self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None  # Constrained observables
-        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None  # Observed variance
-        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed constraints variables
-        self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # Input domain bounds
-        self._optimization_problem_type = optimization_problem_type  # Type of optimization problem (minimization or maximization)
-        self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
-        self._acquisition_function_instance = None  # Instance of the acquisition function - instantiated within the optimization loop
-        self._sampler_type = sampler_type  # Type of sampler used for initialization and acquisition function optimization
-        self._sampler_instance = None  # Instance of the sampler - instantiated within the optimization loop
-        self._true_objective = true_objective  # The ground truth (multi)objective function
-        self._objective = objective  # The (multi)objective function to be optimized
-        self._constraints = constraints  # The functional constraints
-        self._n_acqf_opt_iter = n_acqf_opt_iter  # Number of iterations for acquisition function optimization
-        self._max_n_acqf_opt_restarts = max_n_acqf_opt_restarts  # Max number of restarts for acquisition function optimization
-        self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
-        self._mc_samples = mc_samples  # Number of samples for initialization and acquisition function optimization
-        self._raw_samples = raw_samples  # Number of samples for acquisition function optimization
+        # Optimization Attributes
+        self._optimization_problem_type = None
+        self._acquisition_function_type: AcquisitionFunctionType | None = None
+        self._acquisition_function_instance: botorch.acquisition.AcquisitionFunction | None = None
+        self._sampler_type = None
+        self._sampler_instance: NormalMCSampler | None = None
+        self._true_objective: MultiObjectiveTestProblem | None = None
+        self._objective = None
+        self._device = get_device()
+        self._dtype = get_supported_dtype(self._device)
+        self._n_acqf_opt_iter: int = 500  # Number of iterations for acquisition function optimization
+        self._max_n_acqf_opt_restarts: int = 10  # Max number of restarts for acquisition function optimization
+        self._batch_size: int = 1  # Number of candidates to be generated in parallel in each optimization step
+        self._MC_samples: int = 1024  # Number of samples for initialization and acquisition function optimization
+        self._raw_samples: int = 512  # Number of samples for acquisition function optimization
 
-        # State Attributes
+        # Optimization State Attributes
+        self._n_iterations = 0
         self._model: ModelListGP | None = None
-        self._mlls: list[ExactMarginalLogLikelihood] | list = []
-        self._pareto_front: torch.Tensor | None = None
-        self._pareto_mask: torch.Tensor | None = None
-        self._ref_point: torch.Tensor | None = None
-        self._new_X: torch.Tensor | None = None
+        self._mlls: list[ExactMarginalLogLikelihood] = []
+        self._pareto_front = None
+        self._pareto_mask = None
+        self._constraints = None
+        self._ref_point: torch.Tensor = None
+        self._new_X: torch.Tensor = None  # The new X location
 
         # Metrics
-        self._iteration_number = 0  # Number of iterations - Incremental value
-        self._hypervolume = []  # Hypervolume spanned by the pareto front for each iteration step
-        self._elapsed_time = []  # Time elapsed for each iteration step
-        self._allocated_memory = []  # Memory allocated for each iteration step
+        self._hypervolume = []
+        self._elapsed_time = []
+        self._allocated_memory = []
 
     """ Setters and getters """
 
@@ -119,6 +86,9 @@ class Mobo:
 
     def get_experiment_name(self):
         return self._experiment_name
+
+    def get_n_objectives(self):
+        return self._n_objectives
 
     def set_datetime(self, date_time: datetime.datetime):
         validate_datetime(date_time)
@@ -185,7 +155,6 @@ class Mobo:
         return self._model
 
     def set_acquisition_function(self, acquisition_function_type: AcquisitionFunctionType):
-        validate_acquisition_function(acquisition_function_type)
         self._acquisition_function_type = acquisition_function_type
 
     def get_acquisition_function(self):
@@ -193,7 +162,7 @@ class Mobo:
 
     def set_optimization_problem(self, optimization_problem_type: OptimizationProblemType):
         """ Set the optimization problem as maximization or minimization. Note that
-        BoTorch supports natively only maximization problems, therefore, this setting is
+        BoTorch supports natively only maximization problems, therefore this setting is
         used to negate the objective function and choose appropriate values for the
         reference point."""
         validate_optimization_problem(optimization_problem_type)
@@ -203,40 +172,35 @@ class Mobo:
         return self._optimization_problem_type
 
     def set_sampler_type(self, sampler_type: SamplerType):
-        validate_sampler_type(sampler_type)
         self._sampler_type = sampler_type
 
     def set_batch_size(self, batch_size: int):
         """ Set the number of candidates to be generated in each optimization step."""
-        validate_batch_size(batch_size)
         self._batch_size = batch_size
 
     def get_batch_size(self):
         return self._batch_size
 
-    def set_mc_samples(self, MC_samples: int):
-        validate_mc_samples(MC_samples)
-        self._mc_samples = MC_samples
+    def set_MC_samples(self, MC_samples: int):
+        self._MC_samples = MC_samples
 
-    def get_mc_samples(self):
-        return self._mc_samples
+    def get_MC_samples(self):
+        return self._MC_samples
 
     def set_raw_samples(self, raw_samples: int):
-        validate_raw_samples(raw_samples)
         self._raw_samples = raw_samples
 
     def get_raw_samples(self):
         return self._raw_samples
 
     def set_true_objective(self, true_objective: MultiObjectiveTestProblem):
-        validate_true_objective(true_objective)
         self._true_objective = true_objective
+        self._true_objective.to(self._device, self._dtype)
 
     def get_true_objective(self):
         return self._true_objective
 
     def set_objective(self, objective: Callable or None):
-        validate_objective(objective)
         self._objective = objective
 
     def get_objective(self):
@@ -249,21 +213,21 @@ class Mobo:
         return self._pareto_mask
 
     def set_constraints(self, constraints: list[Callable] or None = None):
-        validate_constraints(constraints)
         self._constraints = constraints
 
     def get_constraints(self):
         return self._constraints
 
     def add_constraint(self, constraint: Callable):
-        validate_constraints([constraint,])
+        if self._constraints is None:
+            self._constraints = []
         self._constraints.append(constraint)
 
     def get_hypervolume(self):
         return self._hypervolume
 
     def get_iteration_number(self):
-        return self._iteration_number
+        return self._n_iterations
 
     def get_ref_point(self):
         return self._ref_point
@@ -273,7 +237,6 @@ class Mobo:
 
     def get_allocated_memory(self):
         return self._allocated_memory
-
 
     """ Optimizer """
     def _initialize_model(self, verbose=True):
@@ -330,7 +293,7 @@ class Mobo:
             print("Initializing sampler...", end="")
 
         if self._sampler_type.name == SamplerType.Sobol.name:
-            self._sampler_instance = SobolQMCNormalSampler(torch.Size([self._mc_samples]))
+            self._sampler_instance = SobolQMCNormalSampler(torch.Size([self._MC_samples]))
 
         if verbose:
             print(" Done.")
@@ -401,7 +364,7 @@ class Mobo:
             print("Defining reference point...", end="")
 
         # The reference point is calculated only for the first iteration step
-        if self._iteration_number == 0:
+        if self._n_iterations == 0:
             self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
 
         # if self._optimization_problem_type == OptimizationProblemType.Maximization:
@@ -497,6 +460,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
+
     def optimize(self, verbose=True):
 
         warnings.filterwarnings("ignore", category=BadInitialCandidatesWarning)
@@ -515,7 +479,7 @@ class Mobo:
         self._optimize_acquisition_function(verbose=verbose)
         self._compute_pareto_front(verbose=verbose)
         self._compute_hypervolume(verbose=verbose)
-        self._iteration_number += 1
+        self._n_iterations += 1
         t1 = time.monotonic()
         self._elapsed_time.append(t1 - t0)
         if self._device.type == "cuda":
@@ -534,7 +498,12 @@ class Mobo:
             new_Ycon: torch.Tensor or None = None,
             new_Ycon_var=None
     ) -> None:
-
+        """
+        Updates the internal tensors with new data. This method concatenates
+        the provided tensors with the instance's current tensors along the
+        first dimension. If any of the provided tensors is None, it is skipped
+        in the updating process.
+        """
         if new_X is not None:
             self._X = torch.cat([self._X, new_X], dim=0)
         if new_Yobj is not None:
@@ -546,10 +515,11 @@ class Mobo:
         if new_Ycon_var is not None:
             self._Ycon_var = torch.cat([self._Ycon_var, new_Ycon_var], dim=0)
 
+
     """ I/O """
     
     def to_file(self):
-        filepath = compose_model_filename(iteration_number=self._iteration_number)
+        filepath = compose_model_filename()
         with open(filepath, "wb") as file:
             pickle.dump(self, file)
         return filepath
@@ -565,7 +535,7 @@ class Mobo:
                 XY = torch.cat([XY, self._Ycon_var], dim=-1)
 
         XY = XY.detach().cpu().numpy()
-        filepath = compose_dataset_filename(self._iteration_number)
+        filepath = compose_dataset_filename()
         np.savetxt(filepath, XY, delimiter=",", comments="")
     
     def load_dataset_from_csv(self, filepath: str or None = None):
