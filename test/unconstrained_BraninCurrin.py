@@ -6,7 +6,7 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
 from botorch.test_functions.multi_objective import BraninCurrin
 
 
-experiment_name = "test_branincurrin_50iter_1q_512mc_256rs"
+experiment_name = "test_branincurrin_50iter_8q_512mc_256rs"
 main_directory = f"../data"
 initial_sampling_type = SamplerType.Sobol
 directory = create_experiment_directory(main_directory, experiment_name)
@@ -23,7 +23,7 @@ objective = None  # IdentityMCMultiOutputObjective(outcomes=(0, 1))
 """ Define the optimization parameters """
 n_init_samples = 2 * (n_dimensions + 1)
 n_iterations = 50
-batch_size = 1
+batch_size = 8
 monte_carlo_samples = 512
 raw_samples = 256
 optimization_problem_type = OptimizationProblemType.Maximization
