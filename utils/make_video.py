@@ -44,7 +44,7 @@ def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""
 
 if __name__ == "__main__":
     # Example usage:
-    image_folder = r'C:\Users\BerettaDavide\PycharmProjects\inspire\data\2025-05-06_17-13-33 - test0_c2dtlz2'
+    image_folder = r'C:\Users\BerettaDavide\PycharmProjects\inspire\data\2025-05-14_14-47-20 - test_c2dtlz2_50iter_2q_1024mc_512rs_qnehvi'
     output_video_path = image_folder + r"\movie.mp4" # Use the centralized output filename
     fps = 1.0  # You can adjust the frames per second as needed
 

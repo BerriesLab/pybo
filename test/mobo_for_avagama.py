@@ -83,7 +83,7 @@ for i in range(n_iterations):
 
     mobo.optimize()
     mobo.to_file()
-    plot_multi_objective_from_RN_to_R2(mobo, ground_truth=True, posterior=True, show=False)
+    plot_multi_objective_from_RN_to_R2(mobo, show_ground_truth=True, show_posterior=True, display_figures=False)
 
     # Evaluate the objective function at the new point(s).
     new_X = mobo.get_new_X().cpu().numpy()

@@ -10,8 +10,7 @@ from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
 from botorch.test_functions.base import MultiObjectiveTestProblem
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
-from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning, DominatedPartitioning
-from botorch.utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
+from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
 from utils.cuda import get_device, get_supported_dtype
 from utils.types import SamplerType, OptimizationProblemType, TorchDeviceType
@@ -20,7 +19,7 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
-    qLogExpectedHypervolumeImprovement, IdentityMCMultiOutputObjective, qLogNoisyExpectedHypervolumeImprovement
+    qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from bayesian_optimization_for_gpu.validators import *
 from utils.io import *
@@ -95,6 +94,8 @@ class Mobo:
         self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self._mc_samples = mc_samples  # Number of samples for initialization and acquisition function optimization
         self._raw_samples = raw_samples  # Number of samples for acquisition function optimization
+        self._par_mask = None
+        self._con_mask = None
 
         # State Attributes
         self._model: ModelListGP | None = None
@@ -245,8 +246,11 @@ class Mobo:
     def get_pareto(self):
         return self._pareto_front
 
-    def get_pareto_mask(self):
-        return self._pareto_mask
+    def get_par_mask(self):
+        return self._par_mask
+
+    def get_con_mask(self):
+        return self._con_mask
 
     def set_constraints(self, constraints: list[Callable] or None = None):
         validate_constraints(constraints)
@@ -387,29 +391,38 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    # def _initialize_partitioning(self, verbose=True,):
-    #     if verbose:
-    #         print("Initializing partitioning function...", end="")
-    # 
-    #     self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
-    # 
-    #     if verbose:
-    #         print(" Done.")
+    def _initialize_partitioning(self, verbose=True,):
+        if verbose:
+            print("Initializing partitioning function...", end="")
 
-    def _define_reference_point(self, verbose=True, buffer=0.25):
+        self._partitioning = FastNondominatedPartitioning(ref_point=self._ref_point, Y=self._Yobj)
+
+        if verbose:
+            print(" Done.")
+
+    def _compute_reference_point(self, verbose=True, buffer=0.25):
         if verbose:
             print("Defining reference point...", end="")
 
         # The reference point is calculated only for the first iteration step
         if self._iteration_number == 0:
-            self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
 
-        # if self._optimization_problem_type == OptimizationProblemType.Maximization:
-        #     worst = torch.min(self._Yobj, dim=0).values
-        #     self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device)
-        # elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-        #     worst = torch.max(self._Yobj, dim=0).values
-        #     self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device)
+            # If the true objective is provided, then use its reference point if provided
+            if self._true_objective is not None and hasattr(self._true_objective, "_ref_point"):
+                self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
+
+            # Otherwise, compute a reference point
+            else:
+
+                # Handle maximization problems
+                if self._optimization_problem_type == OptimizationProblemType.Maximization:
+                    worst = torch.min(self._Yobj, dim=0).values
+                    self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device, self._dtype)
+
+                # Handle minimization problems
+                elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+                    worst = torch.max(self._Yobj, dim=0).values
+                    self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device, self._dtype)
 
         if verbose:
             print(" Done.")
@@ -470,29 +483,24 @@ class Mobo:
             print(" Done.")
 
     def _compute_pareto_front(self, verbose=True):
+        """The pareto front is computed by considering only the objective observations for which the corresponding constraint
+        observations satisfy the constraint functions. This is done by filtering out the acceptable Yobj observations."""
+
         if verbose:
             print("Finding Pareto front...", end="")
 
-        # Handle unconstrained cases.
+        # If the problem is unconstrained, then all observations are Pareto-optimal
         if self._Ycon is None:
-            feasible_Yobj = self._Yobj
-        # Handle constrained cases.
-        else:
-            feasibility_mask = (self._Ycon <= 0).all(dim=-1)
-            feasible_Yobj = self._Yobj[feasibility_mask]
+            self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
+            mask = self._par_mask
 
-        if feasible_Yobj.shape[0] > 0:
-            # Distinguish maximization and minimization problems
-            if self._optimization_problem_type == OptimizationProblemType.Maximization:
-                self._pareto_mask = is_non_dominated(feasible_Yobj, maximize=True)
-            elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-                self._pareto_mask = is_non_dominated(feasible_Yobj, maximize=False)
-            else:
-                raise ValueError(f"Invalid optimization problem type: {self._optimization_problem_type}")
-            self._pareto_front = feasible_Yobj[self._pareto_mask]
         else:
-            self._pareto_front = torch.empty(0, self._Yobj.shape[-1]).to(self._device)
-            self._pareto_mask = torch.empty(0, dtype=torch.bool).to(self._device)
+            # If the problem is constrained, then only the observations satisfying the constraints are Pareto-optimal
+            self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
+            self._con_mask = (self._Ycon <= 0).all(dim=-1)
+            mask = torch.logical_and(self._par_mask, self._con_mask)
+
+        self._pareto_front = self._Yobj[mask]
 
         if verbose:
             print(" Done.")
@@ -506,11 +514,12 @@ class Mobo:
         warnings.filterwarnings("ignore", category=OptimizationWarning)
 
         self._initialize_model(verbose=verbose)
-        self._define_reference_point(verbose=verbose)
+        self._compute_reference_point(verbose=verbose)
         self._initialize_sampler(verbose=verbose)
 
         t0 = time.monotonic()
         self._fit_model(verbose=verbose)
+        # self._initialize_partitioning(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
         self._optimize_acquisition_function(verbose=verbose)
         self._compute_pareto_front(verbose=verbose)

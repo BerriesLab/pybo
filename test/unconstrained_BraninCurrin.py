@@ -8,7 +8,7 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
 from botorch.test_functions.multi_objective import BraninCurrin
 
 
-experiment_name = "test_branincurrin_50iter_4q_1024mc_512rs"
+experiment_name = "test_branincurrin_20iter_1q_1024mc_512rs"
 main_directory = f"../data"
 initial_sampling_type = SamplerType.Sobol
 directory = create_experiment_directory(main_directory, experiment_name)
@@ -24,8 +24,8 @@ objective = None  # IdentityMCMultiOutputObjective(outcomes=(0, 1))
 
 """ Define the optimization parameters """
 n_init_samples = 2 * (n_dimensions + 1)
-n_iterations = 2
-batch_size = 4
+n_iterations = 50
+batch_size = 8
 mc_samples = 1024
 raw_samples = 512
 optimization_problem_type = OptimizationProblemType.Maximization
@@ -66,24 +66,6 @@ mobo = Mobo(
     batch_size=batch_size,
 )
 
-# mobo = Mobo(experiment_name=experiment_name)
-# mobo.set_X(X=X)
-# mobo.set_Yobj(Yobj=Yobj)
-# mobo.set_Yobj_var(Yobj_var=Yobj_var)
-# mobo.set_Ycon(Ycon=Ycon)
-# mobo.set_Ycon_var(Ycon_var=Ycon_var)
-# mobo.set_optimization_problem(optimization_problem_type=optimization_problem_type)
-# mobo.set_bounds(bounds=bounds)
-# mobo.set_true_objective(true_objective=true_objective)
-# mobo.set_objective(objective=objective)
-# mobo.set_constraints(constraints=constraints)
-# mobo.set_acquisition_function(acquisition_function_type=acquisition_function_type)
-# mobo.set_sampler_type(sampler_type=sampler_type)
-# mobo.set_raw_samples(raw_samples=raw_samples)
-# mobo.set_batch_size(batch_size=batch_size)
-# mobo.set_MC_samples(MC_samples=monte_carlo_samples)
-
-
 for i in range(n_iterations):
 
     print("\n\n")
@@ -100,12 +82,12 @@ for i in range(n_iterations):
     mobo.to_file()
     plot_multi_objective_from_RN_to_R2(
         mobo=mobo,
-        ref_point=True,
-        ground_truth=True,
-        posterior=True,
+        show_ref_point=True,
+        show_ground_truth=True,
+        show_posterior=True,
         f1_lims=(-250, 10),
         f2_lims=(-15, 0),
-        show=False
+        display_figures=False
     )
 
     """ Simulate experiment at new X """

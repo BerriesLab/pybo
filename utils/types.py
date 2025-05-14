@@ -1,7 +1,5 @@
 from enum import Enum
 
-from botorch.acquisition.multi_objective import qNoisyExpectedHypervolumeImprovement
-
 
 class AcquisitionFunctionType(Enum):
     qEHVI = "qEHVI"
@@ -29,8 +27,9 @@ class SamplerType(Enum):
 
 
 class OptimizationProblemType(Enum):
-    Minimization = 0
-    Maximization = 1
+    """ Maximization is set to True as BoTorch uses maximization by default."""
+    Minimization = False
+    Maximization = True
 
 
 class TorchDeviceType(Enum):
