@@ -11,7 +11,7 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
     plot_allocated_memory
 
 
-experiment_name = "test_c2dtlz2_64samples_1q_1024mc_512rs_qnehvi"
+experiment_name = "test_c2dtlz2_64samples_2q_1024mc_512rs_qnehvi"
 main_directory = f"../data"
 initial_sampling_type = SamplerType.Sobol
 directory = create_experiment_directory(main_directory, experiment_name)
@@ -28,7 +28,7 @@ objective = IdentityMCMultiOutputObjective(outcomes=[0, 1])
 """ Define the optimization parameters """
 n_samples = 64
 n_init_samples = 2 * (n_dimensions + 1)
-batch_size = 1
+batch_size = 2
 mc_samples = 1024
 raw_samples = 512
 n_iterations = int(n_samples / batch_size)
