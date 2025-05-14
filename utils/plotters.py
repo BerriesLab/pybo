@@ -16,6 +16,7 @@ accepted_observations_kwargs = {
     "edgecolors": "black",
     'label': 'Non-Pareto Obs.'
 }
+
 rejected_observations_kwargs = {
     'color': "tab:red",
     'marker': "o",
@@ -24,14 +25,12 @@ rejected_observations_kwargs = {
     "edgecolors": "black",
     'label': 'Rejected Obs.'
 }
+
 observed_pareto_kwargs = {
-    'color': 'black',
-    'linestyle': '-',
-    'linewidth': 1.5,
     'marker': 'o',
-    'markersize': ms,
-    'markerfacecolor': 'tab:orange',
-    'markeredgecolor': 'black',
+    's': ms**2,
+    'color': 'tab:orange',
+    'edgecolor': 'black',
     'alpha': 0.7,
     'label': 'Pareto Front'
 }
@@ -43,12 +42,14 @@ ref_point_kwargs = {
     'alpha': 0.8,
     'label': 'Ref. Point'
 }
+
 ground_truth_kwargs = {
     'color': "black",
     'marker': "o",
     's': ms**2 / 5,
     "alpha": 0.1
 }
+
 posterior_pareto_kwargs = {
     'color': 'tab:blue',
     'linestyle': '-',
@@ -59,16 +60,6 @@ posterior_pareto_kwargs = {
     'markeredgecolor': 'black',
     'alpha': 0.6,
     'label': 'Post. Mean'
-}
-pareto_surface_kwargs = {
-    'alpha':0.4,
-    'edgecolors':"black",
-    'linewidth':0.1
-}
-posterior_surface_kwargs = {
-    'alpha': 0.4,
-    'edgecolors': 'black',
-    'linewidths':0.1
 }
 
 
@@ -103,52 +94,52 @@ def plot_multi_objective_from_RN_to_R2(
     if f2_lims is not None and isinstance(f2_lims, tuple):
         axes.set_ylim(f2_lims[0], f2_lims[1])
 
-        # Plot posterior if requested
-        if show_posterior:
-            # Extract 1000 random samples
-            dims = mobo.get_X().shape[-1]
-            x = draw_samples(
-                sampler_type=SamplerType.Sobol,
-                bounds=mobo.get_bounds().cpu(),
-                n_samples=int(1e2),
-                n_dimensions=dims
-            )
-            x = unnormalize(x, mobo.get_bounds().cpu())
-            x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
-            # Calculate posterior samples
-            show_posterior = mobo.get_model().posterior(x)
-            mean = show_posterior.mean
-            std = show_posterior.variance.sqrt()
-            # samples = posterior.sample()
+    # Plot posterior if requested
+    if show_posterior:
+        # Extract 1000 random samples
+        dims = mobo.get_X().shape[-1]
+        x = draw_samples(
+            sampler_type=SamplerType.Sobol,
+            bounds=mobo.get_bounds().cpu(),
+            n_samples=int(1e2),
+            n_dimensions=dims
+        )
+        x = unnormalize(x, mobo.get_bounds().cpu())
+        x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
+        # Calculate posterior samples
+        show_posterior = mobo.get_model().posterior(x)
+        mean = show_posterior.mean
+        std = show_posterior.variance.sqrt()
+        # samples = posterior.sample()
 
-            # Calculate pareto front for mean and samples
-            if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
-                mean_mask = is_non_dominated(Y=mean, maximize=True)
-                mean_pareto = mean[mean_mask].detach().cpu().numpy()
-                std_pareto = std[mean_mask].detach().cpu().numpy()
-                mean_sorted = np.argsort(-mean_pareto[:, 0])
+        # Calculate pareto front for mean and samples
+        if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
+            mean_mask = is_non_dominated(Y=mean, maximize=True)
+            mean_pareto = mean[mean_mask].detach().cpu().numpy()
+            std_pareto = std[mean_mask].detach().cpu().numpy()
+            mean_sorted = np.argsort(-mean_pareto[:, 0])
 
-            elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
-                mean_mask = is_non_dominated(Y=mean, maximize=False)
-                mean_pareto = mean[mean_mask].detach().cpu().numpy()
-                std_pareto = std[mean_mask].detach().cpu().numpy()
-                mean_sorted = np.argsort(mean_pareto[:, 0])
-            else:
-                raise ValueError("Unknown optimization true_objective type.")
+        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
+            mean_mask = is_non_dominated(Y=mean, maximize=False)
+            mean_pareto = mean[mean_mask].detach().cpu().numpy()
+            std_pareto = std[mean_mask].detach().cpu().numpy()
+            mean_sorted = np.argsort(mean_pareto[:, 0])
+        else:
+            raise ValueError("Unknown optimization true_objective type.")
 
-            mean_pareto = mean_pareto[mean_sorted]
-            std_pareto = std_pareto[mean_sorted]
+        mean_pareto = mean_pareto[mean_sorted]
+        std_pareto = std_pareto[mean_sorted]
 
-            # Plot std dev bands
-            for i in range(3, 0, -1):
-                axes.fill_between(mean_pareto[:, 0],
-                                  mean_pareto[:, 1] - i * std_pareto[:, 1],
-                                  mean_pareto[:, 1] + i * std_pareto[:, 1],
-                                  alpha=0.15,
-                                  color='tab:blue',
-                                  label=f'{i}σ' if i == 1 else None)
+        # Plot std dev bands
+        for i in range(3, 0, -1):
+            axes.fill_between(mean_pareto[:, 0],
+                              mean_pareto[:, 1] - i * std_pareto[:, 1],
+                              mean_pareto[:, 1] + i * std_pareto[:, 1],
+                              alpha=0.15,
+                              color='tab:blue',
+                              label=f'{i}σ' if i == 1 else None)
 
-            axes.plot(mean_pareto[:, 0], mean_pareto[:, 1], **posterior_pareto_kwargs)
+        axes.plot(mean_pareto[:, 0], mean_pareto[:, 1], **posterior_pareto_kwargs)
 
     # Plot ground truth if requested
     if show_ground_truth:
@@ -206,7 +197,7 @@ def plot_multi_objective_from_RN_to_R2(
             f = y_obj[mask][torch.sort(y_obj[mask][:, 0]).indices]
             f1 = f[:, 0].detach().cpu().numpy()
             f2 = f[:, 1].detach().cpu().numpy()
-            axes.plot(f1, f2, **observed_pareto_kwargs)
+            axes.scatter(f1, f2, **observed_pareto_kwargs)
 
     # Add legend
     plt.legend()
