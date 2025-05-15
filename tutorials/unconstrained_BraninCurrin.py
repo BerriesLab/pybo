@@ -1,6 +1,6 @@
 import os
-from bayesian_optimization_for_gpu.mobo_gpu import Mobo
-from bayesian_optimization_for_gpu.samplers import draw_samples
+from mobo.mobo import Mobo
+from mobo.samplers import draw_samples
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -9,7 +9,7 @@ from botorch.test_functions.multi_objective import BraninCurrin
 
 
 def main(batch_size: int = 1, ):
-    experiment_name = f"test_branincurrin_64iter_{batch_size}q_1024mc_512rs"
+    experiment_name = f"test_branincurrin_64iter_{batch_size}q_1024mc_512rs_qlognehvi"
     main_directory = f"../data"
     initial_sampling_type = SamplerType.Sobol
     directory = create_experiment_directory(main_directory, experiment_name)
@@ -31,7 +31,7 @@ def main(batch_size: int = 1, ):
     raw_samples = 512
     n_iterations = int(n_samples / batch_size)
     optimization_problem_type = OptimizationProblemType.Maximization
-    acquisition_function_type = AcquisitionFunctionType.qNEHVI
+    acquisition_function_type = AcquisitionFunctionType.qLogNEHVI
     sampler_type = SamplerType.Sobol
 
     """ Generate initial dataset """
@@ -104,6 +104,6 @@ def main(batch_size: int = 1, ):
 
 
 if __name__ == "__main__":
-    batch_sizes = [1, 2, 4, 8]
+    batch_sizes = [2, 4, 8]
     for batch_size in batch_sizes:
         main(batch_size)

@@ -20,9 +20,9 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
-    qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement
+    qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement, MCMultiOutputObjective
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
-from bayesian_optimization_for_gpu.validators import *
+from mobo.validators import *
 from utils.io import *
 
 
@@ -33,13 +33,13 @@ class Mobo:
             experiment_name: str,
             X: torch.Tensor,
             Yobj: torch.Tensor,
-            bounds: torch.Tensor,
-            objective: Callable | None,
             Yobj_var: torch.Tensor | None = None,
             Ycon: torch.Tensor | None = None,
             Ycon_var: torch.Tensor | None = None,
+            bounds: torch.Tensor | None = None,
+            objective: Callable | None = None,
             optimization_problem_type: OptimizationProblemType = OptimizationProblemType.Maximization,
-            true_objective: MultiObjectiveTestProblem | None = None,
+            true_objective=None,
             constraints: list[Callable] | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
@@ -47,13 +47,16 @@ class Mobo:
             mc_samples: int = 1024,
             raw_samples: int = 512,
             n_acqf_opt_iter: int = 500,  # Number of iterations for acquisition function optimization
-            max_n_acqf_opt_restarts: int = 10  # Max number of restarts for acquisition function optimization
+            max_n_acqf_opt_restarts: int = 10,  # Max number of restarts for acquisition function optimization
     ):
 
         # Validate input arguments
         validate_experiment_name(experiment_name)
         validate_X(X)
         validate_Yobj(Yobj)
+        validate_Yobj_var(Yobj_var)
+        validate_Ycon(Ycon)
+        validate_Ycon_var(Ycon_var)
         validate_bounds(bounds)
         validate_objective(objective)
         validate_true_objective(true_objective)
@@ -73,8 +76,7 @@ class Mobo:
 
         # Device Attributes
         self._device = get_device()  # The device used for computation (e.g., GPU, CPU or MPS)
-        self._dtype = get_supported_dtype(
-            self._device)  # The data type used for computation - Inferred from the device type
+        self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from device
 
         # Problem Attributes
         self._X: torch.Tensor = X.to(self._device, self._dtype)  # Input variables
@@ -583,20 +585,23 @@ class Mobo:
         filepath = compose_dataset_filename(self._iteration_number)
         np.savetxt(filepath, XY, delimiter=",", comments="")
 
-    def load_dataset_from_csv(self, filepath: str or None = None):
+    def load_dataset_from_csv(self, filepath: str or None = None, skipcol=0):
         if filepath is None:
             csv_files = list(Path('.').glob('*.csv'))
             if not csv_files:
                 raise FileNotFoundError("No CSV files found in the current directory")
             filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
 
+        d = self._X.shape[-1]
+        m = self._Yobj.shape[-1]
+        c = self._Ycon.shape[-1] if self._Ycon is not None else 0
+
         xy = np.loadtxt(filepath, delimiter=",")
-        X = xy[..., 0: self._X.shape[-1]]
-        Yobj = xy[..., self._X.shape[-1]: self._X.shape[-1] + self._Yobj.shape[-1]]
-        Yobj_var = xy[..., self._X.shape[-1] + self._Yobj.shape[-1]: self._X.shape[-1] + 2 * self._Yobj.shape[-1]]
-        Ycon = xy[..., self._X.shape[-1] + 2 * self._Yobj.shape[-1]: self._X.shape[-1] + 2 * self._Yobj.shape[-1] +
-                                                                     self._Ycon.shape[-1]]
-        Ycon_var = xy[..., self._X.shape[-1] + 2 * self._Yobj.shape[-1] + self._Ycon.shape[-1]:]
+        X = xy[..., 0: d].copy()
+        Yobj = xy[..., d: d + m].copy()
+        Ycon = xy[..., d + m: d + m + c].copy()
+        Yobj_var = xy[..., d + m + c: d + m + c + m].copy()
+        Ycon_var = xy[..., d + m + c + m: d + m + c + m + c].copy()
 
         self.set_X(torch.Tensor(X))
         self.set_Yobj(torch.Tensor(Yobj))

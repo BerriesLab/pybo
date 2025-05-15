@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import torch
 
+
 def create_experiment_directory(main_directory: Path or str, experiment_name: str):
     if isinstance(main_directory, str):
         main_directory = Path(main_directory)
@@ -49,15 +50,33 @@ def save_dataset_to_csv(
     np.savetxt(filepath, XY, delimiter=",", comments="")
 
 
-def load_dataset_from_csv(filepath: str or None = None, device: str = "cpu"):
+def load_dataset_from_csv(
+        d: int,  # input_space_dimension: int,
+        m: int,  # objective_space_dimension: int,
+        c: int,  # constraint_space_dimension: int = 0,
+        filepath: str or None = None,
+        skiprows: int = 0,
+):
+    """ Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
+        X ¦ Yobj ¦ Ycon ¦ Yobj_var ¦ Ycon_var."""
+
     if filepath is None:
         csv_files = list(Path('.').glob('*.csv'))
         if not csv_files:
             raise FileNotFoundError("No CSV files found in the current directory")
         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
 
-    xy = np.loadtxt(filepath, delimiter=",")
-    return torch.Tensor(xy)
+    # TODO: fix i/o with correct matrix format: X Yobj Yobj_var Ycon Ycon_var - because if unconstraint leads to problem
+
+    xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
+    X = torch.tensor(xy[..., 0: d])
+    Yobj = torch.tensor(xy[..., d: d + m])
+    Ycon = torch.tensor(xy[..., d + m: d + m + c])
+    Yobj_var = torch.tensor(xy[..., d + m + c: d + m + c + m])
+    Ycon_var = torch.tensor(xy[..., d + m + c + m: d + m + c + m + c])
+
+    return X, Yobj, Ycon, Yobj_var, Ycon_var
+
 
 def compose_filename(iteration_number: int or None = None):
     if iteration_number is None:
@@ -65,12 +84,14 @@ def compose_filename(iteration_number: int or None = None):
     else:
         return f'{iteration_number:04d}'
 
+
 def compose_model_filename(iteration_number: int or None = None):
     return compose_filename(iteration_number) + ".dat"
+
 
 def compose_figure_filename(iteration_number: int or None = None, postfix: str = ""):
     return compose_filename(iteration_number) + postfix + ".png"
 
+
 def compose_dataset_filename(iteration_number: int or None = None):
     return compose_filename(iteration_number) + ".csv"
-

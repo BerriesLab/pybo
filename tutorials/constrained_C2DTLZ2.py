@@ -1,9 +1,9 @@
 import os
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective
 from botorch.test_functions import C2DTLZ2
-from bayesian_optimization_for_gpu.constraints import UpperBound
-from bayesian_optimization_for_gpu.mobo_gpu import Mobo
-from bayesian_optimization_for_gpu.samplers import draw_samples
+from mobo.constraints import UpperBound
+from mobo.mobo import Mobo
+from mobo.samplers import draw_samples
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -109,7 +109,6 @@ def main(batch_size: int = 1, ):
 
 
 if __name__ == "__main__":
-    os.chdir(f"../data")
     batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
         main(batch_size)

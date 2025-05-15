@@ -1,0 +1,127 @@
+""""
+This tutorial shows how to use the MOBO class to optimize a multi-objective problem.
+The problem is the Avagama function, which is a multi-objective optimization problem.
+The tutorial assumes that the dataset is already available in the data folder, and that
+the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_O (min), W (um)]
+"""
+
+import os
+from abc import ABC
+from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
+from torch import Tensor
+from mobo.constraints import LowerBound
+from mobo.mobo import Mobo
+from utils.io import *
+from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
+    plot_allocated_memory
+
+
+class CustomMultiObjective(MCMultiOutputObjective, ABC):
+    def __init__(self):
+        super().__init__()
+
+    def f1(self, Z: Tensor) -> Tensor:
+        i_m = Z[..., 0]
+        i_p = Z[..., 1]
+        tau_r = Z[..., 2]
+
+        t_on = torch.tensor(78.0, device=Z.device, dtype=Z.dtype)
+
+        energy = i_p * tau_r + 0.5 * tau_r * (i_m - i_p) + i_m * (t_on - tau_r)
+        theta = torch.arccos(tau_r / torch.sqrt(tau_r ** 2 + (i_m - i_p) ** 2))
+        wear = energy * theta
+        return wear.unsqueeze(-1)
+
+    def f2(self, Z: Tensor) -> Tensor:
+        i_m = Z[..., 0]
+        i_p = Z[..., 1]
+        tau_r = Z[..., 2]
+
+        t_on = torch.tensor(78.0, device=Z.device, dtype=Z.dtype)
+
+        energy = i_p * tau_r + 0.5 * tau_r * (i_m - i_p) + i_m * (t_on - tau_r)
+        return (1.0 / energy).unsqueeze(-1)
+
+    def forward(self, samples: Tensor, **kwargs) -> Tensor:
+        obj1 = self.f1(samples)
+        obj2 = self.f2(samples)
+        return torch.cat([obj1, obj2], dim=-1)
+
+
+def main():
+    experiment_name = f"test_avagama_64samples_1q_1024mc_512rs_qlognehvi"
+    main_directory = f"../data"
+    directory = create_experiment_directory(main_directory, experiment_name)
+    os.chdir(directory)
+
+    """ Define the optimization parameters """
+    n_samples = 64
+    batch_size = 1
+    n_iterations = int(n_samples / batch_size)
+
+    X, Yobj, Ycon, Yobj_var, Ycon_var = load_dataset_from_csv(
+        filepath=r"C:\Users\BerettaDavide\PycharmProjects\inspire\data\avagama_dataset.csv",
+        d=3, m=2, c=1, skiprows=1)
+
+    """ Main optimization loop """
+    mobo = Mobo(
+        experiment_name=experiment_name,
+        X=X,
+        Yobj=Yobj,
+        Yobj_var=Yobj_var,
+        Ycon=Ycon,
+        Ycon_var=Ycon_var,
+        bounds=torch.Tensor([[7.5, 3, 0.1], [15, 7.5, 1]]),
+        optimization_problem_type=OptimizationProblemType.Maximization,
+        true_objective=CustomMultiObjective,
+        objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
+        constraints=[LowerBound(40)],
+        acquisition_function_type=AcquisitionFunctionType.qLogNEHVI,
+        sampler_type=SamplerType.Sobol,
+        raw_samples=512,
+        mc_samples=1024,
+        batch_size=1,
+    )
+
+    for i in range(n_iterations):
+        print("\n\n")
+        print(f"*** Iteration {i + 1}/{n_iterations} ***")
+
+        mobo.optimize()
+        mobo.to_file()
+        plot_multi_objective_from_RN_to_R2(
+            mobo=mobo,
+            show_ref_point=True,
+            show_ground_truth=True,
+            show_posterior=True,
+            show_rejected_observations=True,
+            show_accepted_pareto_observations=True,
+            show_accepted_non_pareto_observations=True,
+            f1_lims=(-1.6, 0.1),
+            f2_lims=(-1.6, 0.1),
+            display_figures=False
+        )
+
+        new_X = mobo.get_new_X()
+        print(f"New X: {new_X}")
+
+        """ Simulate experiment at new X """
+        # new_Yobj = true_objective(new_X)
+        # new_Ycon = -true_objective.evaluate_slack(new_X)
+        # print(f"New Yobj: {new_Yobj}")
+        # print(f"New Ycon: {new_Ycon}")
+
+        """ Save to csv """
+        # mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj, new_Ycon=new_Ycon)
+        # mobo.save_dataset_to_csv()
+        # print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
+
+    plot_log_hypervolume_difference(mobo, show=False)
+    plot_elapsed_time(mobo, show=False)
+    plot_allocated_memory(mobo, show=False)
+    print("Optimization Finished.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 from botorch.utils.multi_objective import is_non_dominated
 from botorch.utils.transforms import unnormalize
-from bayesian_optimization_for_gpu.mobo_gpu import Mobo
-from bayesian_optimization_for_gpu.samplers import draw_samples
+from mobo.mobo import Mobo
+from mobo.samplers import draw_samples
 from utils.io import *
 from utils.types import OptimizationProblemType, SamplerType
 
