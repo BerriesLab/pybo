@@ -11,8 +11,8 @@ ms = 7
 accepted_observations_kwargs = {
     'color': "tab:green",
     'marker': "o",
-    's': ms**2,
-    "alpha":0.7,
+    's': ms ** 2,
+    "alpha": 0.7,
     "edgecolors": "black",
     'label': 'Non-Pareto Obs.'
 }
@@ -20,15 +20,15 @@ accepted_observations_kwargs = {
 rejected_observations_kwargs = {
     'color': "tab:red",
     'marker': "o",
-    's': ms**2,
-    "alpha":0.7,
+    's': ms ** 2,
+    "alpha": 0.7,
     "edgecolors": "black",
     'label': 'Rejected Obs.'
 }
 
 observed_pareto_kwargs = {
     'marker': 'o',
-    's': ms**2,
+    's': ms ** 2,
     'color': 'tab:orange',
     'edgecolor': 'black',
     'alpha': 0.7,
@@ -38,7 +38,7 @@ observed_pareto_kwargs = {
 ref_point_kwargs = {
     'color': 'red',
     'marker': 'x',
-    's': ms**2,
+    's': ms ** 2,
     'alpha': 0.8,
     'label': 'Ref. Point'
 }
@@ -46,7 +46,7 @@ ref_point_kwargs = {
 ground_truth_kwargs = {
     'color': "black",
     'marker': "o",
-    's': ms**2 / 5,
+    's': ms ** 2 / 5,
     "alpha": 0.1
 }
 
@@ -67,9 +67,11 @@ posterior_pareto_kwargs = {
 def plot_objective_from_R1_to_R1():
     raise NotImplementedError("Function not yet implemented.")
 
+
 # TODO: implement function
 def plot_objective_from_R2_to_R1():
     raise NotImplementedError("Function not yet implemented.")
+
 
 def plot_multi_objective_from_RN_to_R2(
         mobo: Mobo,
@@ -78,7 +80,7 @@ def plot_multi_objective_from_RN_to_R2(
         show_ground_truth=False,
         show_posterior=False,
         show_ref_point=False,
-        show_rejected_observations=True,
+        show_rejected_observations=False,
         show_accepted_non_pareto_observations=True,
         show_accepted_pareto_observations=True,
         display_figures=True):
@@ -169,18 +171,21 @@ def plot_multi_objective_from_RN_to_R2(
 
     # Plot rejected observations
     if show_rejected_observations:
-        y_obj = mobo.get_Yobj()
-        mask = torch.logical_not(mobo.get_con_mask())
-        if torch.any(mask):
-            f1 = y_obj[mask, 0].detach().cpu().numpy()
-            f2 = y_obj[mask, 1].detach().cpu().numpy()
-            axes.scatter(f1, f2, **rejected_observations_kwargs)
+        if mobo.get_Ycon() is None:
+            print("Warning: Rejected observations not available: this is an unconstrained problem.")
+        else:
+            y_obj = mobo.get_Yobj()
+            mask = torch.logical_not(mobo.get_con_mask())
+            if torch.any(mask):
+                f1 = y_obj[mask, 0].detach().cpu().numpy()
+                f2 = y_obj[mask, 1].detach().cpu().numpy()
+                axes.scatter(f1, f2, **rejected_observations_kwargs)
 
     # Plot accepted observations that do not belong to the pareto-front
     if show_accepted_non_pareto_observations:
         y_obj = mobo.get_Yobj()
-        con_mask = mobo.get_con_mask()
         par_mask = mobo.get_par_mask()
+        con_mask = mobo.get_con_mask()
         mask = torch.logical_and(con_mask, torch.logical_not(par_mask))
         if torch.any(mask):
             f1 = y_obj[mask, 0].detach().cpu().numpy()
@@ -209,12 +214,13 @@ def plot_multi_objective_from_RN_to_R2(
         plt.show()
     plt.close(fig)
 
+
 # TODO: implement a parallel coordinate plot
 def plot_multi_objective_from_RN_to_R3():
     raise NotImplementedError("Parallel coordinate plots are not yet implemented.")
 
-def plot_log_hypervolume_difference(mobo: Mobo, show=False):
 
+def plot_log_hypervolume_difference(mobo: Mobo, show=False):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
     ax.set_ylabel("Log Hypervolume Difference")
@@ -222,7 +228,7 @@ def plot_log_hypervolume_difference(mobo: Mobo, show=False):
     hv = np.array(mobo.get_hypervolume())
     max_hv = mobo.get_true_objective().max_hv
     dy = np.log10(max_hv - hv)
-    ax.errorbar(x, dy, linewidth=2,)
+    ax.errorbar(x, dy, linewidth=2, )
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="hv_diff")
@@ -232,14 +238,14 @@ def plot_log_hypervolume_difference(mobo: Mobo, show=False):
         plt.show()
     plt.close(fig)
 
-def plot_elapsed_time(mobo: Mobo, show=False):
 
+def plot_elapsed_time(mobo: Mobo, show=False):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
     ax.set_ylabel("Elapsed Time (s)")
     x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     y = mobo.get_elapsed_time()
-    ax.errorbar(x, y, linewidth=2,)
+    ax.errorbar(x, y, linewidth=2, )
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="elapsed_time")
@@ -249,14 +255,14 @@ def plot_elapsed_time(mobo: Mobo, show=False):
         plt.show()
     plt.close(fig)
 
-def plot_allocated_memory(mobo: Mobo, show=False):
 
+def plot_allocated_memory(mobo: Mobo, show=False):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
     ax.set_ylabel("Allocated memory (MB)")
     x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     y = mobo.get_allocated_memory()
-    ax.errorbar(x, y, linewidth=2,)
+    ax.errorbar(x, y, linewidth=2, )
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="allocated_memory")

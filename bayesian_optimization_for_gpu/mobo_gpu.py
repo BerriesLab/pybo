@@ -5,6 +5,7 @@ import glob
 import os
 
 import botorch
+import torch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
@@ -72,14 +73,18 @@ class Mobo:
 
         # Device Attributes
         self._device = get_device()  # The device used for computation (e.g., GPU, CPU or MPS)
-        self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from the device type
+        self._dtype = get_supported_dtype(
+            self._device)  # The data type used for computation - Inferred from the device type
 
         # Problem Attributes
         self._X: torch.Tensor = X.to(self._device, self._dtype)  # Input variables
         self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype)  # Objective observables
-        self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None  # Constrained observables
-        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None  # Observed variance
-        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed constraints variables
+        self._Ycon: torch.Tensor = Ycon.to(self._device,
+                                           self._dtype) if Ycon is not None else None  # Constrained observables
+        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device,
+                                                   self._dtype) if Yobj_var is not None else None  # Observed variance
+        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device,
+                                                   self._dtype) if Ycon_var is not None else None  # Observed constraints variables
         self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # Input domain bounds
         self._optimization_problem_type = optimization_problem_type  # Type of optimization problem (minimization or maximization)
         self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
@@ -260,7 +265,7 @@ class Mobo:
         return self._constraints
 
     def add_constraint(self, constraint: Callable):
-        validate_constraints([constraint,])
+        validate_constraints([constraint, ])
         self._constraints.append(constraint)
 
     def get_hypervolume(self):
@@ -278,8 +283,8 @@ class Mobo:
     def get_allocated_memory(self):
         return self._allocated_memory
 
-
     """ Optimizer """
+
     def _initialize_model(self, verbose=True):
         """ Define models for objectives and constraints."""
 
@@ -326,10 +331,10 @@ class Mobo:
             train_y_var = torch.cat((self._Yobj_var, self._Ycon_var), dim=-1)
         elif self._Yobj_var is not None:
             train_y_var = self._Yobj_var
-    
+
         return train_x, train_y, train_y_var
 
-    def _initialize_sampler(self, verbose=True,):
+    def _initialize_sampler(self, verbose=True, ):
         if verbose:
             print("Initializing sampler...", end="")
 
@@ -339,7 +344,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _initialize_acquisition_function(self, verbose=True,):
+    def _initialize_acquisition_function(self, verbose=True, ):
         if verbose:
             print("Initializing acquisition function...", end="")
 
@@ -391,7 +396,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _initialize_partitioning(self, verbose=True,):
+    def _initialize_partitioning(self, verbose=True, ):
         if verbose:
             print("Initializing partitioning function...", end="")
 
@@ -427,7 +432,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _fit_model(self, restart_on_error=True, verbose=True,):
+    def _fit_model(self, restart_on_error=True, verbose=True, ):
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
@@ -450,7 +455,7 @@ class Mobo:
                     raise e  # Raise if not restarting or max restarts reached
         return None
 
-    def _optimize_acquisition_function(self, verbose=True,):
+    def _optimize_acquisition_function(self, verbose=True, ):
         if verbose:
             print("Optimizing acquisition function...", end="")
 
@@ -468,7 +473,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _compute_hypervolume(self, verbose=True,):
+    def _compute_hypervolume(self, verbose=True, ):
         if verbose:
             print("Computing hypervolume...", end="")
 
@@ -492,6 +497,7 @@ class Mobo:
         # If the problem is unconstrained, then all observations are Pareto-optimal
         if self._Ycon is None:
             self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
+            self._con_mask = torch.ones_like(self._par_mask, dtype=torch.bool).to(self._device, self._dtype)
             mask = self._par_mask
 
         else:
@@ -556,7 +562,7 @@ class Mobo:
             self._Ycon_var = torch.cat([self._Ycon_var, new_Ycon_var], dim=0)
 
     """ I/O """
-    
+
     def to_file(self):
         filepath = compose_model_filename(iteration_number=self._iteration_number)
         with open(filepath, "wb") as file:
@@ -576,7 +582,7 @@ class Mobo:
         XY = XY.detach().cpu().numpy()
         filepath = compose_dataset_filename(self._iteration_number)
         np.savetxt(filepath, XY, delimiter=",", comments="")
-    
+
     def load_dataset_from_csv(self, filepath: str or None = None):
         if filepath is None:
             csv_files = list(Path('.').glob('*.csv'))
