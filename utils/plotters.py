@@ -77,6 +77,8 @@ def plot_multi_objective_from_RN_to_R2(
         mobo: Mobo,
         f1_lims=None,
         f2_lims=None,
+        f1_label="$f_{01}$",
+        f2_label="$f_{02}$",
         show_ground_truth=False,
         show_posterior=False,
         show_ref_point=False,
@@ -88,8 +90,8 @@ def plot_multi_objective_from_RN_to_R2(
     and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
     # Initialize figure
     fig, axes = plt.subplots(1, 1, figsize=(6, 6))
-    axes.set_xlabel('$f_{01}$')
-    axes.set_ylabel('$f_{02}$')
+    axes.set_xlabel(f1_label)
+    axes.set_ylabel(f2_label)
     axes.set_title(r'Multi objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^2$')
     if f1_lims is not None and isinstance(f1_lims, tuple):
         axes.set_xlim(f1_lims[0], f1_lims[1])
@@ -109,9 +111,9 @@ def plot_multi_objective_from_RN_to_R2(
         x = unnormalize(x, mobo.get_bounds().cpu())
         x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
         # Calculate posterior samples
-        show_posterior = mobo.get_model().posterior(x)
-        mean = show_posterior.mean
-        std = show_posterior.variance.sqrt()
+        posterior = mobo.get_model().posterior(x)
+        mean = posterior.mean
+        std = posterior.variance.sqrt()
         # samples = posterior.sample()
 
         # Calculate pareto front for mean and samples
@@ -172,7 +174,7 @@ def plot_multi_objective_from_RN_to_R2(
     # Plot rejected observations
     if show_rejected_observations:
         if mobo.get_Ycon() is None:
-            print("Warning: Rejected observations not available: this is an unconstrained problem.")
+            print("Warning: Rejected observations not available - this is an unconstrained problem.")
         else:
             y_obj = mobo.get_Yobj()
             mask = torch.logical_not(mobo.get_con_mask())
@@ -226,8 +228,8 @@ def plot_log_hypervolume_difference(mobo: Mobo, show=False):
     ax.set_ylabel("Log Hypervolume Difference")
     x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     hv = np.array(mobo.get_hypervolume())
-    max_hv = mobo.get_true_objective().max_hv
-    dy = np.log10(max_hv - hv)
+    # max_hv = mobo.get_true_objective().max_hv
+    dy = np.log10(hv[0] - hv)
     ax.errorbar(x, dy, linewidth=2, )
 
     plt.tight_layout()

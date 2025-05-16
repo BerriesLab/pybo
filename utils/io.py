@@ -18,7 +18,8 @@ def save_dataset_to_csv(
         Yobj: torch.Tensor,
         Yobj_var: torch.Tensor or None,
         Ycon: torch.Tensor or None,
-        Ycon_var: torch.Tensor or None
+        Ycon_var: torch.Tensor or None,
+        header: str,
 ):
     """
     Save input and target tensors to a CSV file.
@@ -47,18 +48,20 @@ def save_dataset_to_csv(
     XY = torch.cat([X, Y], dim=-1)
     XY = XY.detach().cpu().numpy()
     filepath = compose_dataset_filename()
-    np.savetxt(filepath, XY, delimiter=",", comments="")
+    np.savetxt(filepath, XY, delimiter=",", comments="", )
 
 
 def load_dataset_from_csv(
-        d: int,  # input_space_dimension: int,
-        m: int,  # objective_space_dimension: int,
-        c: int,  # constraint_space_dimension: int = 0,
+        input_space_dimension: int,  # input_space_dimension: int,
+        objective_space_dimension: int,  # objective_space_dimension: int,
+        constraint_space_dimension: int,  # constraint_space_dimension: int = 0,
+        objective_variance: bool = False,
+        constraint_variance: bool = False,
         filepath: str or None = None,
         skiprows: int = 0,
 ):
     """ Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
-        X ¦ Yobj ¦ Ycon ¦ Yobj_var ¦ Ycon_var."""
+        X ¦ Yobj ¦ Yobj_var ¦ Ycon ¦ Ycon_var."""
 
     if filepath is None:
         csv_files = list(Path('.').glob('*.csv'))
@@ -66,16 +69,41 @@ def load_dataset_from_csv(
             raise FileNotFoundError("No CSV files found in the current directory")
         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
 
-    # TODO: fix i/o with correct matrix format: X Yobj Yobj_var Ycon Ycon_var - because if unconstraint leads to problem
-
     xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
-    X = torch.tensor(xy[..., 0: d])
-    Yobj = torch.tensor(xy[..., d: d + m])
-    Ycon = torch.tensor(xy[..., d + m: d + m + c])
-    Yobj_var = torch.tensor(xy[..., d + m + c: d + m + c + m])
-    Ycon_var = torch.tensor(xy[..., d + m + c + m: d + m + c + m + c])
 
-    return X, Yobj, Ycon, Yobj_var, Ycon_var
+    i = 0
+    j = input_space_dimension
+    X = torch.tensor(xy[..., i:j])
+
+    if objective_space_dimension > 0:
+        i = j
+        j += objective_space_dimension
+        Yobj = torch.tensor(xy[..., i:j])
+
+        if objective_variance:
+            i = j
+            j += objective_space_dimension
+            Yobj_var = torch.tensor(xy[..., i:j])
+        else:
+            Yobj_var = None
+    else:
+        Yobj = None
+
+    if constraint_space_dimension > 0:
+        i = j
+        j += constraint_space_dimension
+        Ycon = torch.tensor(xy[..., i:j])
+
+        if constraint_variance:
+            i = j
+            j += constraint_space_dimension
+            Ycon_var = torch.tensor(xy[..., i:j])
+        else:
+            Ycon_var = None
+    else:
+        Ycon = None
+
+    return X, Yobj, Yobj_var, Ycon, Ycon_var
 
 
 def compose_filename(iteration_number: int or None = None):

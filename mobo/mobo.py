@@ -505,7 +505,9 @@ class Mobo:
         else:
             # If the problem is constrained, then only the observations satisfying the constraints are Pareto-optimal
             self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
-            self._con_mask = (self._Ycon <= 0).all(dim=-1)
+            Y = torch.cat([self._Yobj, self._Ycon], dim=-1)
+            constraint_vals = [c(Y) for c in self._constraints]
+            self._con_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
             mask = torch.logical_and(self._par_mask, self._con_mask)
 
         self._pareto_front = self._Yobj[mask]

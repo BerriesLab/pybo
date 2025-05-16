@@ -83,7 +83,6 @@ def validate_batch_size(batch_size: int):
         raise ValueError("batch_size must be a positive integer. Recommended: 2^n.")
 
 
-# TODO: understand what a true objective could be in BoTorch and amend the code
 def validate_true_objective(true_objective: Callable | None):
     if not isinstance(true_objective, Callable) and true_objective is not None:
         raise ValueError("True objective must be a callable or None.")
