@@ -91,6 +91,8 @@ def main(n_samples=1, batch_size=1):
 
         mobo.optimize()
         mobo.to_file()
+
+        # TODO: the posterior is a a set of identical numbers! Must understand why and fix it
         plot_multi_objective_from_RN_to_R2(
             mobo=mobo,
             show_ref_point=True,

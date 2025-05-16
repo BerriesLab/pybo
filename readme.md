@@ -1,12 +1,10 @@
-# pyMOBO - A Package for Experimental Multi Objective Bayesian Optimization
+# pyBO - A Package for Experimental Bayesian Optimization
 
-pyMOBO is a Python package based on BoTorch, designed to facilitate experimental Multi-Objective Bayesian Optimization (
-MOBO). It provides
-a flexible framework for optimizing multiple competing objectives simultaneously while considering experimental
+pyBO is a Python package based on BoTorch, designed to facilitate experimental Multi-Objective Bayesian Optimization (
+MOBO). It provides a flexible framework for optimizing multiple competing objectives simultaneously while considering experimental
 constraints. pyMOBO implements Bayesian optimization techniques using Gaussian Processes to explore
 hyperparameter spaces and find Pareto-optimal solutions. pyMOBO is particularly useful for scenarios where experiments
-are
-costly or time-consuming, as it minimizes the number of experiments needed by making informed decisions about which
+are costly or time-consuming, as it minimizes the number of experiments needed by making informed decisions about which
 parameters to test next based on previous observations.
 
 ## Experimental Flowchart
@@ -71,7 +69,7 @@ the pareto front.
 
 ## Tutorials
 
-The following tutorials are currently available ...
+The following tutorials are currently available:
 
-- [Branin-Currin](test/unconstrained_BraninCurrin.py) unconstrained bi-objective optimization
-- [C2DTLZ2](test/constrained_C2DTLZ2.py) constrained bi-objective optimization
+- [Branin-Currin](test/unconstrained_BraninCurrin.py): An unconstrained bi-objective optimization problem.
+- [C2DTLZ2](test/constrained_C2DTLZ2.py): A constrained bi-objective optimization problem.

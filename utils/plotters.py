@@ -108,13 +108,11 @@ def plot_multi_objective_from_RN_to_R2(
             n_samples=int(1e2),
             n_dimensions=dims
         )
-        x = unnormalize(x, mobo.get_bounds().cpu())
-        x = x.to(mobo.get_X().device)  # Ensure that X_candidate is on the same device as X
-        # Calculate posterior samples
+        x = unnormalize(x, mobo.get_bounds().cpu()).to(mobo.get_X().device)
+        # Calculate posterior mean and std. dev
         posterior = mobo.get_model().posterior(x)
         mean = posterior.mean
         std = posterior.variance.sqrt()
-        # samples = posterior.sample()
 
         # Calculate pareto front for mean and samples
         mean_mask = is_non_dominated(Y=mean, maximize=mobo.get_optimization_problem_type().value)
