@@ -48,17 +48,13 @@ class CustomMultiObjective(MCMultiOutputObjective, ABC):
         return torch.cat([obj1, obj2], dim=-1)
 
 
-def main():
+def main(n_samples=1, batch_size=1):
     experiment_name = f"test_avagama_64samples_1q_1024mc_512rs_qnehvi"
     main_directory = f"../data"
     directory = create_experiment_directory(main_directory, experiment_name)
     os.chdir(directory)
 
-    """ Define the optimization parameters """
-    n_samples = 1
-    batch_size = 1
-    n_iterations = int(n_samples / batch_size)
-
+    """ Load dataset """
     X, Yobj, Yobj_var, Ycon, Ycon_var = load_dataset_from_csv(
         filepath=Path.cwd().parent / "avagama_dataset.csv",
         input_space_dimension=3,
@@ -89,9 +85,9 @@ def main():
         batch_size=1,
     )
 
-    for i in range(n_iterations):
+    for i in range(int(n_samples / batch_size)):
         print("\n\n")
-        print(f"*** Iteration {i + 1}/{n_iterations} ***")
+        print(f"*** Iteration {i + 1}/{int(n_samples / batch_size)} ***")
 
         mobo.optimize()
         mobo.to_file()

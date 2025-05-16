@@ -117,19 +117,13 @@ def plot_multi_objective_from_RN_to_R2(
         # samples = posterior.sample()
 
         # Calculate pareto front for mean and samples
+        mean_mask = is_non_dominated(Y=mean, maximize=mobo.get_optimization_problem_type().value)
+        mean_pareto = mean[mean_mask].detach().cpu().numpy()
+        std_pareto = std[mean_mask].detach().cpu().numpy()
         if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
-            mean_mask = is_non_dominated(Y=mean, maximize=True)
-            mean_pareto = mean[mean_mask].detach().cpu().numpy()
-            std_pareto = std[mean_mask].detach().cpu().numpy()
             mean_sorted = np.argsort(-mean_pareto[:, 0])
-
-        elif mobo.get_optimization_problem_type() == OptimizationProblemType.Minimization:
-            mean_mask = is_non_dominated(Y=mean, maximize=False)
-            mean_pareto = mean[mean_mask].detach().cpu().numpy()
-            std_pareto = std[mean_mask].detach().cpu().numpy()
-            mean_sorted = np.argsort(mean_pareto[:, 0])
         else:
-            raise ValueError("Unknown optimization true_objective type.")
+            mean_sorted = np.argsort(mean_pareto[:, 0])
 
         mean_pareto = mean_pareto[mean_sorted]
         std_pareto = std_pareto[mean_sorted]
