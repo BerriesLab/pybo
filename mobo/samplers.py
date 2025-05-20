@@ -7,9 +7,10 @@ from botorch.utils.transforms import unnormalize
 
 def draw_samples(
         sampler_type: SamplerType,
-        bounds: torch.Tensor,
+        bounds: torch.Tensor or None = None,
         n_samples: int = 1000,
         n_dimensions: int = 2,
+        normalize = True,
 ) -> torch.Tensor:
 
     if sampler_type == SamplerType.LatinHypercube:
@@ -24,6 +25,9 @@ def draw_samples(
     else:
         raise ValueError("Invalid initial sampling type.")
 
-    x = unnormalize(x, bounds=bounds)
-
-    return x
+    if normalize:
+        return x
+    else:
+        if bounds is None:
+            raise ValueError("If normalize is True, then bounds cannot be None.")
+        return unnormalize(x, bounds=bounds)

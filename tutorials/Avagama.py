@@ -7,6 +7,7 @@ the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_
 
 import os
 from abc import ABC
+import torch
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
 from mobo.constraints import LowerBound, UpperBound
 from mobo.mobo import Mobo
@@ -28,9 +29,11 @@ class CustomMultiObjective(MCMultiOutputObjective, ABC):
         t_on = torch.full_like(i_m, 78.0)
 
         energy = i_p * tau_r + 0.5 * tau_r * (i_m - i_p) + i_m * (t_on - tau_r)
-        theta = torch.arccos(tau_r / torch.sqrt(tau_r ** 2 + (i_m - i_p) ** 2))
-        wear = energy * theta
-        return wear.unsqueeze(-1)
+        energy = energy / torch.max(torch.abs(energy))
+        noise = torch.rand_like(energy) * torch.max(energy) / 10
+        # theta = torch.arccos(tau_r / torch.sqrt(tau_r ** 2 + (i_m - i_p) ** 2))
+        wear = energy + noise
+        return 250 * wear.unsqueeze(-1)
 
     def f2(self, Z: torch.Tensor) -> torch.Tensor:
         i_m = Z[..., 0]
@@ -38,13 +41,17 @@ class CustomMultiObjective(MCMultiOutputObjective, ABC):
         tau_r = Z[..., 2]
 
         t_on = torch.full_like(i_m, 78.0)
-
         energy = i_p * tau_r + 0.5 * tau_r * (i_m - i_p) + i_m * (t_on - tau_r)
-        return (1.0 / energy).unsqueeze(-1)
+        time = 1 / energy
+        time = time / torch.max(torch.abs(time))
+        noise = torch.rand_like(time) * torch.max(time) / 10
+        time = time + noise
+        return 300 * time.unsqueeze(-1)
 
-    def forward(self, samples, X) -> torch.Tensor:
-        obj1 = self.f1(samples)
-        obj2 = self.f2(samples)
+    def forward(self, samples: torch.Tensor, X: torch.Tensor | None = None) -> torch.Tensor:
+        x_eval = X if X is not None else samples
+        obj1 = self.f1(x_eval)
+        obj2 = self.f2(x_eval)
         return torch.cat([obj1, obj2], dim=-1)
 
 
@@ -109,7 +116,6 @@ def main(n_samples=1, batch_size=1):
         )
 
         new_X = mobo.get_new_X()
-        print(f"New X: {new_X}")
 
         """ Simulate experiment at new X """
         # new_Yobj = true_objective(new_X)

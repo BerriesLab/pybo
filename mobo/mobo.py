@@ -5,6 +5,7 @@ import glob
 import os
 
 import botorch
+import gpytorch
 import torch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
@@ -13,6 +14,9 @@ from botorch.test_functions.base import MultiObjectiveTestProblem
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning
 from botorch.utils.transforms import unnormalize, normalize
+from gpytorch.constraints import GreaterThan
+from scipy.stats._qmc import LatinHypercube
+
 from utils.cuda import get_device, get_supported_dtype
 from utils.types import SamplerType, OptimizationProblemType, TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
@@ -81,12 +85,9 @@ class Mobo:
         # Problem Attributes
         self._X: torch.Tensor = X.to(self._device, self._dtype)  # Input variables
         self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype)  # Objective observables
-        self._Ycon: torch.Tensor = Ycon.to(self._device,
-                                           self._dtype) if Ycon is not None else None  # Constrained observables
-        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device,
-                                                   self._dtype) if Yobj_var is not None else None  # Observed variance
-        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device,
-                                                   self._dtype) if Ycon_var is not None else None  # Observed constraints variables
+        self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None  # Constrained observables
+        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None  # Observed variance
+        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed constraints variables
         self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # Input domain bounds
         self._optimization_problem_type = optimization_problem_type  # Type of optimization problem (minimization or maximization)
         self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
@@ -288,11 +289,13 @@ class Mobo:
     """ Optimizer """
 
     def _initialize_model(self, verbose=True):
-        """ Define models for objectives and constraints."""
+        """ Define models for objectives and constraints. Note that the model is trained on
+        normalized input features, while the outputs are not normalized. """
 
         if verbose:
             print("Initializing model...", end="")
-
+        
+        # Prepare dataset by concatenating the objectives
         train_x, train_y, train_y_var = self._prepare_training_dataset()
 
         # Initialize models
@@ -303,9 +306,9 @@ class Mobo:
                     train_x,
                     train_y[..., i: i + 1],
                     train_y_var[..., i: i + 1] if train_y_var is not None else None,
-                    # input_transform=Normalize(d=self._X.shape[-1]),
+                    input_transform=Normalize(d=self._X.shape[-1], bounds=self._bounds),
                     outcome_transform=Standardize(m=1),
-                    # likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
                 )
             )
         self._model = ModelListGP(*models)
@@ -315,10 +318,9 @@ class Mobo:
             print(" Done.")
 
     def _prepare_training_dataset(self):
-        """Prepare normalized training data by combining objectives and constraints."""
+        """Prepare training data by combining objectives and constraints."""
 
-        # Normalize input features
-        train_x = normalize(self._X, self._bounds)
+        train_x = self._X
 
         # Combine objectives and constraints if they exist
         train_y = (
@@ -342,6 +344,8 @@ class Mobo:
 
         if self._sampler_type.name == SamplerType.Sobol.name:
             self._sampler_instance = SobolQMCNormalSampler(torch.Size([self._mc_samples]))
+        else:
+            raise ValueError("Only Sobol Sampler is currently supported.")
 
         if verbose:
             print(" Done.")
@@ -408,28 +412,30 @@ class Mobo:
             print(" Done.")
 
     def _compute_reference_point(self, verbose=True, buffer=0.25):
+
+        # The reference point is calculated only for the first iteration step
+        if self._iteration_number > 0:
+            return
+
         if verbose:
             print("Defining reference point...", end="")
 
-        # The reference point is calculated only for the first iteration step
-        if self._iteration_number == 0:
+        # If the true objective is provided, then use its reference point if provided
+        if self._true_objective is not None and hasattr(self._true_objective, "_ref_point"):
+            self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
 
-            # If the true objective is provided, then use its reference point if provided
-            if self._true_objective is not None and hasattr(self._true_objective, "_ref_point"):
-                self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
+        # Otherwise, compute a reference point
+        else:
 
-            # Otherwise, compute a reference point
-            else:
+            # Handle maximization problems
+            if self._optimization_problem_type == OptimizationProblemType.Maximization:
+                worst = torch.min(self._Yobj, dim=0).values
+                self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device, self._dtype)
 
-                # Handle maximization problems
-                if self._optimization_problem_type == OptimizationProblemType.Maximization:
-                    worst = torch.min(self._Yobj, dim=0).values
-                    self._ref_point = (worst - buffer * torch.abs(worst)).to(self._device, self._dtype)
-
-                # Handle minimization problems
-                elif self._optimization_problem_type == OptimizationProblemType.Minimization:
-                    worst = torch.max(self._Yobj, dim=0).values
-                    self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device, self._dtype)
+            # Handle minimization problems
+            elif self._optimization_problem_type == OptimizationProblemType.Minimization:
+                worst = torch.max(self._Yobj, dim=0).values
+                self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device, self._dtype)
 
         if verbose:
             print(" Done.")
@@ -445,10 +451,10 @@ class Mobo:
         while True:
             try:
                 botorch.fit_gpytorch_mll(self._mll)
-
                 if verbose:
                     print(" Done.")
                 break  # Exit the inner loop on success
+
             except Exception as e:
                 if restart_on_error and restart_count < self._max_n_acqf_opt_restarts:
                     print(f"Restarting fitting... (Attempt {restart_count + 1}/{self._max_n_acqf_opt_restarts})")
@@ -470,7 +476,6 @@ class Mobo:
             options={"maxiter": self._n_acqf_opt_iter, "disp": True},
             sequential=True,
         )
-        self._new_X = unnormalize(self._new_X.detach(), self._bounds)
 
         if verbose:
             print(" Done.")

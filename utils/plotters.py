@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from botorch.utils.multi_objective import is_non_dominated
-from botorch.utils.transforms import unnormalize
+from botorch.utils.transforms import unnormalize, normalize
 from mobo.mobo import Mobo
 from mobo.samplers import draw_samples
 from utils.io import *
@@ -100,15 +100,16 @@ def plot_multi_objective_from_RN_to_R2(
 
     # Plot posterior if requested
     if show_posterior:
-        # Extract 1000 random samples
+        # Extract N random samples
         dims = mobo.get_X().shape[-1]
         x = draw_samples(
             sampler_type=SamplerType.Sobol,
             bounds=mobo.get_bounds().cpu(),
             n_samples=int(1e2),
             n_dimensions=dims
-        )
-        x = unnormalize(x, mobo.get_bounds().cpu()).to(mobo.get_X().device)
+        ).to(mobo.get_device(), mobo.get_dtype())
+        x = normalize(x, mobo.get_bounds())
+        # x = unnormalize(x, mobo.get_bounds().cpu()).to(mobo.get_X().device)
         # Calculate posterior mean and std. dev
         posterior = mobo.get_model().posterior(x)
         mean = posterior.mean
@@ -206,7 +207,7 @@ def plot_multi_objective_from_RN_to_R2(
 
     if display_figures:
         plt.show()
-    plt.close(fig)
+    #plt.close(fig)
 
 
 # TODO: implement a parallel coordinate plot

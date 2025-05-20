@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/InspireStart.iml" filepath="$PROJECT_DIR$/.idea/InspireStart.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/pyBO.iml" filepath="$PROJECT_DIR$/.idea/pyBO.iml" />
     </modules>
   </component>
 </project>
