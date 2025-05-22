@@ -43,7 +43,7 @@ def main(n_samples=64, q: int = 1, ):
         optimization_problem_type=OptimizationProblemType.Maximization,
         true_objective=true_objective,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
-        constraints=[UpperBound(0)],
+        constraints=[UpperBound(-1)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
