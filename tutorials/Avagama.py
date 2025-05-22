@@ -11,6 +11,7 @@ import torch
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
 from mobo.constraints import LowerBound, UpperBound
 from mobo.mobo import Mobo
+from mobo.samplers import draw_samples
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -92,6 +93,15 @@ def main(n_samples=1, batch_size=1):
         batch_size=1,
     )
 
+    # Generates samples points that will be used for posterior evaluation in each cycle
+    posterior_X = draw_samples(
+        sampler_type=SamplerType.Sobol,
+        bounds=mobo.get_bounds().cpu(),
+        n_samples=int(1e3),
+        n_dimensions=3,
+        normalize=False
+    ).to(mobo.get_device(), mobo.get_dtype())
+
     for i in range(int(n_samples / batch_size)):
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / batch_size)} ***")
@@ -99,12 +109,12 @@ def main(n_samples=1, batch_size=1):
         mobo.optimize()
         mobo.to_file()
 
-        # TODO: the posterior is a a set of identical numbers! Must understand why and fix it
         plot_multi_objective_from_RN_to_R2(
             mobo=mobo,
             show_ref_point=True,
             show_ground_truth=False,
             show_posterior=True,
+            X=posterior_X,
             show_rejected_observations=True,
             show_accepted_pareto_observations=True,
             show_accepted_non_pareto_observations=True,

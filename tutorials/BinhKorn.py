@@ -1,9 +1,6 @@
 import os
-
-import torch
 from botorch.acquisition.multi_objective import MCMultiOutputObjective, IdentityMCMultiOutputObjective
 from abc import ABC
-
 from mobo.mobo import Mobo
 from mobo.samplers import draw_samples
 from utils.io import *
@@ -16,11 +13,13 @@ class BinhAndKorn(MCMultiOutputObjective, ABC):
     def __init__(self):
         super().__init__()
 
-    def f1(self, x: torch.Tensor):
+    @staticmethod
+    def f1(x: torch.Tensor):
         f1 = 4 * torch.square(x[..., 0]) + 4 * torch.square(x[..., 1])
         return f1.unsqueeze(-1)
 
-    def f2(self, x: torch.Tensor):
+    @staticmethod
+    def f2(x: torch.Tensor):
         f2 = torch.square((x[..., 0] - 5)) + torch.square((x[..., 1] - 5))
         return f2.unsqueeze(-1)
 
@@ -36,9 +35,9 @@ def c1(x):
 def c2(x):
     return 7.7 - torch.square((x[..., 0] - 8)) - torch.square((x[..., 1] + 3))
 
-def main(n_samples=64, batch_size: int = 1, ):
+def main(n_samples=64, q: int = 1, ):
     main_directory = Path(f"../data")
-    experiment_name = f"test_binh_and_korn_64iter_{batch_size}q_512mc_256rs_qlognehvi"
+    experiment_name = f"test_binh_and_korn_64iter_{q}q_512mc_256rs_qnehvi"
     directory = create_experiment_directory(main_directory, experiment_name)
     os.chdir(directory)
 
@@ -69,12 +68,12 @@ def main(n_samples=64, batch_size: int = 1, ):
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
         mc_samples=512,
-        batch_size=batch_size,
+        batch_size=q,
     )
 
-    for i in range(int(n_samples / batch_size)):
+    for i in range(int(n_samples / q)):
         print("\n\n")
-        print(f"*** Iteration {i + 1}/{int(n_samples / batch_size)} ***")
+        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         mobo.optimize()
         mobo.to_file()
@@ -108,6 +107,6 @@ def main(n_samples=64, batch_size: int = 1, ):
 
 
 if __name__ == "__main__":
-    batch_sizes = [1]
+    batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
-        main(n_samples=64, batch_size=batch_size)
+        main(n_samples=64, q=batch_size)

@@ -10,10 +10,10 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
     plot_allocated_memory
 
 
-def main(n_samples=64, batch_size: int = 1, ):
-    main_directory = Path(f"../data")
-    experiment_name = f"test_c2dtlz2_64samples_{batch_size}q_1024mc_512rs_qlognehvi"
-    directory = create_experiment_directory(main_directory, experiment_name)
+def main(n_samples=64, q: int = 1, ):
+    cwd = main_dir / "data"
+    experiment_name = f"test_c2dtlz2_64samples_{q}q_1024mc_512rs_qnehvi"
+    directory = create_experiment_directory(cwd, experiment_name)
     os.chdir(directory)
 
     """ Define the true_objective """
@@ -24,10 +24,20 @@ def main(n_samples=64, batch_size: int = 1, ):
         sampler_type=SamplerType.Sobol,
         bounds=true_objective.bounds,
         n_samples=2 * (true_objective.dim + 1),
-        n_dimensions=true_objective.dim
+        n_dimensions=true_objective.dim,
+        normalize=False,
     )
 
-    """ Main optimization loop """
+    """ Generates samples points that will be used for posterior evaluation in each cycle """
+    rnd_X = draw_samples(
+        sampler_type=SamplerType.Sobol,
+        bounds=true_objective.bounds,
+        n_samples=int(1e3),
+        n_dimensions=true_objective.dim,
+        normalize=False
+    )
+
+    """ Instantiate a Mobo object """
     mobo = Mobo(
         experiment_name=experiment_name,
         X=X,
@@ -40,16 +50,17 @@ def main(n_samples=64, batch_size: int = 1, ):
         true_objective=true_objective,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
         constraints=[UpperBound(0)],
-        acquisition_function_type=AcquisitionFunctionType.qLogNEHVI,
+        acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
         mc_samples=512,
-        batch_size=batch_size,
+        batch_size=q,
     )
 
-    for i in range(int(n_samples / batch_size)):
+    """ Main optimization loop """
+    for i in range(int(n_samples / q)):
         print("\n\n")
-        print(f"*** Iteration {i + 1}/{int(n_samples / batch_size)} ***")
+        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         mobo.optimize()
         mobo.to_file()
@@ -63,7 +74,8 @@ def main(n_samples=64, batch_size: int = 1, ):
             show_accepted_non_pareto_observations=True,
             f1_lims=(-1.6, 0.1),
             f2_lims=(-1.6, 0.1),
-            display_figures=False
+            display_figures=False,
+            X=rnd_X,
         )
 
         """ Simulate experiment at new X """
@@ -85,6 +97,7 @@ def main(n_samples=64, batch_size: int = 1, ):
 
 
 if __name__ == "__main__":
+    main_dir = Path.cwd().parent
     batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
-        main(n_samples=64, batch_size=batch_size)
+        main(n_samples=64, q=batch_size)

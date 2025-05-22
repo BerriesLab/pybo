@@ -6,25 +6,23 @@ import os
 
 import botorch
 import gpytorch
-import torch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
 from botorch.test_functions.base import MultiObjectiveTestProblem
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning
-from botorch.utils.transforms import unnormalize, normalize
+from botorch.utils.transforms import normalize
 from gpytorch.constraints import GreaterThan
-from scipy.stats._qmc import LatinHypercube
 
 from utils.cuda import get_device, get_supported_dtype
-from utils.types import SamplerType, OptimizationProblemType, TorchDeviceType
+from utils.types import TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
-    qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement, MCMultiOutputObjective
+    qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from mobo.validators import *
 from utils.io import *
@@ -308,7 +306,7 @@ class Mobo:
                     train_y_var[..., i: i + 1] if train_y_var is not None else None,
                     input_transform=Normalize(d=self._X.shape[-1], bounds=self._bounds),
                     outcome_transform=Standardize(m=1),
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6))
                 )
             )
         self._model = ModelListGP(*models)
@@ -501,19 +499,28 @@ class Mobo:
         if verbose:
             print("Finding Pareto front...", end="")
 
-        # If the problem is unconstrained, then all observations are Pareto-optimal
         if self._Ycon is None:
+            # If the problem is unconstrained, then all observations can be Pareto-optimal
+
             self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
             self._con_mask = torch.ones_like(self._par_mask, dtype=torch.bool).to(self._device, self._dtype)
             mask = self._par_mask
 
         else:
-            # If the problem is constrained, then only the observations satisfying the constraints are Pareto-optimal
-            self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
+            # If the problem is constrained, then only the observations satisfying the constraints
+            # can be Pareto-optimal. Therefore, first find the acceptable observations, i.e., those observations
+            # satisfying the constraints and build a logical mask. # Then, find the acceptable observations that
+            # are non-dominated and build a logical mask.
+
             Y = torch.cat([self._Yobj, self._Ycon], dim=-1)
             constraint_vals = [c(Y) for c in self._constraints]
             self._con_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
-            mask = torch.logical_and(self._par_mask, self._con_mask)
+
+            feasible_obj = self._Yobj[self._con_mask]
+            par_mask_feasible = is_non_dominated(feasible_obj, maximize=self._optimization_problem_type.value)
+            mask = torch.zeros_like(self._con_mask)
+            mask[self._con_mask] = par_mask_feasible
+            self._par_mask = mask
 
         self._pareto_front = self._Yobj[mask]
 

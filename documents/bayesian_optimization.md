@@ -23,7 +23,7 @@ As any predictive algorithm, Bayesian optimization must start somewhere, and it 
 distribution**, $p(f)$, which encodes our knowledge about and experience with the system of interest into what we
 consider to be a plausible objective function $f$ before observing any data. If there is no prior knowledge about the
 process, the **prior distribution** could be a uniform probability distribution across the whole co-domain, ideally
-from $-<infty$ to $+\infty$.
+from $-\infty$ to $+\infty$.
 
 Once a prior has been established, the next stage of inference is to refine the initial belief, or **likelihood**, in
 light of newly observed data. Assume making an observation of the objective function at $\mathbf{x}$, revealing a

@@ -3,7 +3,10 @@
     <words>
       <w>acqf</w>
       <w>avagama</w>
+      <w>binh</w>
       <w>branincurrin</w>
+      <w>dtlz</w>
+      <w>edgecolor</w>
       <w>edgecolors</w>
       <w>facecolors</w>
       <w>linestyle</w>
@@ -11,10 +14,13 @@
       <w>markerfacecolor</w>
       <w>markersize</w>
       <w>mathbb</w>
+      <w>mathbf</w>
       <w>maxiter</w>
       <w>mlls</w>
       <w>nehvi</w>
       <w>qlognehvi</w>
+      <w>qnehvi</w>
+      <w>skipcol</w>
       <w>ycon</w>
       <w>yobj</w>
       <w>yvar</w>

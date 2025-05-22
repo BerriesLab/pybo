@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from botorch.utils.multi_objective import is_non_dominated
-from botorch.utils.transforms import unnormalize, normalize
 from mobo.mobo import Mobo
 from mobo.samplers import draw_samples
 from utils.io import *
@@ -51,15 +50,11 @@ ground_truth_kwargs = {
 }
 
 posterior_pareto_kwargs = {
-    'color': 'tab:blue',
-    'linestyle': '-',
-    'linewidth': 1.5,
-    'marker': 'o',
-    'markersize': 0,
-    'markerfacecolor': 'tab:blue',
-    'markeredgecolor': 'black',
-    'alpha': 0.6,
-    'label': 'Post. Mean'
+    'fmt': 'o',
+    'ecolor': 'tab:blue',
+    'alpha': 0.3,
+    'label': r'Post. $\mu \pm 3 \sigma$',
+    'capsize': 3,
 }
 
 
@@ -81,13 +76,13 @@ def plot_multi_objective_from_RN_to_R2(
         f2_label="$f_{02}$",
         show_ground_truth=False,
         show_posterior=False,
+        X: torch.Tensor or None =None,
         show_ref_point=False,
         show_rejected_observations=False,
         show_accepted_non_pareto_observations=True,
         show_accepted_pareto_observations=True,
         display_figures=True):
-    """ X is an 'n x d' feature matrix, Y is an 'n x 2' objective matrix, where n is the number of samples,
-    and d is the number of dimensions. Pareto is a boolean array indicating which samples are Pareto optimal."""
+
     # Initialize figure
     fig, axes = plt.subplots(1, 1, figsize=(6, 6))
     axes.set_xlabel(f1_label)
@@ -98,60 +93,77 @@ def plot_multi_objective_from_RN_to_R2(
     if f2_lims is not None and isinstance(f2_lims, tuple):
         axes.set_ylim(f2_lims[0], f2_lims[1])
 
-    # Plot posterior if requested
+    # Plot posterior pareto front if requested
     if show_posterior:
-        # Extract N random samples
-        dims = mobo.get_X().shape[-1]
-        x = draw_samples(
-            sampler_type=SamplerType.Sobol,
-            bounds=mobo.get_bounds().cpu(),
-            n_samples=int(1e2),
-            n_dimensions=dims
-        ).to(mobo.get_device(), mobo.get_dtype())
-        x = normalize(x, mobo.get_bounds())
-        # x = unnormalize(x, mobo.get_bounds().cpu()).to(mobo.get_X().device)
-        # Calculate posterior mean and std. dev
+        if X is None:
+            # Extract N random samples
+            dims = mobo.get_X().shape[-1]
+            x = draw_samples(
+                sampler_type=SamplerType.Sobol,
+                bounds=mobo.get_bounds().cpu(),
+                n_samples=int(1e2),
+                n_dimensions=dims,
+                normalize=False
+            ).to(mobo.get_device(), mobo.get_dtype())
+        elif isinstance(X, torch.Tensor):
+            # Ensure that x is on the right device
+            x = X.to(mobo.get_device(), mobo.get_dtype())
+        else:
+            raise ValueError("If X is provided, it must be a torch.Tensor.")
         posterior = mobo.get_model().posterior(x)
         mean = posterior.mean
         std = posterior.variance.sqrt()
 
+        # Apply constraints on outputs (mean)
+        constraint_vals = [c(mean) for c in mobo.get_constraints()]
+        con_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
+        mean_feasible = mean[con_mask]
+        std_feasible = std[con_mask]
+
+        # Get mask of non-dominated points among feasible ones
+        feasible_mask = is_non_dominated(
+            Y=mean_feasible,
+            maximize=mobo.get_optimization_problem_type().value
+        )
+
         # Calculate pareto front for mean and samples
-        mean_mask = is_non_dominated(Y=mean, maximize=mobo.get_optimization_problem_type().value)
-        mean_pareto = mean[mean_mask].detach().cpu().numpy()
-        std_pareto = std[mean_mask].detach().cpu().numpy()
+        mean_pareto = mean_feasible[feasible_mask].detach().cpu().numpy()
+        std_pareto = std_feasible[feasible_mask].detach().cpu().numpy()
         if mobo.get_optimization_problem_type() == OptimizationProblemType.Maximization:
-            mean_sorted = np.argsort(-mean_pareto[:, 0])
+            sorted_idx  = np.argsort(-mean_pareto[:, 0])
         else:
-            mean_sorted = np.argsort(mean_pareto[:, 0])
+            sorted_idx  = np.argsort(mean_pareto[:, 0])
+        mean_pareto = mean_pareto[sorted_idx]
+        std_pareto = std_pareto[sorted_idx]
 
-        mean_pareto = mean_pareto[mean_sorted]
-        std_pareto = std_pareto[mean_sorted]
-
-        # Plot std dev bands
-        for i in range(3, 0, -1):
-            axes.fill_between(mean_pareto[:, 0],
-                              mean_pareto[:, 1] - i * std_pareto[:, 1],
-                              mean_pareto[:, 1] + i * std_pareto[:, 1],
-                              alpha=0.15,
-                              color='tab:blue',
-                              label=f'{i}σ' if i == 1 else None)
-
-        axes.plot(mean_pareto[:, 0], mean_pareto[:, 1], **posterior_pareto_kwargs)
+        # Plot mean with error bars
+        axes.errorbar(
+            mean_pareto[:, 0],
+            mean_pareto[:, 1],
+            xerr=3 * std_pareto[:, 0],
+            yerr=3 * std_pareto[:, 1],
+            **posterior_pareto_kwargs,
+        )
 
     # Plot ground truth if requested
     if show_ground_truth:
         if not mobo.get_true_objective():
             raise ValueError("Ground truth not available.")
-
-        # Draw a number of random samples to plot the ground truth
-        dims = mobo.get_X().shape[-1]
-        x = draw_samples(
-            sampler_type=SamplerType.Sobol,
-            bounds=mobo.get_bounds().cpu(),
-            n_samples=int(1e3),
-            n_dimensions=dims
-        )
-        x = unnormalize(x, mobo.get_bounds().cpu())
+        if X is None:
+            # Extract N random samples
+            dims = mobo.get_X().shape[-1]
+            x = draw_samples(
+                sampler_type=SamplerType.Sobol,
+                bounds=mobo.get_bounds().cpu(),
+                n_samples=int(1e2),
+                n_dimensions=dims,
+                normalize=False
+            ).to(mobo.get_device(), mobo.get_dtype())
+        elif isinstance(X, torch.Tensor):
+            # Ensure that x is on the right device
+            x = X.to(mobo.get_device(), mobo.get_dtype())
+        else:
+            raise ValueError("If X is provided, it must be a torch.Tensor.")
         y = mobo.get_true_objective()(x)
         f1 = y[:, 0].detach().cpu().numpy()
         f2 = y[:, 1].detach().cpu().numpy()
