@@ -5,29 +5,37 @@ from utils.types import SamplerType
 from botorch.utils.transforms import unnormalize
 
 
-def draw_samples(
-        sampler_type: SamplerType,
-        bounds: torch.Tensor or None = None,
-        n_samples: int = 1000,
-        n_dimensions: int = 2,
-        normalize = True,
-) -> torch.Tensor:
+class Sampler:
+    def __init__(
+            self,
+            sampler_type: SamplerType = SamplerType.Sobol,
+            bounds: torch.Tensor or None = None,
+            n_dimensions: int = 2,
+            normalize: bool = True,
+    ):
 
-    if sampler_type == SamplerType.LatinHypercube:
-        sampler = LatinHypercube(d=n_dimensions)
-        samples = sampler.random(n=n_samples)
-        x = torch.tensor(samples)
-        
-    elif sampler_type == SamplerType.Sobol:
-        sampler = SobolEngine(dimension=n_dimensions, scramble=True)
-        x = sampler.draw(n=n_samples)
-    
-    else:
-        raise ValueError("Invalid initial sampling type.")
+        self.sampler_type = sampler_type
+        self.bounds = bounds
+        self.n_dimensions = n_dimensions
+        self.normalize = normalize
 
-    if normalize:
-        return x
-    else:
-        if bounds is None:
-            raise ValueError("If normalize is True, then bounds cannot be None.")
-        return unnormalize(x, bounds=bounds)
+    def draw_samples(self, n) -> torch.Tensor:
+
+        if self.sampler_type == SamplerType.LatinHypercube:
+            sampler = LatinHypercube(d=self.n_dimensions)
+            samples = sampler.random(n=n)
+            x = torch.tensor(samples)
+
+        elif self.sampler_type == SamplerType.Sobol:
+            sampler = SobolEngine(dimension=self.n_dimensions, scramble=True)
+            x = sampler.draw(n=n)
+
+        else:
+            raise ValueError("Invalid initial sampling type.")
+
+        if self.normalize:
+            return x
+        else:
+            if self.bounds is None:
+                raise ValueError("If normalize is True, then bounds cannot be None.")
+            return unnormalize(x, bounds=self.bounds)

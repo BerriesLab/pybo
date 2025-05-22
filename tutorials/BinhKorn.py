@@ -2,7 +2,7 @@ import os
 from botorch.acquisition.multi_objective import MCMultiOutputObjective, IdentityMCMultiOutputObjective
 from abc import ABC
 from mobo.mobo import Mobo
-from mobo.samplers import draw_samples
+from mobo.samplers import Sampler
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -36,26 +36,28 @@ def c2(x):
     return 7.7 - torch.square((x[..., 0] - 8)) - torch.square((x[..., 1] + 3))
 
 def main(n_samples=64, q: int = 1, ):
-    main_directory = Path(f"../data")
+    data_dir = main_dir / "data"
     experiment_name = f"test_binh_and_korn_64iter_{q}q_512mc_256rs_qnehvi"
-    directory = create_experiment_directory(main_directory, experiment_name)
+    directory = create_experiment_directory(data_dir, experiment_name)
     os.chdir(directory)
 
-    """ Generate initial dataset """
-    X = draw_samples(
+    """ Instantiate a random generator """
+    sampler = Sampler(
         sampler_type=SamplerType.Sobol,
         bounds=torch.tensor([[0, 0], [5, 3]]),
-        n_samples=2 * (2 + 1),
         n_dimensions=2,
         normalize=False
     )
-    Yobj = BinhAndKorn()(X)
+
+    """ Generate initial dataset and random samples for posterior and ground truth evaluation """
+    X = sampler.draw_samples(n=2*(2+1))
+    rnd_X = sampler.draw_samples(n=1000)
 
     """ Main optimization loop """
     mobo = Mobo(
         experiment_name=experiment_name,
         X=X,
-        Yobj=Yobj,
+        Yobj=BinhAndKorn()(X),
         Yobj_var=None,
         Ycon=None,
         Ycon_var=None,
@@ -87,7 +89,8 @@ def main(n_samples=64, q: int = 1, ):
             show_accepted_non_pareto_observations=True,
             f1_lims=(0, 140),
             f2_lims=(0, 50),
-            display_figures=False
+            display_figures=False,
+            X=rnd_X,
         )
 
         """ Simulate experiment at new X """
@@ -107,6 +110,7 @@ def main(n_samples=64, q: int = 1, ):
 
 
 if __name__ == "__main__":
+    main_dir = Path.cwd().parent
     batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
         main(n_samples=64, q=batch_size)

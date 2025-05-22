@@ -1,9 +1,8 @@
 import matplotlib.pyplot as plt
 from botorch.utils.multi_objective import is_non_dominated
 from mobo.mobo import Mobo
-from mobo.samplers import draw_samples
 from utils.io import *
-from utils.types import OptimizationProblemType, SamplerType
+from utils.types import OptimizationProblemType
 
 ms = 7
 
@@ -70,13 +69,13 @@ def plot_objective_from_R2_to_R1():
 
 def plot_multi_objective_from_RN_to_R2(
         mobo: Mobo,
+        X: torch.Tensor,
         f1_lims=None,
         f2_lims=None,
         f1_label="$f_{01}$",
         f2_label="$f_{02}$",
         show_ground_truth=False,
         show_posterior=False,
-        X: torch.Tensor or None =None,
         show_ref_point=False,
         show_rejected_observations=False,
         show_accepted_non_pareto_observations=True,
@@ -95,21 +94,8 @@ def plot_multi_objective_from_RN_to_R2(
 
     # Plot posterior pareto front if requested
     if show_posterior:
-        if X is None:
-            # Extract N random samples
-            dims = mobo.get_X().shape[-1]
-            x = draw_samples(
-                sampler_type=SamplerType.Sobol,
-                bounds=mobo.get_bounds().cpu(),
-                n_samples=int(1e2),
-                n_dimensions=dims,
-                normalize=False
-            ).to(mobo.get_device(), mobo.get_dtype())
-        elif isinstance(X, torch.Tensor):
-            # Ensure that x is on the right device
-            x = X.to(mobo.get_device(), mobo.get_dtype())
-        else:
-            raise ValueError("If X is provided, it must be a torch.Tensor.")
+        # Ensure that x is on the right device
+        x = X.to(mobo.get_device(), mobo.get_dtype())
         posterior = mobo.get_model().posterior(x)
         mean = posterior.mean
         std = posterior.variance.sqrt()
@@ -145,28 +131,17 @@ def plot_multi_objective_from_RN_to_R2(
             **posterior_pareto_kwargs,
         )
 
+    # TODO: ground truth should also take into account for rejected values and accepted values??
     # Plot ground truth if requested
     if show_ground_truth:
         if not mobo.get_true_objective():
             raise ValueError("Ground truth not available.")
-        if X is None:
-            # Extract N random samples
-            dims = mobo.get_X().shape[-1]
-            x = draw_samples(
-                sampler_type=SamplerType.Sobol,
-                bounds=mobo.get_bounds().cpu(),
-                n_samples=int(1e2),
-                n_dimensions=dims,
-                normalize=False
-            ).to(mobo.get_device(), mobo.get_dtype())
-        elif isinstance(X, torch.Tensor):
-            # Ensure that x is on the right device
-            x = X.to(mobo.get_device(), mobo.get_dtype())
-        else:
-            raise ValueError("If X is provided, it must be a torch.Tensor.")
+        x = X.to(mobo.get_device(), mobo.get_dtype())
         y = mobo.get_true_objective()(x)
-        f1 = y[:, 0].detach().cpu().numpy()
-        f2 = y[:, 1].detach().cpu().numpy()
+        constraint_vals = [c(y) for c in mobo.get_constraints()]
+        mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
+        f1 = y[mask, 0].detach().cpu().numpy()
+        f2 = y[mask, 1].detach().cpu().numpy()
         axes.scatter(f1, f2, **ground_truth_kwargs)
 
     # Plot reference point if requested
@@ -219,7 +194,7 @@ def plot_multi_objective_from_RN_to_R2(
 
     if display_figures:
         plt.show()
-    #plt.close(fig)
+    plt.close(fig)
 
 
 # TODO: implement a parallel coordinate plot

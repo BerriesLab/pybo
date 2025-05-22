@@ -7,11 +7,10 @@ the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_
 
 import os
 from abc import ABC
-import torch
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
 from mobo.constraints import LowerBound, UpperBound
 from mobo.mobo import Mobo
-from mobo.samplers import draw_samples
+from mobo.samplers import Sampler
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -22,7 +21,8 @@ class CustomMultiObjective(MCMultiOutputObjective, ABC):
     def __init__(self):
         super().__init__()
 
-    def f1(self, Z: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def f1(Z: torch.Tensor) -> torch.Tensor:
         i_m = Z[..., 0]
         i_p = Z[..., 1]
         tau_r = Z[..., 2]
@@ -36,7 +36,8 @@ class CustomMultiObjective(MCMultiOutputObjective, ABC):
         wear = energy + noise
         return 250 * wear.unsqueeze(-1)
 
-    def f2(self, Z: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def f2(Z: torch.Tensor) -> torch.Tensor:
         i_m = Z[..., 0]
         i_p = Z[..., 1]
         tau_r = Z[..., 2]
@@ -62,7 +63,15 @@ def main(n_samples=1, batch_size=1):
     directory = create_experiment_directory(main_directory, experiment_name)
     os.chdir(directory)
 
-    """ Load dataset """
+    """ Instantiate a random generator """
+    sampler = Sampler(
+        sampler_type=SamplerType.Sobol,
+        bounds=torch.Tensor([[7.5, 3, 0.1], [15, 7.5, 1]]),
+        n_dimensions=3,
+        normalize=False
+    )
+
+    """ Load dataset and generate random samples for posterior and ground truth evaluation """
     X, Yobj, Yobj_var, Ycon, Ycon_var = load_dataset_from_csv(
         filepath=Path.cwd().parent / "avagama_dataset.csv",
         input_space_dimension=3,
@@ -72,8 +81,9 @@ def main(n_samples=1, batch_size=1):
         constraint_variance=False,
         skiprows=1  # To skip the header
     )
+    rnd_X = sampler.draw_samples(n=1000)
 
-    """ Main optimization loop """
+    """ Instantiate a Mobo object """
     mobo = Mobo(
         experiment_name=experiment_name,
         X=X,
@@ -93,15 +103,6 @@ def main(n_samples=1, batch_size=1):
         batch_size=1,
     )
 
-    # Generates samples points that will be used for posterior evaluation in each cycle
-    posterior_X = draw_samples(
-        sampler_type=SamplerType.Sobol,
-        bounds=mobo.get_bounds().cpu(),
-        n_samples=int(1e3),
-        n_dimensions=3,
-        normalize=False
-    ).to(mobo.get_device(), mobo.get_dtype())
-
     for i in range(int(n_samples / batch_size)):
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / batch_size)} ***")
@@ -114,7 +115,7 @@ def main(n_samples=1, batch_size=1):
             show_ref_point=True,
             show_ground_truth=False,
             show_posterior=True,
-            X=posterior_X,
+            X=rnd_X,
             show_rejected_observations=True,
             show_accepted_pareto_observations=True,
             show_accepted_non_pareto_observations=True,
@@ -145,4 +146,5 @@ def main(n_samples=1, batch_size=1):
 
 
 if __name__ == "__main__":
+    main_dir = Path.cwd().parent
     main()

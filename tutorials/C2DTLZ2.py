@@ -3,7 +3,7 @@ from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective
 from botorch.test_functions import C2DTLZ2
 from mobo.constraints import UpperBound
 from mobo.mobo import Mobo
-from mobo.samplers import draw_samples
+from mobo.samplers import Sampler
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
@@ -11,31 +11,25 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
 
 
 def main(n_samples=64, q: int = 1, ):
-    cwd = main_dir / "data"
+    data_dir = main_dir / "data"
     experiment_name = f"test_c2dtlz2_64samples_{q}q_1024mc_512rs_qnehvi"
-    directory = create_experiment_directory(cwd, experiment_name)
+    directory = create_experiment_directory(data_dir, experiment_name)
     os.chdir(directory)
 
     """ Define the true_objective """
     true_objective = C2DTLZ2(num_objectives=2, dim=4, negate=True)  # Negate for maximization problems
 
-    """ Generate initial dataset """
-    X = draw_samples(
+    """ Instantiate a random generator """
+    sampler = Sampler(
         sampler_type=SamplerType.Sobol,
         bounds=true_objective.bounds,
-        n_samples=2 * (true_objective.dim + 1),
-        n_dimensions=true_objective.dim,
-        normalize=False,
-    )
-
-    """ Generates samples points that will be used for posterior evaluation in each cycle """
-    rnd_X = draw_samples(
-        sampler_type=SamplerType.Sobol,
-        bounds=true_objective.bounds,
-        n_samples=int(1e3),
         n_dimensions=true_objective.dim,
         normalize=False
     )
+
+    """ Generate initial dataset and random samples for posterior and ground truth evaluation """
+    X = sampler.draw_samples(n=2*(2+1))
+    rnd_X = sampler.draw_samples(n=1000)
 
     """ Instantiate a Mobo object """
     mobo = Mobo(
