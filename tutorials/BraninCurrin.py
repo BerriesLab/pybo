@@ -2,6 +2,7 @@ import os
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
+from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_allocated_memory
@@ -80,6 +81,7 @@ def main(n_samples=64, q: int = 1, ):
     plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
     plot_allocated_memory(mobo, show=False)
+    create_video_from_images()
     print("Optimization Finished.")
 
 
