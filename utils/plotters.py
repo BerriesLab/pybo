@@ -217,15 +217,15 @@ def plot_log_hypervolume_improvement(mobo, show=False):
     hv_diff = (hv - hv_0) / (hv_0 + epsilon)
 
     # Mask values <= 0 
-    # mask = hv_diff > 0
-    # x_masked = x[mask]
-    # hv_diff_masked = hv_diff[mask]
+    mask = hv_diff > 0
+    x_masked = x[mask]
+    hv_diff_masked = hv_diff[mask]
 
     # Compute log improvement
-    log_hv_diff = np.log10(hv_diff + epsilon)
+    log_hv_diff = np.log10(hv_diff_masked + epsilon)
 
     # Plot
-    ax.scatter(x, log_hv_diff, **optimization_figures_kwargs)
+    ax.scatter(x_masked, log_hv_diff, **optimization_figures_kwargs)
 
     # Save or show
     plt.tight_layout()
