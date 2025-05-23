@@ -202,9 +202,10 @@ def plot_log_hypervolume_improvement(mobo, show=False):
     hv = np.array(mobo.get_hypervolume())
     x = np.arange(len(hv)) * mobo.get_batch_size()
 
-    # Use first value as the reference point
+    # Use first value as the reference poin
+    epsilon = 1e-6
     hv_0 = hv[0]
-    hv_diff = (hv - hv_0) / hv_0
+    hv_diff = (hv - hv_0) / (hv_0 + epsilon)
 
     # Mask values <= 0 
     mask = hv_diff > 0
