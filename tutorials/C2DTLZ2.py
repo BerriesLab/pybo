@@ -29,7 +29,7 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Generate initial dataset and random samples for posterior and ground truth evaluation """
-    X = sampler.draw_samples(n=2*(2+1))
+    X = sampler.draw_samples(n=2*(true_objective.dim+1))
     rnd_X = sampler.draw_samples(n=1000)
 
     """ Instantiate a Mobo object """
