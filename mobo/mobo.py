@@ -499,7 +499,7 @@ class Mobo:
         if verbose:
             print("Finding Pareto front...", end="")
 
-        if self._Ycon is None:
+        if self._Ycon is None or self._constraints is None:
             # If the problem is unconstrained, then all observations can be Pareto-optimal
 
             self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
@@ -600,28 +600,7 @@ class Mobo:
         np.savetxt(filepath, XY, delimiter=",", comments="")
 
     def load_dataset_from_csv(self, filepath: str or None = None, skipcol=0):
-        if filepath is None:
-            csv_files = list(Path('.').glob('*.csv'))
-            if not csv_files:
-                raise FileNotFoundError("No CSV files found in the current directory")
-            filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
-
-        d = self._X.shape[-1]
-        m = self._Yobj.shape[-1]
-        c = self._Ycon.shape[-1] if self._Ycon is not None else 0
-
-        xy = np.loadtxt(filepath, delimiter=",")
-        X = xy[..., 0: d].copy()
-        Yobj = xy[..., d: d + m].copy()
-        Ycon = xy[..., d + m: d + m + c].copy()
-        Yobj_var = xy[..., d + m + c: d + m + c + m].copy()
-        Ycon_var = xy[..., d + m + c + m: d + m + c + m + c].copy()
-
-        self.set_X(torch.Tensor(X))
-        self.set_Yobj(torch.Tensor(Yobj))
-        self.set_Yobj_var(torch.Tensor(Yobj_var))
-        self.set_Ycon(torch.Tensor(Ycon))
-        self.set_Ycon_var(torch.Tensor(Ycon_var))
+        raise NotImplementedError("Loading from CSV is not yet supported.")
 
     @classmethod
     def from_file(cls, filepath: str = None):

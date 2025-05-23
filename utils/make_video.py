@@ -1,61 +1,78 @@
-import os
 import cv2
+from pathlib import Path
 
-DEFAULT_OUTPUT_VIDEO_PATH = 'movie.mp4'  # Centralized filename for the output video
+DEFAULT_OUTPUT_VIDEO_NAME = 'movie.mp4'
 
 
-def create_video_from_images(image_folder, output_video_path, fps=0.2, prefix=""):
+def create_video_from_images(input_folder=None, output_folder=None, filename=None, fps=0.5):
     """
-    Creates a video from a sequence of images in a folder.
+    Creates a video from a sequence of images stored in a specified folder using the
+    OpenCV library. The output video is saved in the specified location with the
+    desired filename and frame per second (fps) value.
 
-    Args:
-        image_folder (str): Path to the folder containing the images.
-        output_video_path (str): Path to the output video file (e.g., 'output.mp4').
-        fps (float, optional): Frames per second of the output video. Defaults to 0.2 to ensure slower playback.
-        prefix (str, optional): Common prefix for image filenames to include. Defaults to an empty string.
+    :param input_folder: A string specifying the folder containing image files to be
+        used for video creation. Supports formats such as '.png', '.jpg', '.jpeg',
+        and '.gif'.
+    :param output_folder: A string specifying the folder where the generated video
+        will be saved. If not provided, defaults to the `input_folder`.
+    :param filename: A string specifying the name of the output video file.
+        If not provided, the default filename is used.
+    :param fps: A float specifying the frames per second (fps) for the generated
+        video. Determines the playback speed of the video.
+    :return: Returns a boolean value. `True` if the video is successfully created,
+        otherwise `False`.
     """
-    images = [img for img in os.listdir(image_folder)
-              if img.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))]
-    print(images)
-    images.sort()  # Sort the images to ensure correct order
 
-    if not images:
-        print(f"Error: No images found in the folder: {image_folder}")
-        return
+    # Set folders and filename
+    if input_folder is None:
+        input_folder = Path.cwd()
+    else:
+        input_folder = Path(input_folder)
+
+    if output_folder is None:
+        output_folder = input_folder
+
+    if filename is None:
+        filename = DEFAULT_OUTPUT_VIDEO_NAME
+
+    output_path = Path(output_folder) / filename
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Get all image files and sort them
+    image_files = sorted([f for f in input_folder.glob('*') if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.gif')])
+
+    if not image_files:
+        print(f"Error: No images found in the folder: {input_folder}")
+        return False
 
     # Read the first image to get dimensions
-    frame = cv2.imread(os.path.join(image_folder, images[0]))
+    frame = cv2.imread(str(image_files[0]))
+    if frame is None:
+        print(f"Error: Could not read image {image_files[0]}")
+        return False
+
     height, width, channels = frame.shape
 
     # Define the codec and create VideoWriter object
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use 'mp4v' for .mp4, other codecs may be needed for other video formats.
-    out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
-    for image in images:
-        img_path = os.path.join(image_folder, image)
-        frame = cv2.imread(img_path)
-        out.write(frame)  # Write the frame into the video
+    try:
+        for img_file in image_files:
+            frame = cv2.imread(str(img_file))
+            if frame is not None:
+                out.write(frame)
+            else:
+                print(f"Warning: Could not read image {img_file}")
 
-    # Release everything
-    out.release()
-    cv2.destroyAllWindows()
-    print(f"Video successfully created at: {output_video_path}")
+        print(f"Video successfully created at: {output_path}")
+        return True
 
+    except Exception as e:
+        print(f"Error creating video: {str(e)}")
+        return False
 
-if __name__ == "__main__":
-    # Example usage:
-    image_folder = r'C:\Users\BerettaDavide\PycharmProjects\inspire\data\2025-05-14_14-47-20 - test_c2dtlz2_50iter_2q_1024mc_512rs_qnehvi'
-    output_video_path = image_folder + r"\movie.mp4" # Use the centralized output filename
-    fps = 1.0  # You can adjust the frames per second as needed
-
-    # Create a dummy image folder and images for demonstration
-    if not os.path.exists(image_folder):
-        os.makedirs(image_folder)
-        for i in range(10):
-            import numpy as np
-
-            # Create a dummy image (black with a number on it)
-            img = np.zeros((100, 100, 3), dtype=np.uint8)
-            cv2.putText(img, str(i), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            cv2.imwrite(os.path.join(image_folder, f'image_{i:02d}'), img)
-    create_video_from_images(image_folder, output_video_path, fps)
+    finally:
+        # Release everything
+        out.release()
+        cv2.destroyAllWindows()

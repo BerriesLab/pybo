@@ -10,7 +10,7 @@ from botorch.test_functions.multi_objective import BraninCurrin
 
 def main(n_samples=64, q: int = 1, ):
     data_dir = main_dir / "data"
-    experiment_name = f"test_branincurrin_64iter_{q}q_512mc_256rs_qlognehvi"
+    experiment_name = f"test_branincurrin_64iter_{q}q_512mc_256rs_qnehvi"
     directory = create_experiment_directory(data_dir, experiment_name)
     os.chdir(directory)
 
@@ -61,13 +61,11 @@ def main(n_samples=64, q: int = 1, ):
             show_ref_point=True,
             show_ground_truth=True,
             show_posterior=True,
-            show_rejected_observations=True,
-            show_accepted_pareto_observations=True,
-            show_accepted_non_pareto_observations=True,
+            show_observations=True,
             f1_lims=(-250, 10),
             f2_lims=(-15, 0),
             display_figures=False,
-            X=rnd_X,
+            x=rnd_X,
         )
 
         """ Simulate experiment at new X """

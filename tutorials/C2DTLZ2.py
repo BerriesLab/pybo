@@ -5,6 +5,7 @@ from mobo.constraints import UpperBound
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
+from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
     plot_allocated_memory
@@ -43,7 +44,7 @@ def main(n_samples=64, q: int = 1, ):
         optimization_problem_type=OptimizationProblemType.Maximization,
         true_objective=true_objective,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
-        constraints=[UpperBound(-1)],
+        constraints=[UpperBound(0)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
@@ -62,14 +63,12 @@ def main(n_samples=64, q: int = 1, ):
             mobo=mobo,
             show_ref_point=True,
             show_ground_truth=True,
-            show_posterior=True,
-            show_rejected_observations=True,
-            show_accepted_pareto_observations=True,
-            show_accepted_non_pareto_observations=True,
+            show_posterior=False,
+            show_observations=True,
             f1_lims=(-1.6, 0.1),
             f2_lims=(-1.6, 0.1),
             display_figures=False,
-            X=rnd_X,
+            x=rnd_X,
         )
 
         """ Simulate experiment at new X """
@@ -87,6 +86,7 @@ def main(n_samples=64, q: int = 1, ):
     plot_log_hypervolume_difference(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
     plot_allocated_memory(mobo, show=False)
+    create_video_from_images()
     print("Optimization Finished.")
 
 

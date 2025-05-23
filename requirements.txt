@@ -7,3 +7,5 @@ scipy~=1.15.2
 scikit-optimize~=0.10.2
 scikit-learn~=1.6.1
 gpytorch~=1.14
+torch~=2.7.0+cu128
+opencv-python~=4.11.0.86

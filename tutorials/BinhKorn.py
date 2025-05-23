@@ -84,13 +84,11 @@ def main(n_samples=64, q: int = 1, ):
             show_ref_point=True,
             show_ground_truth=True,
             show_posterior=True,
-            show_rejected_observations=True,
-            show_accepted_pareto_observations=True,
-            show_accepted_non_pareto_observations=True,
+            show_observations=True,
             f1_lims=(0, 140),
             f2_lims=(0, 50),
             display_figures=False,
-            X=rnd_X,
+            x=rnd_X,
         )
 
         """ Simulate experiment at new X """

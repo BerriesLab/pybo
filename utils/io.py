@@ -59,6 +59,7 @@ def load_dataset_from_csv(
         constraint_variance: bool = False,
         filepath: str or None = None,
         skiprows: int = 0,
+        skipcols: int = 0,
 ):
     """ Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
         X ¦ Yobj ¦ Yobj_var ¦ Ycon ¦ Ycon_var."""
@@ -71,8 +72,8 @@ def load_dataset_from_csv(
 
     xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
 
-    i = 0
-    j = input_space_dimension
+    i = skipcols + 0
+    j = skipcols + input_space_dimension
     X = torch.tensor(xy[..., i:j])
 
     if objective_space_dimension > 0:
@@ -88,6 +89,7 @@ def load_dataset_from_csv(
             Yobj_var = None
     else:
         Yobj = None
+        Yobj_var = None
 
     if constraint_space_dimension > 0:
         i = j
@@ -102,6 +104,7 @@ def load_dataset_from_csv(
             Ycon_var = None
     else:
         Ycon = None
+        Ycon_var = None
 
     return X, Yobj, Yobj_var, Ycon, Ycon_var
 

@@ -9,6 +9,7 @@
       <w>edgecolor</w>
       <w>edgecolors</w>
       <w>facecolors</w>
+      <w>infeas</w>
       <w>linestyle</w>
       <w>markeredgecolor</w>
       <w>markerfacecolor</w>
@@ -21,6 +22,8 @@
       <w>qlognehvi</w>
       <w>qnehvi</w>
       <w>skipcol</w>
+      <w>skipcols</w>
+      <w>skiprows</w>
       <w>ycon</w>
       <w>yobj</w>
       <w>yvar</w>

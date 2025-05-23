@@ -1,19 +1,15 @@
-# pyBO - A Package for Experimental Bayesian Optimization
+# pyBO - A Python Package for Multi-Objective Bayesian Optimization
+`pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian Processes, it provides a framework 
+for optimizing multiple competing objectives under experimental constraints and finding Pareto-optimal solutions.
 
-pyBO is a Python package based on BoTorch, designed to facilitate experimental Multi-Objective Bayesian Optimization (
-MOBO). It provides a flexible framework for optimizing multiple competing objectives simultaneously while considering experimental
-constraints. pyMOBO implements Bayesian optimization techniques using Gaussian Processes to explore
-hyperparameter spaces and find Pareto-optimal solutions. pyMOBO is particularly useful for scenarios where experiments
-are costly or time-consuming, as it minimizes the number of experiments needed by making informed decisions about which
-parameters to test next based on previous observations.
+## Key Features
+- Supports multi-objective and constrained optimization.
+- Operates in batch mode (q-batch) for efficient parallel evaluations.
+- Easily integrates into iterative experimental workflows.
+- Supports exporting and visualizing optimization results.
 
-## Experimental Flowchart
-
-MOBO is designed for easy integration within an experimental optimization pipeline. It receives as input the results of
-the experiments in a matrix format (see [Data Input Format](#data-input-format)), and returns as output a new set of
-parameters for the next experiment to execute.
-MOBO is designed to work in $q$-batch, where a $q$-batch is a set of $q$ parameters-observable pairs. In practice, it is
-capable of generating a number $q$ of new parameter sets per optimization loop.
+## Workflow Overview
+`pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed experiments and suggests new candidate parameters for the next iteration.
 
 ```mermaid
 flowchart TD
@@ -36,40 +32,42 @@ flowchart TD
 
 ## Data Input Format
 
-The input data format for MOBO is a $\mathbf{Z}$ matrix in a CVS file. The $\mathbf{Z}$ matrix is organized as follows:
-
+Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
 $$
 \mathbf{Z} = \left[ \mathbf{X} \; \middle| \; \mathbf{Y}_{\mathrm{obj}} \; \middle| \; \mathbf{Y}_{\mathrm{obj, \sigma}} \; \middle| \; \mathbf{Y}_{\text{con}} \; \middle| \; \mathbf{Y}_{\mathrm{con, \sigma}} \right]
 $$
 
-with
+with 
 
-- $ \mathbf{X} \in \mathbb{R}^{n \times d} $: Input data or parameters
-- $ \mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m} $: Objective values
-- $ \mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m} $: Variance of objective values (optional)
-- $ \mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c} $: Constraint values (optional)
-- $ \mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c} $: Variance of constraint values (optional)
+- $ \mathbf{X} \in \mathbb{R}^{n \times d} $: Input data or parameters.
+- $ \mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m} $: Objective values.
+- $ \mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m} $: Variance of objective values (optional).
+- $ \mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c} $: Constraint values (optional).
+- $ \mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c} $: Variance of constraint values (optional).
 
 where
 
-- $n$ is the number of observations
-- $d$ is the number of parameters or input space dimension
-- $m$ is the number of observable objectives
-- $c$ is the number of observable constraints
+- $n$ is the number of observations.
+- $d$ is the number of parameters or input space dimension.
+- $m$ is the number of observable objectives.
+- $c$ is the number of observable constraints.
 
 ## Data Output Format
 
-MOBO allows exporting a class instance in binary format (pickle), and the object's dataset in CSV file (
-see [Data Input Format](#data-input-format)).
+`pyBO` allows exporting:
+- The optimizer state as a binary file (pickle) for later reuse or analysis.
+- The full dataset $\mathbf{Z}$ as a CSV file, matching the input format.
 
-## Results Visualization
-
-MOBO supports visualization of multi objective optimization processes, including accepted and rejected observations, and
-the pareto front.
+## Visualization
+`pyBO` provides built-in tools to visualize:
+- The Pareto front in bi-objective optimization problems, where the objective function is of the form $\mathbf{f}_0 : \mathbb{R}^N \rightarrow \mathbb{R}^2$.
+- The hypervolume achieved at each optimization cycle.
+- The memory usage during each optimization cycle.
+- The execution time for each optimization cycle.
 
 ## Tutorials
+Explore the following examples to understand how `pyBO` can be applied:
 
-The following tutorials are currently available:
-
-- [Branin-Currin](test/unconstrained_BraninCurrin.py): An unconstrained bi-objective optimization problem.
-- [C2DTLZ2](test/constrained_C2DTLZ2.py): A constrained bi-objective optimization problem.
+- [Branin-Currin](tutorials/BraninCurrin.py): An unconstrained bi-objective optimization problem.
+- [C2DTLZ2](tutorials/C2DTLZ2.py): A constrained bi-objective optimization problem.
+- [Binh and Korn](tutorials/BinhKorn.py): A constrained bi-objective optimization problem.

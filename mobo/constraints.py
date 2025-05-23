@@ -1,14 +1,13 @@
 import torch
 
 
-# TODO: is htis funcitoncorrect??? this applied the boundary only to the last element
 class UpperBound:
     def __init__(self, threshold: float, index: int = -1):
         self.threshold = threshold
         self.index = index
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        # c(x) = samples[..., index] - threshold <= 0
+        # c(x) = samples[..., index] <= threshold
         return samples[..., self.index] - self.threshold
 
 
@@ -18,5 +17,5 @@ class LowerBound:
         self.index = index
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        # c(x) = threshold - samples[..., index] <= 0
+        # c(x) = threshold <= samples[..., index]
         return self.threshold - samples[..., self.index]
