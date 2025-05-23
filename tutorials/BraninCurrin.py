@@ -3,14 +3,14 @@ from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_allocated_memory
 from botorch.test_functions.multi_objective import BraninCurrin
 
 
 def main(n_samples=64, q: int = 1, ):
     data_dir = main_dir / "data"
-    experiment_name = f"test_branincurrin_64iter_{q}q_512mc_256rs_qnehvi"
+    experiment_name = f"test_branincurrin_64iter_{q}q_256mc_128rs_qnehvi"
     directory = create_experiment_directory(data_dir, experiment_name)
     os.chdir(directory)
 
@@ -26,7 +26,7 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Generate initial dataset and random samples for posterior and ground truth evaluation """
-    X = sampler.draw_samples(n=2*(2+1))
+    X = sampler.draw_samples(n=2*(true_objective.dim+1))
     rnd_X = sampler.draw_samples(n=1000)
 
     """ Instantiate a Mobo object """
@@ -44,8 +44,8 @@ def main(n_samples=64, q: int = 1, ):
         constraints=None,
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
-        raw_samples=256,
-        mc_samples=512,
+        raw_samples=128,
+        mc_samples=256,
         batch_size=q,
     )
 
@@ -60,7 +60,6 @@ def main(n_samples=64, q: int = 1, ):
             mobo=mobo,
             show_ref_point=True,
             show_ground_truth=True,
-            show_posterior=True,
             show_observations=True,
             f1_lims=(-250, 10),
             f2_lims=(-15, 0),
@@ -78,7 +77,7 @@ def main(n_samples=64, q: int = 1, ):
         mobo.save_dataset_to_csv()
         print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
-    plot_log_hypervolume_difference(mobo, show=False)
+    plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
     plot_allocated_memory(mobo, show=False)
     print("Optimization Finished.")

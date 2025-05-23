@@ -7,13 +7,13 @@ from mobo.samplers import Sampler
 from utils.io import *
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_allocated_memory
 
 
 def main(n_samples=64, q: int = 1, ):
     data_dir = main_dir / "data"
-    experiment_name = f"test_c2dtlz2_64samples_{q}q_1024mc_512rs_qnehvi"
+    experiment_name = f"test_c2dtlz2_64samples_{q}q_256mc_128rs_qnehvi"
     directory = create_experiment_directory(data_dir, experiment_name)
     os.chdir(directory)
 
@@ -47,8 +47,8 @@ def main(n_samples=64, q: int = 1, ):
         constraints=[UpperBound(0)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
-        raw_samples=256,
-        mc_samples=512,
+        raw_samples=128,
+        mc_samples=256,
         batch_size=q,
     )
 
@@ -83,7 +83,7 @@ def main(n_samples=64, q: int = 1, ):
         mobo.save_dataset_to_csv()
         print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
-    plot_log_hypervolume_difference(mobo, show=False)
+    plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
     plot_allocated_memory(mobo, show=False)
     create_video_from_images()

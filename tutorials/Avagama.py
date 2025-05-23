@@ -8,12 +8,13 @@ the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_
 import os
 from abc import ABC
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
-from mobo.constraints import LowerBound, UpperBound
+from mobo.constraints import LowerBound
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
+from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_difference, plot_elapsed_time, \
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_allocated_memory
 
 
@@ -71,29 +72,17 @@ def main(n_samples=1, batch_size=1):
         normalize=False
     )
 
-    """ Load dataset and generate random samples for posterior and ground truth evaluation """
-    X, Yobj, Yobj_var, Ycon, Ycon_var = load_dataset_from_csv(
-        filepath=Path.cwd().parent / "avagama_dataset.csv",
-        input_space_dimension=3,
-        objective_space_dimension=2,
-        constraint_space_dimension=1,
-        objective_variance=False,
-        constraint_variance=False,
-        skiprows=1  # To skip the header
-    )
-    rnd_X = sampler.draw_samples(n=1000)
-
     """ Instantiate a Mobo object """
     mobo = Mobo(
         experiment_name=experiment_name,
-        X=X,
-        Yobj=Yobj,
-        Yobj_var=Yobj_var,
-        Ycon=Ycon,
-        Ycon_var=Ycon_var,
+        X=None,
+        Yobj=None,
+        Yobj_var=None,
+        Ycon=None,
+        Ycon_var=None,
         bounds=torch.Tensor([[7.5, 3, 0.1], [15, 7.5, 1]]),
         optimization_problem_type=OptimizationProblemType.Minimization,
-        true_objective=None,  # CustomMultiObjective(),
+        true_objective=None,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
         constraints=[LowerBound(40, index=2)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
@@ -102,6 +91,20 @@ def main(n_samples=1, batch_size=1):
         mc_samples=1024,
         batch_size=1,
     )
+
+    """ Load dataset and generate random samples for posterior and ground truth evaluation """
+    mobo.load_dataset_from_csv(
+        filepath=Path.cwd().parent / "avagama_dataset.csv",
+        input_space_dim=3,
+        objective_space_dim=2,
+        constraint_space_dim=1,
+        objective_variance=False,
+        constraint_variance=False,
+        skiprows=1,
+        skipcols=0,
+    )
+    rnd_X = sampler.draw_samples(n=1000)
+
 
     for i in range(int(n_samples / batch_size)):
         print("\n\n")
@@ -137,9 +140,10 @@ def main(n_samples=1, batch_size=1):
         # mobo.save_dataset_to_csv()
         # print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
-    plot_log_hypervolume_difference(mobo, show=False)
+    plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
     plot_allocated_memory(mobo, show=False)
+    create_video_from_images()
     print("Optimization Finished.")
 
 

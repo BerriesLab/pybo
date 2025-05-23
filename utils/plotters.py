@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-from botorch.utils.multi_objective import is_non_dominated
 from mobo.mobo import Mobo
 from utils.io import *
 
@@ -104,18 +103,18 @@ def plot_multi_objective_from_RN_to_R2(
             raise ValueError("Ground truth not available.")
 
         x = x.to(mobo.get_device(), mobo.get_dtype())
-        ground_truth = mobo.get_true_objective()(x)
+        ground_truth_obj = mobo.get_true_objective()(x)
 
         # Apply constraint mask
         if mobo.get_constraints() is None:
-            ground_truth_feas_mask = torch.ones_like(ground_truth, dtype=torch.bool).all(dim=-1)
+            ground_truth_feas_mask = torch.ones_like(ground_truth_obj, dtype=torch.bool).all(dim=-1)
         else:
-            constraint_vals = [c(ground_truth) for c in mobo.get_constraints()]
-            ground_truth_feas_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
+            ground_truth_con = -mobo.get_true_objective().evaluate_slack(x)
+            ground_truth_feas_mask = (ground_truth_con <= 0).all(dim=-1)
 
         # Plot feasible ground truth
-        ground_truth_feas_f1 = ground_truth[ground_truth_feas_mask, 0].detach().cpu().numpy()
-        ground_truth_feas_f2 = ground_truth[ground_truth_feas_mask, 1].detach().cpu().numpy()
+        ground_truth_feas_f1 = ground_truth_obj[ground_truth_feas_mask, 0].detach().cpu().numpy()
+        ground_truth_feas_f2 = ground_truth_obj[ground_truth_feas_mask, 1].detach().cpu().numpy()
         axes.scatter(ground_truth_feas_f1, ground_truth_feas_f2, **ground_truth_feas_kwargs)
 
         # Plot infeasible points - Could be enabled
@@ -129,33 +128,15 @@ def plot_multi_objective_from_RN_to_R2(
         # Predict over test grid
         x = x.to(mobo.get_device(), mobo.get_dtype())
         posterior = mobo.get_model().posterior(x)
-        mean = posterior.mean
-        std = posterior.variance.sqrt()
-
-        if mobo.get_constraints() is None:
-            mean_feasible = mean
-            std_feasible = std
-        else:
-            # Apply constraints on outputs (mean)
-            constraint_vals = [c(mean) for c in mobo.get_constraints()]
-            obs_feas_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
-            mean_feasible = mean[obs_feas_mask]
-            std_feasible = std[obs_feas_mask]
-
-        # Get mask of non-dominated points among feasible ones
-        feasible_mask = is_non_dominated(
-            Y=mean_feasible,
-            maximize=mobo.get_optimization_problem_type().value
-        )
-        mean_pareto = mean_feasible[feasible_mask].detach().cpu().numpy()
-        std_pareto = std_feasible[feasible_mask].detach().cpu().numpy()
+        mean = posterior.mean.detach().cpu().numpy()
+        std = posterior.variance.sqrt().detach().cpu().numpy()
 
         # Plot mean with error bars
         axes.errorbar(
-            mean_pareto[:, 0],
-            mean_pareto[:, 1],
-            xerr=3 * std_pareto[:, 0],
-            yerr=3 * std_pareto[:, 1],
+            mean[:, 0],
+            mean[:, 1],
+            xerr=3 * std[:, 0],
+            yerr=3 * std[:, 1],
             **posterior_pareto_kwargs,
         )
 
@@ -183,18 +164,17 @@ def plot_multi_objective_from_RN_to_R2(
             obs_inf_f2 = y_obj[obs_inf_mask, 1].detach().cpu().numpy()
             axes.scatter(obs_inf_f1, obs_inf_f2, **infeasible_observations_kwargs)
 
-        # Plot feasible pareto-front observations
-        if torch.any(obs_feas_and_par_mask):
-            obs_feas_par_f1 = y_obj[obs_feas_and_par_mask][:, 0].detach().cpu().numpy() #[torch.sort(y_obj[feas_and_par_mask][:, 0]).indices]
-            obs_feas_par_f2 = y_obj[obs_feas_and_par_mask][:, 1].detach().cpu().numpy()
-            axes.scatter(obs_feas_par_f1, obs_feas_par_f2, **feasible_pareto_observations_kwargs)
-
         # Plot feasible non-pareto-front observations
         if torch.any(obs_feas_and_not_par_mask):
             obs_feas_non_par_f1 = y_obj[obs_feas_and_not_par_mask, 0].detach().cpu().numpy()
             obs_feas_non_par_f2 = y_obj[obs_feas_and_not_par_mask, 1].detach().cpu().numpy()
             axes.scatter(obs_feas_non_par_f1, obs_feas_non_par_f2, **feasible_non_pareto_observations_kwargs)
 
+        # Plot feasible pareto-front observations
+        if torch.any(obs_feas_and_par_mask):
+            obs_feas_par_f1 = y_obj[obs_feas_and_par_mask][:, 0].detach().cpu().numpy() #[torch.sort(y_obj[feas_and_par_mask][:, 0]).indices]
+            obs_feas_par_f2 = y_obj[obs_feas_and_par_mask][:, 1].detach().cpu().numpy()
+            axes.scatter(obs_feas_par_f1, obs_feas_par_f2, **feasible_pareto_observations_kwargs)
 
     # Add legend
     plt.legend()
@@ -212,20 +192,34 @@ def plot_multi_objective_from_RN_to_R3():
     raise NotImplementedError("Parallel coordinate plots are not yet implemented.")
 
 
-def plot_log_hypervolume_difference(mobo: Mobo, show=False):
+def plot_log_hypervolume_improvement(mobo, show=False):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
-    ax.set_ylabel("Log Hypervolume Difference")
-    x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
-    if mobo.get_true_objective() is not None and hasattr(mobo.get_true_objective(), "max_hv"):
-        hv_0 = mobo.get_true_objective().max_hv
-    else:
-        hv_0 = np.array(mobo.get_hypervolume()[0])
-    dy = np.log10(hv_0 - np.array(mobo.get_hypervolume()))
-    ax.errorbar(x, dy, linewidth=2, )
+    ax.set_ylabel("Log Relative Hypervolume Improvement")
+    ax.set_title("Log Relative Hypervolume Improvement from Initial Front")
 
+    # Get hypervolume values
+    hv = np.array(mobo.get_hypervolume())
+    x = np.arange(len(hv)) * mobo.get_batch_size()
+
+    # Use first value as the reference point
+    hv_0 = hv[0]
+    hv_diff = (hv - hv_0) / hv_0
+
+    # Mask values <= 0 
+    mask = hv_diff > 0
+    x_masked = x[mask]
+    hv_diff_masked = hv_diff[mask]
+
+    # Compute log improvement
+    log_hv_diff = np.log10(hv_diff_masked)
+
+    # Plot
+    ax.plot(x_masked, log_hv_diff, linewidth=2)
+
+    # Save or show
     plt.tight_layout()
-    filepath = compose_figure_filename(postfix="hv_diff")
+    filepath = compose_figure_filename(postfix="hv_improvement")
     fig.savefig(filepath, dpi=300, bbox_inches='tight', format='png')
 
     if show:

@@ -1,7 +1,5 @@
 import datetime
-
 import torch
-
 from collections.abc import Callable
 from utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
 
@@ -11,14 +9,14 @@ def validate_experiment_name(name: str):
         raise ValueError("Experiment name must be a string.")
 
 
-def validate_X(X: torch.Tensor):
-    if not isinstance(X, torch.Tensor):
-        raise ValueError("X must be a torch.Tensor.")
+def validate_X(X: torch.Tensor | None):
+    if X is not None and not isinstance(X, torch.Tensor):
+        raise ValueError("X must be None or a torch.Tensor.")
 
 
-def validate_Yobj(Yobj: torch.Tensor):
-    if not isinstance(Yobj, torch.Tensor):
-        raise ValueError("Y must be a torch.Tensor.")
+def validate_Yobj(Yobj: torch.Tensor | None):
+    if Yobj is not None and not isinstance(Yobj, torch.Tensor):
+        raise ValueError("Y must be None or a torch.Tensor.")
 
 
 def validate_Ycon(Ycon: torch.Tensor | None):

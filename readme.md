@@ -1,12 +1,24 @@
-# pyBO - A Python Package for Multi-Objective Bayesian Optimization
+# pyBO - A Python Library for Bayesian Optimization
 `pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian Processes, it provides a framework 
 for optimizing multiple competing objectives under experimental constraints and finding Pareto-optimal solutions.
 
+## Table of Contents
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Workflow Overview](#workflow-overview)
+- [Data Format](#data-format)
+- [Visualization](#visualization)
+- [Tutorials](#tutorials)
+
 ## Key Features
-- Supports multi-objective and constrained optimization.
-- Operates in batch mode (q-batch) for efficient parallel evaluations.
-- Easily integrates into iterative experimental workflows.
-- Supports exporting and visualizing optimization results.
+Version 0.1 includes the following capabilities:
+- Multi-objective and constrained optimization for functions of the form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
+- Batch mode (q-batch) support for parallel evaluations. 
+- Integration into iterative experimental workflows.
+- Exporting and visualization of optimization results.
+
+## Installation
+
 
 ## Workflow Overview
 `pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed experiments and suggests new candidate parameters for the next iteration.
@@ -30,8 +42,9 @@ flowchart TD
 
 ```
 
-## Data Input Format
+## Data Format
 
+### Data Input Format
 Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
 $$
 \mathbf{Z} = \left[ \mathbf{X} \; \middle| \; \mathbf{Y}_{\mathrm{obj}} \; \middle| \; \mathbf{Y}_{\mathrm{obj, \sigma}} \; \middle| \; \mathbf{Y}_{\text{con}} \; \middle| \; \mathbf{Y}_{\mathrm{con, \sigma}} \right]
@@ -52,7 +65,7 @@ where
 - $m$ is the number of observable objectives.
 - $c$ is the number of observable constraints.
 
-## Data Output Format
+### Data Output Format
 
 `pyBO` allows exporting:
 - The optimizer state as a binary file (pickle) for later reuse or analysis.

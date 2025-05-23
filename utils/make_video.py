@@ -4,7 +4,7 @@ from pathlib import Path
 DEFAULT_OUTPUT_VIDEO_NAME = 'movie.mp4'
 
 
-def create_video_from_images(input_folder=None, output_folder=None, filename=None, fps=0.5):
+def create_video_from_images(input_folder=None, output_folder=None, filename=None, fps=2):
     """
     Creates a video from a sequence of images stored in a specified folder using the
     OpenCV library. The output video is saved in the specified location with the

@@ -33,15 +33,15 @@ class Mobo:
     def __init__(
             self,
             experiment_name: str,
-            X: torch.Tensor,
-            Yobj: torch.Tensor,
+            X: torch.Tensor | None = None,
+            Yobj: torch.Tensor | None = None,
             Yobj_var: torch.Tensor | None = None,
             Ycon: torch.Tensor | None = None,
             Ycon_var: torch.Tensor | None = None,
             bounds: torch.Tensor | None = None,
             objective: Callable | None = None,
             optimization_problem_type: OptimizationProblemType = OptimizationProblemType.Maximization,
-            true_objective=None,
+            true_objective = None,
             constraints: list[Callable] | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
@@ -81,12 +81,12 @@ class Mobo:
         self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from device
 
         # Problem Attributes
-        self._X: torch.Tensor = X.to(self._device, self._dtype)  # Input variables
-        self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype)  # Objective observables
+        self._X: torch.Tensor = X.to(self._device, self._dtype) if X is not None else None  # Input variables
+        self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype) if Yobj is not None else None  # Objective observables
         self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None  # Constrained observables
         self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None  # Observed variance
         self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed constraints variables
-        self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # Input domain bounds
+        self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # A '2 x d' tensor of lower and upper bounds for each column of 'X'
         self._optimization_problem_type = optimization_problem_type  # Type of optimization problem (minimization or maximization)
         self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
         self._acquisition_function_instance = None  # Instance of the acquisition function - instantiated within the optimization loop
@@ -409,7 +409,7 @@ class Mobo:
         if verbose:
             print(" Done.")
 
-    def _compute_reference_point(self, verbose=True, buffer=0.25):
+    def _compute_reference_point(self, verbose=True, buffer=0.1):
 
         # The reference point is calculated only for the first iteration step
         if self._iteration_number > 0:
@@ -420,11 +420,10 @@ class Mobo:
 
         # If the true objective is provided, then use its reference point if provided
         if self._true_objective is not None and hasattr(self._true_objective, "_ref_point"):
-            self._ref_point = -torch.tensor(self._true_objective._ref_point).to(self._device)
+            self._ref_point = self._true_objective.ref_point.to(self._device, self._dtype)
 
         # Otherwise, compute a reference point
         else:
-
             # Handle maximization problems
             if self._optimization_problem_type == OptimizationProblemType.Maximization:
                 worst = torch.min(self._Yobj, dim=0).values
@@ -436,7 +435,7 @@ class Mobo:
                 self._ref_point = (worst + buffer * torch.abs(worst)).to(self._device, self._dtype)
 
         if verbose:
-            print(" Done.")
+            print(f" {self._ref_point}... Done")
 
     def _fit_model(self, restart_on_error=True, verbose=True, ):
         if not isinstance(self._model, ModelListGP):
@@ -485,8 +484,15 @@ class Mobo:
         if self._pareto_front.shape[0] == 0:
             volume = 0
         else:
-            hv = Hypervolume(self._ref_point)
-            volume = hv.compute(self._pareto_front)
+            if self._optimization_problem_type == OptimizationProblemType.Maximization:
+                hv = Hypervolume(self._ref_point)
+                volume = hv.compute(self._pareto_front)
+            else:
+                # The minus sign is needed to account for the fact that BoTorch computes the hypervolume conventionally
+                # for a maximization problem, so it expects to find the reference to the lower-left side (in 2D) of the
+                # pareto front.
+                hv = Hypervolume(-self._ref_point)
+                volume = hv.compute(-self._pareto_front)
         self._hypervolume.append(volume)
 
         if verbose:
@@ -599,8 +605,98 @@ class Mobo:
         filepath = compose_dataset_filename(self._iteration_number)
         np.savetxt(filepath, XY, delimiter=",", comments="")
 
-    def load_dataset_from_csv(self, filepath: str or None = None, skipcol=0):
-        raise NotImplementedError("Loading from CSV is not yet supported.")
+    def load_dataset_from_csv(
+            self, 
+            input_space_dim: int | None = None,
+            objective_space_dim: int | None = None,
+            constraint_space_dim: int | None = None,
+            objective_variance: bool = False,
+            constraint_variance: bool = False,
+            filepath: str or None = None,
+            skiprows: int = 0,
+            skipcols: int = 0,
+    ):
+        """ Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
+            X ¦ Yobj ¦ Yobj_var ¦ Ycon ¦ Ycon_var."""
+
+        if input_space_dim is None:
+            try:
+                # Get input dimensions from existing X tensor if available
+                input_space_dim = self._X.shape[-1]
+            except (AttributeError, RuntimeError, TypeError):
+                # X tensor not properly initialized or doesn't exist
+                raise ValueError(
+                    "Input space dimension must be provided explicitly as a parameter "
+                    "when X tensor is not initialized. Could not infer dimension from self._X."
+                )
+        
+        if objective_space_dim is None:
+            try:
+                # Get objective dimensions from existing Yobj tensor if available
+                objective_space_dim = self._Yobj.shape[-1]
+            except (AttributeError, RuntimeError, TypeError):
+                # Yobj tensor not properly initialized or doesn't exist
+                raise ValueError(
+                    "Objective space dimension must be provided explicitly as a parameter "
+                    "when Yobj tensor is not initialized. Could not infer dimension from self._Yobj."
+                )
+
+        if constraint_space_dim is None:
+            try:
+                constraints = self.get_constraints()
+                if constraints is not None and self._Ycon is not None:
+                    # Problem is constrained and Ycon tensor exists
+                    constraint_space_dim = self._Ycon.shape[-1]
+                else:
+                    # Problem is unconstrained or Ycon tensor doesn't exist
+                    constraint_space_dim = 0
+            except (AttributeError, RuntimeError, TypeError):
+                raise ValueError(
+                    "Constraint space dimension must be provided explicitly as a parameter "
+                    "since constraint tensor (Ycon) could not be determined automatically."
+                )
+
+        if filepath is None:
+            csv_files = list(Path('.').glob('*.csv'))
+            if not csv_files:
+                raise FileNotFoundError("No CSV files found in the current directory")
+            filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
+
+        xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
+
+        i = skipcols + 0
+        j = skipcols + input_space_dim
+        self._X = torch.tensor(xy[..., i:j])
+
+        if objective_space_dim > 0:
+            i = j
+            j += objective_space_dim
+            self._Yobj = torch.tensor(xy[..., i:j])
+
+            if objective_variance:
+                i = j
+                j += objective_space_dim
+                self._Yobj_var = torch.tensor(xy[..., i:j])
+            else:
+                self._Yobj_var = None
+        else:
+            self._Yobj = None
+            self._Yobj_var = None
+
+        if constraint_space_dim > 0:
+            i = j
+            j += constraint_space_dim
+            self._Ycon = torch.tensor(xy[..., i:j])
+
+            if constraint_variance:
+                i = j
+                j += constraint_space_dim
+                self._Ycon_var = torch.tensor(xy[..., i:j])
+            else:
+                self._Ycon_var = None
+        else:
+            self._Ycon = None
+            self._Ycon_var = None
 
     @classmethod
     def from_file(cls, filepath: str = None):
