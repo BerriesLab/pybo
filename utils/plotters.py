@@ -63,6 +63,14 @@ posterior_pareto_kwargs = {
     'capsize': 3,
 }
 
+optimization_figures_kwargs = {
+    'marker': 'o',
+    's': ms ** 2,
+    'color': 'tab:orange',
+    'edgecolor': 'black',
+    'alpha': 1,
+}
+
 
 # TODO: implement function
 def plot_objective_from_R1_to_R1():
@@ -193,6 +201,7 @@ def plot_multi_objective_from_RN_to_R3():
 
 
 def plot_log_hypervolume_improvement(mobo, show=False):
+    """ Note: for numerical stability, the minimum value displayed is log10(epsilon) where epsilon=1e-6."""
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
     ax.set_ylabel("Log Relative Hypervolume Improvement")
@@ -202,21 +211,21 @@ def plot_log_hypervolume_improvement(mobo, show=False):
     hv = np.array(mobo.get_hypervolume())
     x = np.arange(len(hv)) * mobo.get_batch_size()
 
-    # Use first value as the reference poin
+    # Use first value as the reference point
     epsilon = 1e-6
     hv_0 = hv[0]
     hv_diff = (hv - hv_0) / (hv_0 + epsilon)
 
     # Mask values <= 0 
-    mask = hv_diff > 0
-    x_masked = x[mask]
-    hv_diff_masked = hv_diff[mask]
+    # mask = hv_diff > 0
+    # x_masked = x[mask]
+    # hv_diff_masked = hv_diff[mask]
 
     # Compute log improvement
-    log_hv_diff = np.log10(hv_diff_masked)
+    log_hv_diff = np.log10(hv_diff + epsilon)
 
     # Plot
-    ax.plot(x_masked, log_hv_diff, linewidth=2)
+    ax.scatter(x, log_hv_diff, **optimization_figures_kwargs)
 
     # Save or show
     plt.tight_layout()
@@ -234,7 +243,7 @@ def plot_elapsed_time(mobo: Mobo, show=False):
     ax.set_ylabel("Elapsed Time (s)")
     x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     y = mobo.get_elapsed_time()
-    ax.errorbar(x, y, linewidth=2, )
+    ax.scatter(x, y, **optimization_figures_kwargs)
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="elapsed_time")
@@ -251,7 +260,7 @@ def plot_allocated_memory(mobo: Mobo, show=False):
     ax.set_ylabel("Allocated memory (MB)")
     x = np.array(range(len(mobo.get_hypervolume()))) * mobo.get_batch_size()
     y = mobo.get_allocated_memory()
-    ax.errorbar(x, y, linewidth=2, )
+    ax.scatter(x, y, **optimization_figures_kwargs)
 
     plt.tight_layout()
     filepath = compose_figure_filename(postfix="allocated_memory")
