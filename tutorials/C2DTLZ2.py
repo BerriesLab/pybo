@@ -50,6 +50,7 @@ def main(n_samples=64, q: int = 1, ):
         raw_samples=128,
         mc_samples=256,
         batch_size=q,
+        device=torch.device("cpu"),
     )
 
     """ Main optimization loop """
