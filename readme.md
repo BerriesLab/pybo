@@ -77,7 +77,7 @@ $$
 \mathbf{X} \ | \ 
 \mathbf{Y}_{\mathrm{obj}} \ | \
 \mathbf{Y}_{\mathrm{obj, \sigma}} \ | \
-\mathbf{Y}_{\text{con}} \ | \
+\mathbf{Y}_{\mathrm{con}} \ | \
 \mathbf{Y}_{\mathrm{con, \sigma}} 
 \right] 
 $$
