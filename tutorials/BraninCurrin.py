@@ -76,11 +76,9 @@ def main(n_samples=64, q: int = 1, ):
         """ Save to csv """
         mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
         mobo.save_dataset_to_csv()
-        print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
     plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
-    plot_allocated_memory(mobo, show=False)
     create_video_from_images()
     print("Optimization Finished.")
 

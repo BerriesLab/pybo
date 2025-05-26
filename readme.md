@@ -24,7 +24,7 @@ Version 0.1 includes the following capabilities:
 The package is currently available only for local distribution. To install, 
 open the terminal and type:
 
-`pip install dist/pybo-0.1.0-py3-none-any.whl`
+`pip install pybo-0.1.0-py3-none-any.whl`
 
 ## Workflow Overview
 `pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed experiments and suggests new candidate parameters for the next iteration.
