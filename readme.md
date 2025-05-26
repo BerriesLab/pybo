@@ -22,7 +22,7 @@ Version 0.1 includes the following capabilities:
 
 ## Installation
 The package is currently available only for local distribution. To install, 
-open the terminal and type:
+locally download the package in the dist/ folder, open the terminal and type:
 
 `pip install pybo-0.1.0-py3-none-any.whl`
 
