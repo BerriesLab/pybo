@@ -85,11 +85,11 @@ $$\mathbf{Z} =
 
 with 
 
-- $ \mathbf{X} \in \mathbb{R}^{n \times d} $: Input data or parameters.
-- $ \mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m} $: Objective values.
-- $ \mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m} $: Variance of objective values (optional).
-- $ \mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c} $: Constraint values (optional).
-- $ \mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c} $: Variance of constraint values (optional).
+- $\mathbf{X} \in \mathbb{R}^{n \times d}$: Input data or parameters.
+- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: Objective values.
+- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: Variance of objective values (optional).
+- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: Constraint values (optional).
+- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: Variance of constraint values (optional).
 
 where
 
