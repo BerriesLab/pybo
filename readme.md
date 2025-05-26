@@ -49,11 +49,11 @@ flowchart TD
 The following flowchart describes in synthesis how pyBO works internally.
 ```mermaid
 flowchart TD
-    A[Initialize model<br>compute reference point<br>initialize sampler]
+    A[Initialize model<br>Compute reference point<br>Initialize sampler]
     B[Fit model]
-    C[Initialize partitioning<br>initialize acquisition function]
+    C[Initialize partitioning<br>Initialize acquisition function]
     D[Find new X]
-    E{Does new X satisfy<br>input constraints?}
+    E{Does the new X satisfy<br>the input constraints?}
     
     Start --> |X, Yobj, Ycon, . . .| A
     A --> B
