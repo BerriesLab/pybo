@@ -6,6 +6,7 @@ import os
 
 import botorch
 import gpytorch
+import torch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
@@ -41,15 +42,19 @@ class Mobo:
             bounds: torch.Tensor | None = None,
             objective: Callable | None = None,
             optimization_problem_type: OptimizationProblemType = OptimizationProblemType.Maximization,
-            true_objective = None,
-            constraints: list[Callable] | None = None,
+            true_objective: Callable = None,
+            output_constraints: list[Callable] | None = None,
+            input_constraints: list[Callable] | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
             mc_samples: int = 1024,
             raw_samples: int = 512,
-            n_acqf_opt_iter: int = 500,  # Number of iterations for acquisition function optimization
-            max_n_acqf_opt_restarts: int = 10,  # Max number of restarts for acquisition function optimization
+            n_acqf_opt_iter: int = 500,
+            max_n_acqf_opt_restarts: int = 10,
+            max_attempts: int = 100,
+            device: torch.device = None,
+            dtype: torch.device.type = None
     ):
 
         # Validate input arguments
@@ -63,7 +68,7 @@ class Mobo:
         validate_objective(objective)
         validate_true_objective(true_objective)
         validate_optimization_problem(optimization_problem_type)
-        validate_constraints(constraints)
+        validate_constraints(output_constraints)
         validate_acquisition_function(acquisition_function_type)
         validate_sampler_type(sampler_type)
         validate_batch_size(batch_size)
@@ -77,15 +82,21 @@ class Mobo:
         self._datetime = datetime.datetime.now()  # A datetime stamp used when saving results to file
 
         # Device Attributes
-        self._device = get_device()  # The device used for computation (e.g., GPU, CPU or MPS)
-        self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from device
+        if device is None:
+            self._device = get_device()  # The device used for computation (e.g., GPU, CPU or MPS)
+        else:
+            self._device = device
+        if dtype is None:
+            self._dtype = get_supported_dtype(self._device)  # The data type used for computation - Inferred from device
+        else:
+            self._dtype = dtype
 
         # Problem Attributes
         self._X: torch.Tensor = X.to(self._device, self._dtype) if X is not None else None  # Input variables
         self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype) if Yobj is not None else None  # Objective observables
         self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None  # Constrained observables
         self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None  # Observed variance
-        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed constraints variables
+        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None  # Observed output_constraints variables
         self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # A '2 x d' tensor of lower and upper bounds for each column of 'X'
         self._optimization_problem_type = optimization_problem_type  # Type of optimization problem (minimization or maximization)
         self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
@@ -94,9 +105,12 @@ class Mobo:
         self._sampler_instance = None  # Instance of the sampler - instantiated within the optimization loop
         self._true_objective = true_objective  # The ground truth (multi)objective function
         self._objective = objective  # The (multi)objective function to be optimized
-        self._constraints = constraints  # The functional constraints
+        self._output_constraints = output_constraints  # The functional output_constraints
+        self._input_constraints = input_constraints  # The functional input_constraints
         self._n_acqf_opt_iter = n_acqf_opt_iter  # Number of iterations for acquisition function optimization
         self._max_n_acqf_opt_restarts = max_n_acqf_opt_restarts  # Max number of restarts for acquisition function optimization
+        self._max_attempts = max_attempts  # Max number of optimization attempts if new X does not satisfy input
+        # constraints
         self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self._mc_samples = mc_samples  # Number of samples for initialization and acquisition function optimization
         self._raw_samples = raw_samples  # Number of samples for acquisition function optimization
@@ -183,7 +197,10 @@ class Mobo:
         return self._device
 
     def set_device(self, device: TorchDeviceType):
-        self._device = torch.device(device.value)
+        self._device = torch.device(device)
+
+    def set_dtype(self):
+        self._dtype = get_supported_dtype(self._device)
 
     def get_dtype(self):
         return self._dtype
@@ -258,16 +275,17 @@ class Mobo:
     def get_con_mask(self):
         return self._con_mask
 
-    def set_constraints(self, constraints: list[Callable] or None = None):
+    def set_output_constraints(self, constraints: list[Callable] or None = None):
+        """ Set non-linear output_constraints on the output domain (Y). """
         validate_constraints(constraints)
-        self._constraints = constraints
+        self._output_constraints = constraints
 
-    def get_constraints(self):
-        return self._constraints
+    def get_output_constraints(self):
+        return self._output_constraints
 
     def add_constraint(self, constraint: Callable):
         validate_constraints([constraint, ])
-        self._constraints.append(constraint)
+        self._output_constraints.append(constraint)
 
     def get_hypervolume(self):
         return self._hypervolume
@@ -287,8 +305,7 @@ class Mobo:
     """ Optimizer """
 
     def _initialize_model(self, verbose=True):
-        """ Define models for objectives and constraints. Note that the model is trained on
-        normalized input features, while the outputs are not normalized. """
+        """ Define models for objectives and output_constraints. """
 
         if verbose:
             print("Initializing model...", end="")
@@ -316,11 +333,11 @@ class Mobo:
             print(" Done.")
 
     def _prepare_training_dataset(self):
-        """Prepare training data by combining objectives and constraints."""
+        """Prepare training data by combining objectives and output_constraints."""
 
         train_x = self._X
 
-        # Combine objectives and constraints if they exist
+        # Combine objectives and output_constraints if they exist
         train_y = (
             torch.cat((self._Yobj, self._Ycon), dim=-1)
             if self._Ycon is not None
@@ -359,7 +376,7 @@ class Mobo:
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
                 objective=self._objective,
-                constraints=self._constraints
+                constraints=self._output_constraints
             )
 
         elif self._acquisition_function_type == AcquisitionFunctionType.qLogEHVI:
@@ -369,7 +386,7 @@ class Mobo:
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
                 objective=self._objective,
-                constraints=self._constraints,
+                constraints=self._output_constraints,
             )
 
         elif self._acquisition_function_type == AcquisitionFunctionType.qNEHVI:
@@ -380,7 +397,7 @@ class Mobo:
                 sampler=self._sampler_instance,
                 prune_baseline=True,
                 objective=self._objective,
-                constraints=self._constraints,
+                constraints=self._output_constraints,
             )
 
         elif self._acquisition_function_type == AcquisitionFunctionType.qLogNEHVI:
@@ -391,7 +408,7 @@ class Mobo:
                 prune_baseline=True,
                 sampler=self._sampler_instance,
                 objective=self._objective,
-                constraints=self._constraints,
+                constraints=self._output_constraints,
             )
 
         else:
@@ -418,7 +435,7 @@ class Mobo:
         if verbose:
             print("Defining reference point...", end="")
 
-        # If the true objective is provided, then use its reference point if provided
+        # If the true objective is provided, then use its reference point if exists
         if self._true_objective is not None and hasattr(self._true_objective, "_ref_point"):
             self._ref_point = self._true_objective.ref_point.to(self._device, self._dtype)
 
@@ -476,6 +493,7 @@ class Mobo:
 
         if verbose:
             print(" Done.")
+            print(f"New X: {self._new_X}")
 
     def _compute_hypervolume(self, verbose=True, ):
         if verbose:
@@ -497,6 +515,7 @@ class Mobo:
 
         if verbose:
             print(" Done.")
+            print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
 
     def _compute_pareto_front(self, verbose=True):
         """The pareto front is computed by considering only the objective observations for which the corresponding constraint
@@ -505,7 +524,7 @@ class Mobo:
         if verbose:
             print("Finding Pareto front...", end="")
 
-        if self._Ycon is None or self._constraints is None:
+        if self._Ycon is None or self._output_constraints is None:
             # If the problem is unconstrained, then all observations can be Pareto-optimal
 
             self._par_mask = is_non_dominated(self._Yobj, maximize=self._optimization_problem_type.value)
@@ -513,13 +532,13 @@ class Mobo:
             mask = self._par_mask
 
         else:
-            # If the problem is constrained, then only the observations satisfying the constraints
+            # If the problem is constrained, then only the observations satisfying the output_constraints
             # can be Pareto-optimal. Therefore, first find the acceptable observations, i.e., those observations
-            # satisfying the constraints and build a logical mask. # Then, find the acceptable observations that
+            # satisfy the output_constraints and build a logical mask. # Then, find the acceptable observations that
             # are non-dominated and build a logical mask.
 
             Y = torch.cat([self._Yobj, self._Ycon], dim=-1)
-            constraint_vals = [c(Y) for c in self._constraints]
+            constraint_vals = [c(Y) for c in self._output_constraints]
             self._con_mask = torch.stack([(cv <= 0) for cv in constraint_vals]).all(dim=0)
 
             feasible_obj = self._Yobj[self._con_mask]
@@ -541,27 +560,41 @@ class Mobo:
         warnings.filterwarnings("ignore", category=NumericsWarning)
         warnings.filterwarnings("ignore", category=OptimizationWarning)
 
+        t0 = time.monotonic()
         self._initialize_model(verbose=verbose)
         self._compute_reference_point(verbose=verbose)
         self._initialize_sampler(verbose=verbose)
-
-        t0 = time.monotonic()
         self._fit_model(verbose=verbose)
-        # self._initialize_partitioning(verbose=verbose)
+
+        if self._acquisition_function_type.value in AcquisitionFunctionType.require_partitioning():
+            self._initialize_partitioning(verbose=verbose)
+
         self._initialize_acquisition_function(verbose=verbose)
-        self._optimize_acquisition_function(verbose=verbose)
+
+        if self._input_constraints:
+            for attempt in range(1, self._max_attempts + 1):
+                if verbose:
+                    if attempt > 1:
+                        print("The new X does not satisfy the input constraints\n")
+                    print(f"Attempt {attempt}/{self._max_attempts}")
+
+                self._optimize_acquisition_function(verbose=verbose)
+
+                if all(torch.all(c(self._new_X) < 0) for c in self._input_constraints):
+                    break
+            else:
+                raise ValueError(f"Could not find a new X that satisfies all input constraints after {self._max_attempts} attempts.")
+        else:
+            self._optimize_acquisition_function(verbose=verbose)
+
         self._compute_pareto_front(verbose=verbose)
         self._compute_hypervolume(verbose=verbose)
-        self._iteration_number += 1
         t1 = time.monotonic()
         self._elapsed_time.append(t1 - t0)
+        print(f"Calculation Time = {t1 - t0:>4.2f}")
+        self._iteration_number += 1
         if self._device.type == "cuda":
             self._allocated_memory.append(torch.cuda.memory_allocated() / 1024 ** 2)
-
-        if verbose:
-            print(f"Calculation Time = {t1 - t0:>4.2f}\n"
-                  f"Hypervolume = {self._hypervolume[-1]:>4.2f}\n"
-                  f"New X: {self._new_X}")
 
     def update_XY(
             self,
@@ -624,7 +657,7 @@ class Mobo:
                 # Get input dimensions from existing X tensor if available
                 input_space_dim = self._X.shape[-1]
             except (AttributeError, RuntimeError, TypeError):
-                # X tensor not properly initialized or doesn't exist
+                # X tensor isn't properly initialized or doesn't exist
                 raise ValueError(
                     "Input space dimension must be provided explicitly as a parameter "
                     "when X tensor is not initialized. Could not infer dimension from self._X."
@@ -643,12 +676,12 @@ class Mobo:
 
         if constraint_space_dim is None:
             try:
-                constraints = self.get_constraints()
+                constraints = self.get_output_constraints()
                 if constraints is not None and self._Ycon is not None:
-                    # Problem is constrained and Ycon tensor exists
+                    # The Problem is constrained and Ycon tensor exists
                     constraint_space_dim = self._Ycon.shape[-1]
                 else:
-                    # Problem is unconstrained or Ycon tensor doesn't exist
+                    # The Problem is unconstrained or Ycon tensor doesn't exist
                     constraint_space_dim = 0
             except (AttributeError, RuntimeError, TypeError):
                 raise ValueError(
@@ -701,7 +734,7 @@ class Mobo:
     @classmethod
     def from_file(cls, filepath: str = None):
         """Load a MOBO instance from a file.
-        If no filepath provided, loads the most recent .dat file from the current directory."""
+        If no filepath is provided, load the most recent .dat file from the current directory."""
         if filepath is None:
             files = glob.glob('*.dat')
             if not files:

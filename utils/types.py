@@ -14,6 +14,10 @@ class AcquisitionFunctionType(Enum):
             values.append(item.value)
         return values
 
+    @staticmethod
+    def require_partitioning():
+        return ["qEHVI", "qLogEHVI"]
+
 
 class Kernel(Enum):
     RBF = "RBF"

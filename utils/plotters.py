@@ -114,7 +114,7 @@ def plot_multi_objective_from_RN_to_R2(
         ground_truth_obj = mobo.get_true_objective()(x)
 
         # Apply constraint mask
-        if mobo.get_constraints() is None:
+        if mobo.get_output_constraints() is None:
             ground_truth_feas_mask = torch.ones_like(ground_truth_obj, dtype=torch.bool).all(dim=-1)
         else:
             ground_truth_con = -mobo.get_true_objective().evaluate_slack(x)

@@ -1,7 +1,7 @@
 import os
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective
 from botorch.test_functions import C2DTLZ2
-from mobo.constraints import UpperBound
+from mobo.output_constraints import UpperBound
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
@@ -25,7 +25,7 @@ def main(n_samples=64, q: int = 1, ):
         sampler_type=SamplerType.Sobol,
         bounds=true_objective.bounds,
         n_dimensions=true_objective.dim,
-        normalize=False
+        normalize=False,
     )
 
     """ Generate initial dataset and random samples for posterior and ground truth evaluation """
@@ -44,7 +44,7 @@ def main(n_samples=64, q: int = 1, ):
         optimization_problem_type=OptimizationProblemType.Maximization,
         true_objective=true_objective,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
-        constraints=[UpperBound(0)],
+        output_constraints=[UpperBound(0)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=128,
@@ -81,11 +81,9 @@ def main(n_samples=64, q: int = 1, ):
         """ Save to csv """
         mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj, new_Ycon=new_Ycon)
         mobo.save_dataset_to_csv()
-        print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
     plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
-    plot_allocated_memory(mobo, show=False)
     create_video_from_images()
     print("Optimization Finished.")
 

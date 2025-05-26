@@ -8,7 +8,7 @@ the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_
 import os
 from abc import ABC
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
-from mobo.constraints import LowerBound
+from mobo.output_constraints import LowerBound
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
 from utils.io import *
@@ -84,7 +84,7 @@ def main(n_samples=1, batch_size=1):
         optimization_problem_type=OptimizationProblemType.Minimization,
         true_objective=None,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
-        constraints=[LowerBound(40, index=2)],
+        output_constraints=[LowerBound(40, index=2)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=512,

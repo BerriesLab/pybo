@@ -4,6 +4,7 @@ from abc import ABC
 from botorch.test_functions.base import ConstrainedBaseTestProblem
 from mobo.mobo import Mobo
 from mobo.samplers import Sampler
+from mobo.input_constraints import c1, c2
 from utils.io import *
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
@@ -12,7 +13,7 @@ from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervol
 
 
 class BinhAndKorn(ConstrainedBaseTestProblem, ABC):
-    r"""Binh and Korn test problem for multi-objective optimization with constraints."""
+    r"""Binh and Korn test problem for multi-objective optimization with output_constraints."""
 
     dim = 2
     num_objectives = 2
@@ -45,11 +46,6 @@ class BinhAndKorn(ConstrainedBaseTestProblem, ABC):
         g2_slack = (X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2 - 7.7
         return torch.stack([g1_slack, g2_slack], dim=-1)
 
-def c1(x):
-    return torch.square((x[..., -2] - 5)) + torch.square(x[..., -1]) - 25
-
-def c2(x):
-    return 7.7 - torch.square((x[..., -2] - 8)) - torch.square((x[..., -1] + 3))
 
 def main(n_samples=64, q: int = 1, ):
     data_dir = main_dir / "data"
@@ -65,7 +61,8 @@ def main(n_samples=64, q: int = 1, ):
         sampler_type=SamplerType.Sobol,
         bounds=true_objective.bounds,
         n_dimensions=true_objective.dim,
-        normalize=False
+        normalize=False,
+        constraint=[c1, c2]
     )
 
     """ Generate initial dataset and random samples for posterior and ground truth evaluation """
@@ -84,12 +81,14 @@ def main(n_samples=64, q: int = 1, ):
         optimization_problem_type=OptimizationProblemType.Minimization,
         true_objective=true_objective,
         objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
-        constraints=[c1, c2],
+        output_constraints=None,
+        input_constraints=[c1, c2],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
         mc_samples=512,
         batch_size=q,
+        device=torch.device("cpu"),
     )
 
     for i in range(int(n_samples / q)):
@@ -117,11 +116,9 @@ def main(n_samples=64, q: int = 1, ):
         """ Save to csv """
         mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
         mobo.save_dataset_to_csv()
-        print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
 
     plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)
-    plot_allocated_memory(mobo, show=False)
     create_video_from_images()
     print("Optimization Finished.")
 

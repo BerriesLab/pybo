@@ -6,6 +6,7 @@ for optimizing multiple competing objectives under experimental constraints and 
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Workflow Overview](#workflow-overview)
+- [pyBO](#pybo-internal-workflow)
 - [Data Format](#data-format)
 - [Visualization](#visualization)
 - [Tutorials](#tutorials)
@@ -13,7 +14,9 @@ for optimizing multiple competing objectives under experimental constraints and 
 ## Key Features
 Version 0.1 includes the following capabilities:
 - Multi-objective and constrained optimization for functions of the form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
-- Batch mode (q-batch) support for parallel evaluations. 
+- Batch mode (q-batch) support for parallel evaluations.
+- Linear and non-linear constraints on the input domain (X).
+- Linear and non-linear constraints on the output domain (Y).
 - Integration into iterative experimental workflows.
 - Exporting and visualization of optimization results.
 
@@ -27,19 +30,42 @@ Version 0.1 includes the following capabilities:
 flowchart TD
     A[Define Initial Set of Parameters]
     B[Execute Initial Experiments]
-    C[MOBO]
+    C[pyBO]
     D[Execute Experiment]
     E{Converged?}
     Start --> A
     A -->|X| B
-    B -->|Yobj, Ycon, . . .| C
+    B -->|X, Yobj, Ycon, . . .| C
     C -->|New X| D
     D -->|Yobj, Ycon, . . .| E
     E -->|No: Update Dataset| C
     E -->|Yes| End
     classDef redText color: red;
     class C redText
+    
+```
 
+## pyBO Internal Workflow
+```mermaid
+flowchart TD
+    A[Initialize model,
+    Initialize acq. function,
+    Set output constraints - optional
+    Set input constraints - optional
+    ... ]
+    
+    B[Find new X]
+    
+    C{Does new X \n satisfy input\n constraints?}
+    Start --> |X, Yobj, Ycon, . . .| A
+    A --> B
+    B --> C
+    C --> |Yes| End
+    C --> |No| B
+    
+    classDef redText color: red;
+    class C redText
+    
 ```
 
 ## Data Format
