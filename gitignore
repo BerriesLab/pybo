@@ -10,9 +10,6 @@ venv/
 # Ignore IDE configuration
 .idea/
 
-# Ignore distribution folder
-dist/
-
 # Ignore documents
 documents/
 
