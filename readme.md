@@ -71,16 +71,17 @@ flowchart TD
 ### Data Input Format
 Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
 
-$$
-\mathbf{Z} =
+```math
+$$\mathbf{Z} =
 \begin{bmatrix}
 \mathbf{X} &
 \mathbf{Y}_{\mathrm{obj}} &
 \mathbf{Y}_{\mathrm{obj},\sigma} &
 \mathbf{Y}_{\mathrm{con}} &
 \mathbf{Y}_{\mathrm{con},\sigma}
-\end{bmatrix}
-$$
+\end{bmatrix}$$
+```
+
 
 with 
 
