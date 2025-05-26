@@ -1,4 +1,4 @@
-# pyBO - A Python Library for Bayesian Optimization
+# pyBO — A Python Library for Bayesian Optimization
 `pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian Processes, it provides a framework 
 for optimizing multiple competing objectives under experimental constraints and finding Pareto-optimal solutions.
 
@@ -46,25 +46,23 @@ flowchart TD
 ```
 
 ## pyBO Internal Workflow
+The following flowchart describes in synthesis how pyBO works internally.
 ```mermaid
 flowchart TD
-    A[Initialize model,
-    Initialize acq. function,
-    Set output constraints - optional
-    Set input constraints - optional
-    ... ]
+    A[Initialize model<br>compute reference point<br>initialize sampler]
+    B[Fit model]
+    C[Initialize partitioning<br>initialize acquisition function]
+    D[Find new X]
+    E{Does new X satisfy<br>input constraints?}
     
-    B[Find new X]
-    
-    C{Does new X \n satisfy input\n constraints?}
     Start --> |X, Yobj, Ycon, . . .| A
     A --> B
     B --> C
-    C --> |Yes| End
-    C --> |No| B
+    C --> D
+    D --> E
+    E --> |Yes| End
+    E --> |No| D
     
-    classDef redText color: red;
-    class C redText
     
 ```
 
@@ -72,9 +70,10 @@ flowchart TD
 
 ### Data Input Format
 Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
-$$
+
+$
 \mathbf{Z} = \left[ \mathbf{X} \; \middle| \; \mathbf{Y}_{\mathrm{obj}} \; \middle| \; \mathbf{Y}_{\mathrm{obj, \sigma}} \; \middle| \; \mathbf{Y}_{\text{con}} \; \middle| \; \mathbf{Y}_{\mathrm{con, \sigma}} \right]
-$$
+$
 
 with 
 
@@ -94,12 +93,12 @@ where
 ### Data Output Format
 
 `pyBO` allows exporting:
-- The optimizer state as a binary file (pickle) for later reuse or analysis.
+- The optimizer states as a binary file (pickle) for later reuse or analysis.
 - The full dataset $\mathbf{Z}$ as a CSV file, matching the input format.
 
 ## Visualization
 `pyBO` provides built-in tools to visualize:
-- The Pareto front in bi-objective optimization problems, where the objective function is of the form $\mathbf{f}_0 : \mathbb{R}^N \rightarrow \mathbb{R}^2$.
+- The Pareto front in bi-objective optimization problems, where the objective function is of the form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
 - The hypervolume achieved at each optimization cycle.
 - The memory usage during each optimization cycle.
 - The execution time for each optimization cycle.
