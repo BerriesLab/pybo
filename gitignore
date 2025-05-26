@@ -10,5 +10,11 @@ venv/
 # Ignore IDE configuration
 .idea/
 
+# Ignore distribution folder
+dist/
+
+# Ignore documents
+documents/
+
 # Ignore data in bayesian_optimization folder
 bayesian_optimization/data/
