@@ -83,15 +83,19 @@ $$\mathbf{Z} =
 ```
 
 
-with 
+where 
 
-- $\mathbf{X} \in \mathbb{R}^{n \times d}$: Input data or parameters.
-- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: Objective values.
-- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: Variance of objective values (optional).
-- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: Constraint values (optional).
-- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: Variance of constraint values (optional).
+- $\mathbf{X} \in \mathbb{R}^{n \times d}$: The input data matrix.
+- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: The objective 
+  value matrix.
+- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: The Variance 
+  of the objective value matrix (optional).
+- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: The constraint 
+  value matrix (optional).
+- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: The variance 
+  of the constraint value matrix (optional).
 
-where
+and where
 
 - $n$ is the number of observations.
 - $d$ is the number of parameters or input space dimension.
