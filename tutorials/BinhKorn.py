@@ -2,9 +2,9 @@ import os
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective
 from abc import ABC
 from botorch.test_functions.base import ConstrainedBaseTestProblem
-from mobo.mobo import Mobo
-from mobo.samplers import Sampler
-from mobo.input_constraints import c1, c2
+from pybo.mobo import Mobo
+from pybo.samplers import Sampler
+from pybo.input_constraints import c1, c2
 from utils.io import *
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType

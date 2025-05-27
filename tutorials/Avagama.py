@@ -8,9 +8,9 @@ the data is organized in columns as [I_M (A), I_P (A), tau_R (us), t_M (min), t_
 import os
 from abc import ABC
 from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, MCMultiOutputObjective
-from mobo.output_constraints import LowerBound
-from mobo.mobo import Mobo
-from mobo.samplers import Sampler
+from pybo.output_constraints import LowerBound
+from pybo.mobo import Mobo
+from pybo.samplers import Sampler
 from utils.io import *
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
@@ -136,9 +136,9 @@ def main(n_samples=1, batch_size=1):
         # print(f"New Ycon: {new_Ycon}")
 
         """ Save to csv """
-        # mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj, new_Ycon=new_Ycon)
-        # mobo.save_dataset_to_csv()
-        # print(f"GPU Memory Allocated: {mobo.get_allocated_memory()[-1]:.2f} MB")
+        # pybo.update_XY(new_X=new_X, new_Yobj=new_Yobj, new_Ycon=new_Ycon)
+        # pybo.save_dataset_to_csv()
+        # print(f"GPU Memory Allocated: {pybo.get_allocated_memory()[-1]:.2f} MB")
 
     plot_log_hypervolume_improvement(mobo, show=False)
     plot_elapsed_time(mobo, show=False)

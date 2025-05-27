@@ -1,6 +1,6 @@
 import os
-from mobo.mobo import Mobo
-from mobo.samplers import Sampler
+from pybo.mobo import Mobo
+from pybo.samplers import Sampler
 from utils.io import *
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType

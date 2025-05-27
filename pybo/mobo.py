@@ -25,7 +25,7 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement, qNoisyExpectedHypervolumeImprovement, \
     qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
-from mobo.validators import *
+from pybo.validators import *
 from utils.io import *
 
 
