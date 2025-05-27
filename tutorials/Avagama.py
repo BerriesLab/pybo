@@ -11,10 +11,9 @@ from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective, 
 from pybo.output_constraints import LowerBound
 from pybo.mobo import Mobo
 from pybo.samplers import Sampler
-from utils.io import *
-from utils.make_video import create_video_from_images
-from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
+from pybo.utils.make_video import create_video_from_images
+from pybo.utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
+from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_allocated_memory
 
 

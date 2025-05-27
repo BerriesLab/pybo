@@ -1,7 +1,7 @@
 import torch
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
-from utils.types import SamplerType
+from pybo.utils.types import SamplerType
 from botorch.utils.transforms import unnormalize
 from collections.abc import Callable
 

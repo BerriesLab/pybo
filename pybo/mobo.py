@@ -6,7 +6,6 @@ import os
 
 import botorch
 import gpytorch
-import torch
 from botorch.exceptions import BadInitialCandidatesWarning, InputDataWarning, OptimizationWarning
 from botorch.exceptions.warnings import NumericsWarning
 from botorch.sampling import SobolQMCNormalSampler
@@ -16,8 +15,8 @@ from botorch.utils.multi_objective.box_decompositions import FastNondominatedPar
 from botorch.utils.transforms import normalize
 from gpytorch.constraints import GreaterThan
 
-from utils.cuda import get_device, get_supported_dtype
-from utils.types import TorchDeviceType
+from pybo.utils.cuda import get_device, get_supported_dtype
+from pybo.utils.types import TorchDeviceType
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
@@ -26,7 +25,6 @@ from botorch.acquisition.multi_objective import qExpectedHypervolumeImprovement,
     qLogExpectedHypervolumeImprovement, qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from pybo.validators import *
-from utils.io import *
 
 
 class Mobo:

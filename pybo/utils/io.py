@@ -65,7 +65,7 @@ def load_dataset_from_csv(
         X ¦ Yobj ¦ Yobj_var ¦ Ycon ¦ Ycon_var."""
 
     if filepath is None:
-        csv_files = list(Path('.').glob('*.csv'))
+        csv_files = list(Path('').glob('*.csv'))
         if not csv_files:
             raise FileNotFoundError("No CSV files found in the current directory")
         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)

@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from pybo.mobo import Mobo
-from utils.io import *
 
 ms = 7
 

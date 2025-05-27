@@ -1,7 +1,7 @@
 import datetime
 import torch
 from collections.abc import Callable
-from utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
+from pybo.utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
 
 
 def validate_experiment_name(name: str):
