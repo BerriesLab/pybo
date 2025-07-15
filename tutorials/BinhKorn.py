@@ -1,130 +1,142 @@
 import os
-from botorch.acquisition.multi_objective import IdentityMCMultiOutputObjective
-from abc import ABC
-from botorch.test_functions.base import ConstrainedBaseTestProblem
-from mobo.mobo import Mobo
-from mobo.samplers import Sampler
-from mobo.input_constraints import c1, c2
-from utils.io import *
-from utils.make_video import create_video_from_images
-from utils.types import AcquisitionFunctionType, SamplerType, OptimizationProblemType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
-    plot_allocated_memory
+import torch
+from pathlib import Path
+from pybo.mobo.mobo import Mobo
+from pybo.mobo.samplers import Sampler
+from pybo.utils.io import create_experiment_directory
+from pybo.utils.make_video import create_video_from_images
+from pybo.utils.types import AcquisitionFunctionType, SamplerType
+from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2_bak, plot_log_hypervolume_improvement, plot_elapsed_time, \
+    make_grid
+from pybo.objectives.binh_and_korn import BinhAndKornMCMultiOutputObjective
 
-
-class BinhAndKorn(ConstrainedBaseTestProblem, ABC):
-    r"""Binh and Korn test problem for multi-objective optimization with output_constraints."""
-
-    dim = 2
-    num_objectives = 2
-    num_constraints = 2
-    _bounds = [(0.0, 5.0), (0.0, 3.0)]  # [(lower_0, upper_0), (lower_1, upper_1)]
-
-    def __init__(self):
-        super().__init__()
-
-    @staticmethod
-    def f1(x: torch.Tensor) -> torch.Tensor:
-        return (4 * x[..., 0]**2 + 4 * x[..., 1]**2).unsqueeze(-1)
-
-    @staticmethod
-    def f2(x: torch.Tensor) -> torch.Tensor:
-        return ((x[..., 0] - 5)**2 + (x[..., 1] - 5)**2).unsqueeze(-1)
-
-    def evaluate_true(self, X: torch.Tensor) -> torch.Tensor:
-        r"""Return the true (noise-free) objective values at X."""
-        return torch.cat([self.f1(X), self.f2(X)], dim=-1)
-
-    def evaluate_slack_true(self, X: torch.Tensor) -> torch.Tensor:
-        r""" Evaluate the true slack for each constraint at X.
-
-        Constraints:
-        1. g1(x) = (x0 - 5)^2 + x1^2 <= 25 → slack = 25 - ((x0 - 5)^2 + x1^2)
-        2. g2(x) = (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 → slack = ((x0 - 8)^2 + (x1 + 3)^2) - 7.7
-        """
-        g1_slack = 25 - ((X[..., 0] - 5) ** 2 + X[..., 1] ** 2)
-        g2_slack = (X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2 - 7.7
-        return torch.stack([g1_slack, g2_slack], dim=-1)
-
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DTYPE = torch.float64
 
 def main(n_samples=64, q: int = 1, ):
-    data_dir = main_dir / "data"
-    experiment_name = f"test_binh_and_korn_64iter_{q}q_512mc_256rs_qnehvi"
-    directory = create_experiment_directory(data_dir, experiment_name)
+    data_path = main_path / "data"
+    data_path.mkdir(parents=True, exist_ok=True)
+    experiment_name = f"binh_and_korn_64iter_{q}q_512mc_256rs_qnehvi"
+    directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the true_objective """
-    true_objective = BinhAndKorn()
+    objective = BinhAndKornMCMultiOutputObjective(
+        device=DEVICE,
+        dtype=DTYPE,
+    )
 
     """ Instantiate a random generator """
     sampler = Sampler(
         sampler_type=SamplerType.Sobol,
-        bounds=true_objective.bounds,
-        n_dimensions=true_objective.dim,
+        bounds=objective.bounds,
+        n_dimensions=objective.num_objectives,
         normalize=False,
-        constraint=[c1, c2]
+        constraint=[
+            BinhAndKornMCMultiOutputObjective.c1,
+            BinhAndKornMCMultiOutputObjective.c2
+        ],
     )
 
-    """ Generate initial dataset and random samples for posterior and ground truth evaluation """
-    X = sampler.draw_samples(n=2*(true_objective.dim+1))
-    rnd_X = sampler.draw_samples(n=1000)
+    """ Generate initial dataset """
+    X = sampler.draw_samples(n=2 * (objective.dim + 1))
+    Yobj = objective.evaluate_true(X)
+
+    """ Generate samples for ground truth evaluation - random sampler or grid """
+    # This is done before the optimization loop to show the same ground truth
+    # in each iteration step's figure.
+    # gnd_truth_X = sampler.draw_samples(n=1000)
+    gnd_truth_X = make_grid(
+        size=100,
+        bounds=objective.bounds,
+        device=DEVICE,
+        dtype=DTYPE
+    )
 
     """ Main optimization loop """
     mobo = Mobo(
         experiment_name=experiment_name,
+        device=DEVICE,
+        dtype=DTYPE,
         X=X,
-        Yobj=true_objective(X),
+        Yobj=Yobj,
         Yobj_var=None,
         Ycon=None,
         Ycon_var=None,
-        bounds=true_objective.bounds,
-        optimization_problem_type=OptimizationProblemType.Minimization,
-        true_objective=true_objective,
-        objective=IdentityMCMultiOutputObjective(outcomes=[0, 1]),
+        bounds=objective.bounds,
+        objective=objective,
         output_constraints=None,
-        input_constraints=[c1, c2],
+        input_constraints=[
+            BinhAndKornMCMultiOutputObjective.c1,
+            BinhAndKornMCMultiOutputObjective.c2
+        ],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,
         mc_samples=512,
         batch_size=q,
-        device=torch.device("cpu"),
     )
 
+    """ Main optimization loop """
+    hypervolume_list = []
+    elapsed_time_list = []
     for i in range(int(n_samples / q)):
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
+        """ Optimize and get new X """
         mobo.optimize()
-        mobo.to_file()
-        plot_multi_objective_from_RN_to_R2(
+        elapsed_time_list.append(mobo.get_elapsed_time())
+        new_X = mobo.get_new_X()
+        print(f"New X: {new_X.detach().cpu().numpy()}")
+
+        """ Evaluate posterior and acquisition function at new X """
+        mobo.compute_acquisition_function_value_at_X(new_X)
+        mobo.compute_posterior_mean_at_X(new_X)
+
+        """ Simulate experiment at new X """
+        new_Yobj = objective.evaluate_true(new_X)
+        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
+        mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
+
+        """ Compute pareto front and hypervolume """
+        mobo.compute_pareto_front()
+        mobo.compute_hypervolume()
+        hypervolume_list.append(mobo.get_hypervolume())
+
+        """ Save"""
+        mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
+        mobo.save_dataset_to_csv(output_path=Path.cwd() / f"dataset_{i}.csv")
+
+        plot_multi_objective_from_RN_to_R2_bak(
             mobo=mobo,
+            title="Binh and Korn Test Problem",
+            f1_label="Binh",
+            f2_label="Korn",
             show_ref_point=True,
             show_ground_truth=True,
             show_observations=True,
-            f1_lims=(0, 140),
-            f2_lims=(0, 50),
+            f1_lims=(-10, 140),
+            f2_lims=(0, 55),
             display_figures=False,
-            x=rnd_X,
+            ground_truth_X=gnd_truth_X,
+            output_path=Path.cwd() / f"pareto_front_{i}.png"
+        )
+        plot_log_hypervolume_improvement(
+            hv=hypervolume_list,
+            output_path=Path.cwd() / f"hvi{i}.png"
+        )
+        plot_elapsed_time(
+            elapsed_time=elapsed_time_list,
+            output_path=Path.cwd() / f"elapsed_time{i}.png"
         )
 
-        """ Simulate experiment at new X """
-        new_X = mobo.get_new_X()
-        new_Yobj = true_objective(new_X)
-        print(f"New Yobj: {new_Yobj}")
-
-        """ Save to csv """
-        mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
-        mobo.save_dataset_to_csv()
-
-    plot_log_hypervolume_improvement(mobo, show=False)
-    plot_elapsed_time(mobo, show=False)
     create_video_from_images()
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
-    main_dir = Path.cwd().parent
-    batch_sizes = [1, 2, 4, 8]
+    main_path = Path.cwd().parent
+    batch_sizes = [1]  # [1, 2, 4, 8]
     for batch_size in batch_sizes:
         main(n_samples=64, q=batch_size)

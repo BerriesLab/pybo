@@ -34,5 +34,11 @@ def get_supported_dtype(device: torch.device):
         return torch.float64
 
 
-def print_cuda_device_name(device):
-    print(f"Running on {device.type.upper()} device: {torch.cuda.get_device_name(device)}")
+def print_cuda_device_name(device: torch.device):
+    """Print the name of the CUDA device if available."""
+    if device.type == "cuda":
+        print(
+            f"Running on {device.type.upper()} device: {torch.cuda.get_device_name(device)}"
+        )
+    else:
+        print(f"Running on {device.type.upper()} device")

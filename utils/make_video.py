@@ -1,7 +1,14 @@
+import re
+
 import cv2
 from pathlib import Path
 
 DEFAULT_OUTPUT_VIDEO_NAME = 'movie.mp4'
+
+
+def extract_number(path):
+    match = re.search(r'\d+', path.stem)
+    return int(match.group()) if match else float('inf')
 
 
 def create_video_from_images(input_folder=None, output_folder=None, filename=None, fps=2):
@@ -39,16 +46,19 @@ def create_video_from_images(input_folder=None, output_folder=None, filename=Non
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Get all image files and sort them
-    image_files = sorted([f for f in input_folder.glob('*') if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.gif')])
+    img_files = []
+    for img_file in input_folder.glob('*pareto_front*.png'):
+        img_files.append(img_file)
+    img_files = sorted(input_folder.glob('*pareto_front*.png'), key=extract_number)
 
-    if not image_files:
+    if not img_files:
         print(f"Error: No images found in the folder: {input_folder}")
         return False
 
     # Read the first image to get dimensions
-    frame = cv2.imread(str(image_files[0]))
+    frame = cv2.imread(str(img_files[0]))
     if frame is None:
-        print(f"Error: Could not read image {image_files[0]}")
+        print(f"Error: Could not read image {img_files[0]}")
         return False
 
     height, width, channels = frame.shape
@@ -58,7 +68,7 @@ def create_video_from_images(input_folder=None, output_folder=None, filename=Non
     out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
     try:
-        for img_file in image_files:
+        for img_file in img_files:
             frame = cv2.imread(str(img_file))
             if frame is not None:
                 out.write(frame)

@@ -22,7 +22,7 @@ Version 0.1 includes the following capabilities:
 
 ## Installation
 The package is currently available only for local distribution. To install, 
-open the terminal and type:
+locally download the package in the dist/ folder, open the terminal and type:
 
 `pip install pybo-0.1.0-py3-none-any.whl`
 
@@ -124,3 +124,12 @@ Explore the following examples to understand how `pyBO` can be applied:
 - [Branin-Currin](tutorials/BraninCurrin.py): An unconstrained bi-objective optimization problem.
 - [C2DTLZ2](tutorials/C2DTLZ2.py): A constrained bi-objective optimization problem.
 - [Binh and Korn](tutorials/BinhKorn.py): A constrained bi-objective optimization problem.
+
+
+## Custom Multi Objective Functions
+A custom multi objective function must inherit from ```BaseTestProblem, ABC```, and must include the following attributes:
+- ```self.ref_point```
+- ```self.negate```
+- ```evaluate_true```: this is the true objective. It must always be cast in its original form. If the objectives is something to minimize, this must be written in its minimization form, as ```self.negate``` will flip its sign when required in the ```forward``` method.
+- ```evaluate_slack```
+- this affects the sign of ```self.ref_point``` and of the objective function ```f``` in the ```forward``` method. Therefore,

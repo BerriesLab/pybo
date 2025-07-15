@@ -1,7 +1,13 @@
 import datetime
+from typing import Type, Union
+
 import torch
 from collections.abc import Callable
-from utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
+
+from botorch.acquisition.multi_objective import MCMultiOutputObjective
+from botorch.test_functions.base import MultiObjectiveTestProblem
+
+from pybo.utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
 
 
 def validate_experiment_name(name: str):
@@ -41,9 +47,17 @@ def validate_bounds(bounds: torch.Tensor):
         raise ValueError("Bounds must be a 2 x D tensor.")
 
 
-def validate_objective(objective: Callable | None):
-    if not isinstance(objective, Callable) and objective is not None:
-        raise ValueError("Objective must be a callable or None.")
+def validate_objective(
+    objective: object,
+    accepted_classes: Union[type, tuple[type, ...]] = (MCMultiOutputObjective, MultiObjectiveTestProblem)
+):
+    if objective is not None and not isinstance(objective, accepted_classes):
+        allowed = (
+            ", ".join(cls.__name__ for cls in accepted_classes)
+            if isinstance(accepted_classes, tuple)
+            else accepted_classes.__name__
+        )
+        raise ValueError(f"Objective must be one of: {allowed}, or None.")
 
 
 def validate_constraints(constraints: list[Callable] | None):

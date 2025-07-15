@@ -19,3 +19,11 @@ class LowerBound:
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
         # c(x) = threshold <= samples[..., index]
         return self.threshold - samples[..., self.index]
+
+
+class Identity:
+    def __init__(self, index):
+        self.index = index
+
+    def __call__(self, Z):
+        return Z[..., self.index]
