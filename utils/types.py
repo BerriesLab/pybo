@@ -6,6 +6,9 @@ class AcquisitionFunctionType(Enum):
     qLogEHVI = "qLogEHVI"
     qNEHVI = "qNEHVI"
     qLogNEHVI = "qLogNEHVI"
+    qEWNEHVI = "qEWNEHVI"
+    qDWNEHVI = "qDWNEHVI"
+    qNParEGO = "qNParEGO"
 
     @classmethod
     def values(cls):
@@ -13,11 +16,6 @@ class AcquisitionFunctionType(Enum):
         for item in cls:
             values.append(item.value)
         return values
-
-    @staticmethod
-    def require_partitioning():
-        return ["qEHVI", "qLogEHVI"]
-
 
 class Kernel(Enum):
     RBF = "RBF"

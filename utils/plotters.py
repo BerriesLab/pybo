@@ -176,7 +176,7 @@ def plot_objective_from_R2_to_R1():
 
 def plot_multi_objective_from_RN_to_R2(
         mobo: Mobo,
-        ground_truth_X: torch.Tensor,
+        ground_truth_X: torch.Tensor or None = None,
         title: str or None = None,
         f1_label: str or None = None,
         f2_label: str or None = None,
@@ -285,15 +285,15 @@ def plot_multi_objective_from_RN_to_R2(
     plt.close(fig)
 
 
-def plot_multi_objective_from_RN_to_R2_with_color_coded_R3(
+def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
         mobo,
-        x: torch.Tensor,
+        X: torch.Tensor or None = None,
         title: str | None = None,
         f_labels: list[str] = ("$f_{01}$", "$f_{02}$", "$f_{03}$"),
         f_lims: list[tuple] = None,
         x_idx: int = 0,
         y_idx: int = 1,
-        color_idx: int = 2,
+        z_idx: int = 2,
         show_ref_point: bool = True,
         show_observations: bool = True,
         show_ground_truth: bool = False,
@@ -302,62 +302,85 @@ def plot_multi_objective_from_RN_to_R2_with_color_coded_R3(
         output_path=None,
 ):
     """
-    General-purpose plotter for 2D and 3D objectives with optional facecolor color coding.
-    """
+    General-purpose plotter for 2D and 3D objectives with optional face-color color coding.
+    x_inx is the index of the objective plotted on the x-axis.
+    y_idx is the index of the objective plotted on the y-axis.
+    z_idx is the index of the objective used for color coding.    """
 
-    custom_legend = []
+    # Check indexes consistency
     assert x_idx != y_idx, "x_idx and y_idx must be different"
-    if color_idx is not None:
-        assert color_idx not in (x_idx, y_idx), "color_idx must be different from x_idx and y_idx"
+    if z_idx is not None:
+        assert z_idx not in (x_idx, y_idx), "color_idx must be different from x_idx and y_idx"
 
-    if f_labels is None:
-        dim = mobo.get_Yobj().shape[1]
-        f_labels = [f"$f_{{{i}}}$" for i in range(dim)]
-
-    # Initialize plot
+    # Initialize plot. If the objective limits are not passed, set the axes to autoscale, otherwise
+    # fix the x- and y-limits. If all labels are not passed explicitly, set them to "$f_1$", "$f_2$"
+    # and "$f_3$".
     fig, axes = plt.subplots(1, 1, figsize=(7, 6))
     axes.set_title(title or 'Pareto Front')
+    if f_labels is None or len(f_labels) != 3:
+        f_labels = [f"$f_{{{i}}}$" for i in range(3)]
     axes.set_xlabel(f_labels[x_idx])
     axes.set_ylabel(f_labels[y_idx])
-    if f_lims is not None:
+    if f_lims is None:
+        axes.autoscale(enable=True, axis='both')
+    else:
         axes.set_xlim(*f_lims[x_idx])
         axes.set_ylim(*f_lims[y_idx])
+
+    # Define colormap. If the argument "x" is provided and the objective includes an "evaluate_true"
+    # function, then the ground truth is calculated as "evaluate_true(x)" and the colormap normalized
+    # between the minimum and maximum value of the "color_values = evaluate_true(x)" and the colormap
+    # normalized between the minimum and maximum values of "color_value". Otherwise, the colormap is
+    # normalized between the minimum and maximum values of the objective used for color-coding.
+    if hasattr(mobo.get_objective(), "evaluate_true") and X is not None:
+        X = X.to(mobo.get_device(), mobo.get_dtype())
+        ground_truth = mobo.get_objective().evaluate_true(X)
+        color_values = ground_truth[:, z_idx].cpu().numpy()
     else:
-        axes.autoscale(enable=True, axis='both')
+        color_values = mobo.get_Yobj()[:, z_idx].cpu().numpy()
+    norm = mpl.colors.Normalize(vmin=color_values.min(), vmax=color_values.max())
+    cmap = mpl.cm.coolwarm
 
     """ Plot ground truth """
     if show_ground_truth:
+        # Check that the objective includes an "evaluate_true" method and that the argument X is not note.
         if not hasattr(mobo.get_objective(), "evaluate_true"):
-            raise ValueError("Ground truth not available.")
+            raise ValueError("Ground truth not available: the objective must include an evaluate_true function.")
+        if X is None:
+            raise ValueError("Ground truth not available: X must be provided.")
 
-        x = x.to(mobo.get_device(), mobo.get_dtype())
-        ground_truth_obj = mobo.get_objective().evaluate_true(x)
-
+        # Compute the ground truth. First, calculate the ground truth without considering the constraints
+        # on the objectives, then compute the feasibility mask to select the values that satisfy the constraints.
+        X = X.to(mobo.get_device(), mobo.get_dtype())
+        ground_truth = mobo.get_objective().evaluate_true(X)
         if mobo.get_output_constraints() is None:
-            feas_mask = torch.ones_like(ground_truth_obj, dtype=torch.bool).all(dim=-1)
+            ground_truth_feas_mask = torch.ones_like(ground_truth, dtype=torch.bool).all(dim=-1)
         else:
-            ground_truth_con = mobo.get_objective().evaluate_slack_true(x)
-            feas_mask = (ground_truth_con <= 0).all(dim=-1)
+            ground_truth_con = mobo.get_objective().evaluate_slack_true(X)
+            ground_truth_feas_mask = (ground_truth_con <= 0).all(dim=-1)
+        ground_truth_inf_mask = torch.logical_not(ground_truth_feas_mask)
 
-        def plot_ground(mask, style_kwargs):
-            vals = ground_truth_obj[mask]
-            X = vals[:, x_idx].cpu().numpy()
-            Y = vals[:, y_idx].cpu().numpy()
+        # Plot feasible ground truth
+        ground_truth_feas_vals = ground_truth[ground_truth_feas_mask]
+        if ground_truth_feas_vals.numel() > 0:
+            feas_X = ground_truth_feas_vals[:, x_idx].detach().cpu().numpy()
+            feas_Y = ground_truth_feas_vals[:, y_idx].detach().cpu().numpy()
+            color_values = ground_truth_feas_vals[:, z_idx].detach().cpu().numpy()
+            kwargs = dict(ground_truth_feas_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            c = cmap(norm(color_values))
+            axes.scatter(x=feas_X, y=feas_Y, c=c, **kwargs)
 
-            plot_kwargs = dict(style_kwargs)
-            plot_kwargs.pop("color", None)  # avoid clash with `c=`
-            c = None
-            if color_idx is not None:
-                C = vals[:, color_idx].cpu().numpy()
-                norm = mpl.colors.Normalize(vmin=C.min(), vmax=C.max())
-                cmap = mpl.cm.coolwarm
-                c = cmap(norm(C))
-                return axes.scatter(X, Y, c=c, **plot_kwargs), norm
-            else:
-                return axes.scatter(X, Y, **plot_kwargs), None
-
-        sc1, color_norm = plot_ground(feas_mask, ground_truth_feas_kwargs)
-        plot_ground(torch.logical_not(feas_mask), ground_truth_inf_kwargs)
+        # Plot infeasible ground truth
+        ground_truth_inf_vals = ground_truth[ground_truth_inf_mask]
+        if ground_truth_inf_vals.numel() > 0:
+            inf_X = ground_truth_inf_vals[:, x_idx].detach().cpu().numpy()
+            inf_Y = ground_truth_inf_vals[:, y_idx].detach().cpu().numpy()
+            color_values = ground_truth_inf_vals[:, z_idx].detach().cpu().numpy()
+            kwargs = dict(ground_truth_inf_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            c = cmap(norm(color_values))
+            axes.scatter(x=inf_X, y=inf_Y, c=c, **kwargs)
 
     """ Plot posterior (not implemented) """
     if show_posterior:
@@ -365,57 +388,62 @@ def plot_multi_objective_from_RN_to_R2_with_color_coded_R3(
 
     """ Plot reference point """
     if show_ref_point:
+        # Plot the reference point, color-coded.
         ref_point = mobo.get_objective().ref_point.detach().cpu().numpy()
-        axes.scatter(ref_point[x_idx], ref_point[y_idx], **ref_point_kwargs)
+        color = ref_point[z_idx]
+        kwargs = ref_point_kwargs
+        kwargs.pop("color", None)
+        c = cmap(norm(color))
+        axes.scatter(x=ref_point[x_idx], y=ref_point[y_idx], color=c, **ref_point_kwargs)
 
     """ Plot observations """
     if show_observations:
         y_obj = mobo.get_Yobj().clone()
 
-        feas_mask = mobo.get_feasible_observations_mask()
+        # Compute masks
+        ground_truth_feas_mask = mobo.get_feasible_observations_mask()
         par_mask = mobo.get_pareto_front_mask()
-        inf_mask = torch.logical_not(feas_mask)
-        feas_non_par_mask = torch.logical_and(feas_mask, torch.logical_not(par_mask))
-        feas_par_mask = torch.logical_and(feas_mask, par_mask)
+        inf_mask = torch.logical_not(ground_truth_feas_mask)
+        feas_non_par_mask = torch.logical_and(ground_truth_feas_mask, torch.logical_not(par_mask))
+        feas_par_mask = torch.logical_and(ground_truth_feas_mask, par_mask)
 
-        def plot_obs(mask, style_kwargs):
-            vals = y_obj[mask].detach().cpu().numpy()
-            X = vals[:, x_idx]
-            Y = vals[:, y_idx]
-
-            plot_kwargs = dict(style_kwargs)
-            plot_kwargs.pop("color", None)  # let facecolor be controlled by `c`
-            c = None
-            if color_idx is not None:
-                C = vals[:, color_idx]
-                norm = mpl.colors.Normalize(
-                    vmin=y_obj[:, color_idx].min().item(),
-                    vmax=y_obj[:, color_idx].max().item(),
-                )
-                cmap = mpl.cm.coolwarm
-                c = cmap(norm(C))
-                return axes.scatter(X, Y, c=c, **plot_kwargs)
-            else:
-                return axes.scatter(X, Y, **plot_kwargs)
-
+        # Plot infeasible observations
         if mobo.get_Ycon() is not None and torch.any(inf_mask):
-            plot_obs(inf_mask, infeasible_observations_kwargs)
+            obs_inf = y_obj[inf_mask].detach().cpu().numpy()
+            color_values = obs_inf[:, z_idx]
+            c = cmap(norm(color_values))
+            kwargs = dict(infeasible_observations_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            axes.scatter(
+                obs_inf[:, x_idx],
+                obs_inf[:, y_idx],
+                c=c,
+                **kwargs
+            )
+
+        # Plot feasible non-pareto-front observations
         if torch.any(feas_non_par_mask):
-            plot_obs(feas_non_par_mask, feasible_non_pareto_observations_kwargs)
+            obs_feas_non_par = y_obj[feas_non_par_mask].detach().cpu().numpy()
+            color_values = obs_feas_non_par[:, z_idx]
+            c = cmap(norm(color_values))
+            kwargs = dict(feasible_non_pareto_observations_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            axes.scatter(x=obs_feas_non_par[:, x_idx], y=obs_feas_non_par[:, y_idx], c=c, **kwargs)
+
+        # Plot feasible pareto-front observations
         if torch.any(feas_par_mask):
-            plot_obs(feas_par_mask, feasible_pareto_observations_kwargs)
+            obs_feas_par = y_obj[feas_par_mask].detach().cpu().numpy()
+            color_values = obs_feas_par[:, z_idx]
+            c = cmap(norm(color_values))
+            kwargs = dict(feasible_pareto_observations_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            axes.scatter(x=obs_feas_par[:, x_idx], y=obs_feas_par[:, y_idx], c=c, **kwargs)
 
     """ Colorbar """
-    if color_idx is not None:
-        norm = color_norm if show_ground_truth else mpl.colors.Normalize(
-            vmin=y_obj[:, color_idx].min().item(),
-            vmax=y_obj[:, color_idx].max().item()
-        )
-        cmap = mpl.cm.coolwarm
-        sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        cbar = plt.colorbar(sm, ax=axes, pad=0.01)
-        cbar.set_label(f_labels[color_idx])
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=axes, pad=0.01)
+    cbar.set_label(f_labels[z_idx])
 
     axes.autoscale_view(tight=False)    # Compute flags for what was actually plotted
     legend_elements = build_custom_legend_elements(
@@ -425,8 +453,8 @@ def plot_multi_objective_from_RN_to_R2_with_color_coded_R3(
         feas_par=torch.any(feas_par_mask).item() if show_observations else False,
         infeas=torch.any(inf_mask).item() if show_observations and mobo.get_Ycon() is not None else False,
         show_ground_truth=show_ground_truth,
-        gt_feas=torch.any(feas_mask).item() if show_ground_truth else False,
-        gt_infeas=torch.any(torch.logical_not(feas_mask)).item() if show_ground_truth else False,
+        gt_feas=torch.any(ground_truth_feas_mask).item() if show_ground_truth else False,
+        gt_infeas=torch.any(torch.logical_not(ground_truth_feas_mask)).item() if show_ground_truth else False,
     )
     axes.legend(handles=legend_elements, loc='best')
 
@@ -560,12 +588,11 @@ def plot_multi_objective_from_RN_to_R3(
 
 
 def plot_log_hypervolume_improvement(
-        hv: list[float],
+        mobo: Mobo,
         output_path: Path = None,
         batch_size: int = 1,
         display_figure: bool = False,
         epsilon: float = 1e-6,
-        color: str = "C0"
 ):
     """
     Plots two scatter plots:
@@ -580,6 +607,8 @@ def plot_log_hypervolume_improvement(
         epsilon (float): Minimum improvement to avoid log10(0).
         color (str): Color used in scatter plots.
     """
+
+    hv = mobo.get_hypervolume()
 
     if len(hv) <= 1:
         print("Not enough data to plot.")
@@ -600,20 +629,22 @@ def plot_log_hypervolume_improvement(
     fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
     # --- Subplot 1: Cumulative HV ---
-    axs[0].scatter(x, hv, color=color, label="Cumulative HV")
-    axs[0].set_title("Cumulative Hypervolume")
-    axs[0].set_ylabel("Hypervolume")
+    axs[0].scatter(x, hv, **xy_plot_kwargs)
+    axs[0].set_title("Hypervolume")
+    axs[0].set_ylabel("HV")
     axs[0].grid(True)
-    axs[0].legend()
+    # axs[0].legend()
+    if hasattr(mobo.get_objective(), "max_hv") and mobo.get_objective().max_hv is not None:
+        axs[0].axhline(y=mobo.get_objective().max_hv, linestyle='--', color='black', label='Max HV')
 
     # --- Subplot 2: log10(HVI) ---
     mask = ~np.isnan(hvi_log)
-    axs[1].scatter(x[mask], hvi_log[mask], color=color, label="log10(HVI)")
-    axs[1].set_title("Log10 of Hypervolume Improvement")
-    axs[1].set_xlabel("Number of observations (beyond initial)")
-    axs[1].set_ylabel("log10(HVI)")
+    axs[1].scatter(x[mask], hvi_log[mask], **xy_plot_kwargs)
+    axs[1].set_title("Hypervolume Improvement")
+    axs[1].set_xlabel("Number of observations")
+    axs[1].set_ylabel(r"$\log_{10}(\mathrm{HVI})$")
     axs[1].grid(True)
-    axs[1].legend()
+    # axs[1].legend()
 
     # Save or show
     plt.tight_layout()
@@ -625,10 +656,13 @@ def plot_log_hypervolume_improvement(
 
 
 def plot_elapsed_time(
-        elapsed_time: list[float],
+        mobo: Mobo,
         output_path: Path or None = None,
         batch_size: int = 1,  # Number of new X drawn per iteration
         show=False):
+
+    elapsed_time = mobo.get_elapsed_time()
+
     if output_path is None:
         output_path = Path.cwd() / "plot_elapsed_time.png"
 

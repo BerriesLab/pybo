@@ -6,7 +6,7 @@ This package provides multi-objective Bayesian optimization capabilities.
 
 from pybo.mobo.mobo import Mobo
 from pybo.constraints.output_constraints import *
-from pybo.mobo.samplers import *
+from pybo.samplers.samplers import *
 from pybo.utils.validators import *
 from . import utils
 

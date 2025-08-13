@@ -2,11 +2,11 @@ import os
 import torch
 from pathlib import Path
 from pybo.mobo.mobo import Mobo
-from pybo.mobo.samplers import Sampler
+from pybo.samplers.samplers import Sampler
 from pybo.utils.io import create_experiment_directory
 from pybo.utils.make_video import create_video_from_images
 from pybo.utils.types import AcquisitionFunctionType, SamplerType
-from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2_bak, plot_log_hypervolume_improvement, plot_elapsed_time, \
+from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     make_grid
 from pybo.objectives.binh_and_korn import BinhAndKornMCMultiOutputObjective
 
@@ -108,7 +108,7 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
         mobo.save_dataset_to_csv(output_path=Path.cwd() / f"dataset_{i}.csv")
 
-        plot_multi_objective_from_RN_to_R2_bak(
+        plot_multi_objective_from_RN_to_R2(
             mobo=mobo,
             title="Binh and Korn Test Problem",
             f1_label="Binh",
@@ -123,11 +123,11 @@ def main(n_samples=64, q: int = 1, ):
             output_path=Path.cwd() / f"pareto_front_{i}.png"
         )
         plot_log_hypervolume_improvement(
-            hv=hypervolume_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"hvi{i}.png"
         )
         plot_elapsed_time(
-            elapsed_time=elapsed_time_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"elapsed_time{i}.png"
         )
 

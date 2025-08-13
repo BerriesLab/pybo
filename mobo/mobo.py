@@ -1,5 +1,8 @@
+import json
 import pickle
-import torch
+from enum import Enum
+from datetime import datetime
+
 import warnings
 import time
 import glob
@@ -9,37 +12,45 @@ from pathlib import Path
 import botorch
 import gpytorch
 import numpy as np
+
 from botorch.exceptions import (
     BadInitialCandidatesWarning,
     InputDataWarning,
     OptimizationWarning,
 )
 from botorch.exceptions.warnings import NumericsWarning
+from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import SobolQMCNormalSampler
-from botorch.utils.multi_objective import is_non_dominated, Hypervolume
-from botorch.utils.multi_objective.box_decompositions import (
-    FastNondominatedPartitioning
-)
-from botorch.utils.transforms import normalize
-from gpytorch.constraints import GreaterThan
-
-from pybo.utils.cuda import get_device, get_supported_dtype
-from pybo.utils.types import TorchDeviceType
+from botorch.utils.multi_objective import is_non_dominated, Hypervolume, get_chebyshev_scalarization
+from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
+from botorch.acquisition import (
+    qNoisyExpectedImprovement, GenericMCObjective
+)
 from botorch.acquisition.multi_objective import (
     qExpectedHypervolumeImprovement,
     qNoisyExpectedHypervolumeImprovement,
     qLogExpectedHypervolumeImprovement,
     qLogNoisyExpectedHypervolumeImprovement,
 )
+from botorch.utils.transforms import normalize
+from botorch.utils.sampling import sample_simplex
+
+from gpytorch.constraints import GreaterThan
+
+from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
+from utils import AcquisitionFunctionType, SamplerType
+from utils.cuda import get_device, get_supported_dtype
+from utils.validators import *
+
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
-from pybo.utils.validators import *
 
 
 class Mobo:
+
     """ A wrapper around BoTorch for Multi Objective Bayesian Optimization. Note that, similarly to BoTorch,
     this class is designed to work with maximization problems only. For maximization problems, the objective function
     must be negated.
@@ -48,258 +59,325 @@ class Mobo:
         - The model is always fit to the true data.
         - The acquisition function always maximizes.
         - The objective transformation (custom class) is the only place where negation for minimization happens."""
-
     def __init__(
             self,
             experiment_name: str,
             device: torch.device,
             dtype: torch.device.type,
+            objective: Callable,
             X: torch.Tensor | None = None,
             Yobj: torch.Tensor | None = None,
             Yobj_var: torch.Tensor | None = None,
             Ycon: torch.Tensor | None = None,
             Ycon_var: torch.Tensor | None = None,
-            bounds: torch.Tensor | None = None,
-            objective: Callable | None = None,
+            # bounds: torch.Tensor | None = None,
             output_constraints: list[Callable] | None = None,
             input_constraints: list[Callable] | None = None,
-            acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qEHVI,
+            acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qNEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
-            mc_samples: int = 1024,
+            mc_samples: int = 256,
             raw_samples: int = 512,
-            n_acqf_opt_iter: int = 500,
-            max_n_acqf_opt_restarts: int = 10,
-            max_attempts: int = 100,
+            n_acqf_opt_iter: int = 200,
+            n_acqf_opt_restarts: int = 1,
+            n_model_fit_restarts: int = 10,
+            n_optim_loop_attempts: int = 10,
     ):
 
-        # Validate input arguments
-        validate_experiment_name(experiment_name)
-        validate_X(X)
-        validate_Yobj(Yobj)
-        validate_Yobj_var(Yobj_var)
-        validate_Ycon(Ycon)
-        validate_Ycon_var(Ycon_var)
-        validate_bounds(bounds)
-        validate_objective(objective)
-        validate_constraints(output_constraints)
-        validate_constraints(input_constraints)
-        validate_acquisition_function(acquisition_function_type)
-        validate_sampler_type(sampler_type)
-        validate_batch_size(batch_size)
-        validate_mc_samples(mc_samples)
-        validate_raw_samples(raw_samples)
-        validate_n_acqf_opt_iter(n_acqf_opt_iter)
-        validate_max_n_acqf_opt_restarts(max_n_acqf_opt_restarts)
-
         # Experiment Name Attributes
-        self._experiment_name = experiment_name  # A name used when saving results to file
-        self._datetime = datetime.datetime.now()  # A datetime stamp used when saving results to file
+        self.experiment_name = experiment_name  # A name used when saving results to file
+        self.datetime = datetime.datetime.now()  # A datetime stamp marking the instant of the object's instantiation
 
         # Device Attributes
-        self._device = device if device is not None else get_device()
-        self._dtype = dtype if dtype is not None else get_supported_dtype(self._device)
+        self.device = device if device is not None else get_device()
+        self.dtype = dtype if dtype is not None else get_supported_dtype(self._device)
 
         # Problem Attributes
-        self._X: torch.Tensor = X.to(self._device, self._dtype) if X is not None else None  # Input variables
-        self._Yobj: torch.Tensor = Yobj.to(self._device, self._dtype) if Yobj is not None else None
-        self._Ycon: torch.Tensor = Ycon.to(self._device, self._dtype) if Ycon is not None else None
-        self._Yobj_var: torch.Tensor = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
-        self._Ycon_var: torch.Tensor = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
+        self.X: torch.Tensor = X
+        self.Yobj: torch.Tensor = Yobj
+        self.Ycon: torch.Tensor = Ycon
+        self.Yobj_var: torch.Tensor = Yobj_var
+        self.Ycon_var: torch.Tensor = Ycon_var
 
-        # Observed output_constraints variables
-        self._bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # A '2 x d' tensor of lower and upper bounds
-        self._acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
-        self._acquisition_function_instance = None  # Instance of the acquisition function - instantiated within the optimization loop
-        self._sampler_type = sampler_type  # Type of sampler used for initialization and acquisition function optimization
-        self._sampler_instance = None  # Instance of the sampler - instantiated within the optimization loop
-        self._objective = objective  # The ground truth (multi)objective function
-        self._output_constraints = output_constraints  # The functional output_constraints
-        self._input_constraints = input_constraints  # The functional input_constraints
-        self._n_acqf_opt_iter = n_acqf_opt_iter  # Number of iterations for acquisition function optimization
-        self._max_n_acqf_opt_restarts = max_n_acqf_opt_restarts  # Max number of restarts for acquisition function optimization
-        self._max_attempts = max_attempts  # Max number of optimization attempts if new X does not satisfy input constraints
-        self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
-        self._num_mc_samples = mc_samples  # Number of samples for initialization and acquisition function optimization
-        self._num_raw_samples = raw_samples  # Number of samples for acquisition function optimization
-        self._pareto_front_mask = None
-        self._feasible_observations_mask = None
+        # Optimization attributes
+        # self.bounds: torch.Tensor = bounds.to(self._device, self._dtype)  # A '2 x d' tensor of lower and upper bounds
+        self.acquisition_function_type = acquisition_function_type  # Type of acquisition function used for optimization
+        self.sampler_type = sampler_type  # Type of sampler used for initialization and acquisition function optimization
+        self.objective = objective  # The ground truth (multi)objective function
+        self.output_constraints = output_constraints  # The functional output_constraints
+        self.input_constraints = input_constraints  # The functional input_constraints
+        self.n_acqf_opt_iter = n_acqf_opt_iter  # Number of iterations for acquisition function optimization
+        self.n_acqf_opt_restarts = n_acqf_opt_restarts  # Number of acquisition function optimization restarts
+        self.n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
+        self.optim_loop_attempts = n_optim_loop_attempts  # Max number of optimization attempts if new X does not satisfy input constraints
+        self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
+        self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
+        self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
+
+        self.acquisition_function_list: list or None = None
 
         # State Attributes
-        self._model: ModelListGP | None = None
-        self._mlls: list[ExactMarginalLogLikelihood] | list = []
-        self._pareto_front: torch.Tensor | None = None
-        self._pareto_mask: torch.Tensor | None = None
-        self._ref_point: torch.Tensor | None = None
-        self._new_X: torch.Tensor | None = None
+        self._ref_point = None
+        self._model = None
+        self._mll: SumMarginalLogLikelihood | None = None
+        self.new_X: torch.Tensor | None = None
+        self._partitioning: NondominatedPartitioning | None = None
+        self._acquisition_function_instance = None  # Instance of the acquisition function
+        self._sampler_instance = None  # Instance of the sampler
+
 
         # Metrics
-        self._hypervolume: float | None = None
-        self._elapsed_time: float | None = None
+        self.hypervolume: list[float] = []
+        self.elapsed_time: list[float] = []
 
     """ Setters and getters """
 
-    def set_experiment_name(self, name: str):
+    # === Pickling helper ===
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # List attributes you want to exclude from pickling
+        attrs_to_exclude = [
+            '_acquisition_function_instance',
+            "_sampler_instance",
+            "_acq_func_list"
+        ]
+        for attr in attrs_to_exclude:
+            state.pop(attr, None)  # remove if present
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Re-initialize excluded attributes if needed
+        self._transient = None
+
+    # === Properties with validation ===
+    @property
+    def experiment_name(self):
+        return self._experiment_name
+
+    @experiment_name.setter
+    def experiment_name(self, name: str):
         if not isinstance(name, str):
             raise ValueError("Experiment name must be a string.")
         self._experiment_name = name
 
-    def get_experiment_name(self):
-        return self._experiment_name
-
-    def set_datetime(self, date_time: datetime.datetime):
-        validate_datetime(date_time)
-        self._datetime = date_time
-
-    def get_datetime(self):
+    @property
+    def datetime(self):
         return self._datetime
 
-    def set_X(self, X: torch.Tensor):
-        validate_X(X)
-        self._X = X.to(self._device, self._dtype)
+    @datetime.setter
+    def datetime(self, dt: datetime):
+        validate_datetime(dt)
+        self._datetime = dt
 
-    def get_X(self):
+
+    # === DATA properties ===
+    @property
+    def X(self):
         return self._X
 
-    def set_Yobj(self, Yobj: torch.Tensor):
-        validate_Yobj(Yobj)
-        self._Yobj = Yobj.to(self._device, self._dtype)
+    @X.setter
+    def X(self, X: torch.Tensor | None):
+        validate_X(X)
+        self._X = X.to(self._device, self._dtype) if X is not None else None
 
-    def get_Yobj(self) -> torch.Tensor | None:
+    @property
+    def Yobj(self):
         return self._Yobj
 
-    def set_Yobj_var(self, Yobj_var: torch.Tensor | None = None):
-        validate_Yobj_var(Yobj_var)
-        self._Yobj_var = (
-            Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
-        )
+    @Yobj.setter
+    def Yobj(self, Yobj: torch.Tensor):
+        validate_Yobj(Yobj)
+        self._Yobj = Yobj.to(self._device, self._dtype) if Yobj is not None else None
 
-    def get_Yobj_var(self):
+    @property
+    def Yobj_var(self):
         return self._Yobj_var
 
-    def set_Ycon(self, Ycon: torch.Tensor | None):
+    @Yobj_var.setter
+    def Yobj_var(self, Yobj_var: torch.Tensor | None = None):
+        validate_Yobj_var(Yobj_var)
+        self._Yobj_var = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
+
+    @property
+    def Ycon(self):
+        return self._Ycon
+
+    @Ycon.setter
+    def Ycon(self, Ycon: torch.Tensor | None):
         validate_Ycon(Ycon)
         self._Ycon = Ycon.to(self._device, self._dtype) if Ycon is not None else None
 
-    def get_Ycon(self):
-        return self._Ycon
-
-    def set_Ycon_var(self, Ycon_var: torch.Tensor | None = None):
-        validate_Yobj_var(Ycon_var)
-        self._Ycon_var = (
-            Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
-        )
-
-    def get_Ycon_var(self):
+    @property
+    def Ycon_var(self):
         return self._Ycon_var
 
-    def get_new_X(self):
+    @Ycon_var.setter
+    def Ycon_var(self, Ycon_var: torch.Tensor | None = None):
+        validate_Yobj_var(Ycon_var)
+        self._Ycon_var = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
+
+    @property
+    def new_X(self):
         return self._new_X
 
-    def set_bounds(self, bounds: torch.Tensor):
-        validate_bounds(bounds)
-        self._bounds = bounds.to(self._device, self._dtype)
+    @new_X.setter
+    def new_X(self, new_X: torch.Tensor):
+        self._new_X = new_X
 
-    def get_bounds(self):
-        return self._bounds
+    # @property
+    # def bounds(self):
+    #     return self._bounds
+    #
+    # @bounds.setter
+    # def bounds(self, bounds: torch.Tensor):
+    #     validate_bounds(bounds)
+    #     self._bounds = bounds.to(self._device, self._dtype)
 
-    def get_device(self):
+
+    # === CUDA properties ===
+    @property
+    def device(self):
         return self._device
 
-    def set_device(self, device: TorchDeviceType):
+    @device.setter
+    def device(self, device):
         self._device = torch.device(device)
 
-    def set_dtype(self):
-        self._dtype = get_supported_dtype(self._device)
-
-    def get_dtype(self):
+    @property
+    def dtype(self):
         return self._dtype
 
-    def get_model(self):
+    @dtype.setter
+    def dtype(self, dtype=None):
+        self._dtype = get_supported_dtype(self._device)
+
+
+    # === STATE properties ===
+    @property
+    def model(self):
         return self._model
 
-    def set_acquisition_function(self, acquisition_function_type: AcquisitionFunctionType):
-        validate_acquisition_function(acquisition_function_type)
-        self._acquisition_function_type = acquisition_function_type
+    @property
+    def mll(self):
+        return self._mll
 
-    def get_acquisition_function(self):
+    @property
+    def acquisition_function_type(self):
         return self._acquisition_function_type
 
-    def set_sampler_type(self, sampler_type: SamplerType):
+    @acquisition_function_type.setter
+    def acquisition_function_type(self, af_type):
+        validate_acquisition_function(af_type)
+        self._acquisition_function_type = af_type
+
+    @property
+    def sampler_type(self):
+        return self._sampler_type
+
+    @sampler_type.setter
+    def sampler_type(self, sampler_type):
         validate_sampler_type(sampler_type)
         self._sampler_type = sampler_type
 
-    def set_batch_size(self, batch_size: int):
-        """Set the number of candidates to be generated in each optimization step."""
+    @property
+    def batch_size(self):
+        return self._batch_size
+
+    @batch_size.setter
+    def batch_size(self, batch_size: int):
         validate_batch_size(batch_size)
         self._batch_size = batch_size
 
-    def get_batch_size(self):
-        return self._batch_size
-
-    def set_mc_samples(self, MC_samples: int):
-        validate_mc_samples(MC_samples)
-        self._num_mc_samples = MC_samples
-
-    def get_mc_samples(self):
+    @property
+    def num_mc_samples(self):
         return self._num_mc_samples
 
-    def set_raw_samples(self, raw_samples: int):
+    @num_mc_samples.setter
+    def num_mc_samples(self, mc_samples: int):
+        validate_mc_samples(mc_samples)
+        self._num_mc_samples = mc_samples
+
+    @property
+    def num_raw_samples(self):
+        return self._num_raw_samples
+
+    @num_raw_samples.setter
+    def num_raw_samples(self, raw_samples: int):
         validate_raw_samples(raw_samples)
         self._num_raw_samples = raw_samples
 
-    def get_raw_samples(self):
-        return self._num_raw_samples
 
-    def set_objective(self, objective: Callable or None):
+
+    @property
+    def objective(self):
+        return self._objective
+
+    @objective.setter
+    def objective(self, objective: Callable | None):
         validate_objective(objective)
         self._objective = objective
 
-    def get_objective(self):
-        return self._objective
-
-    def get_pareto(self):
+    @property
+    def pareto_front(self):
         return self._pareto_front
 
-    def get_pareto_front_mask(self):
+    @property
+    def pareto_front_mask(self):
         return self._pareto_front_mask
 
-    def get_feasible_observations_mask(self):
+    @property
+    def feasible_observations_mask(self):
         return self._feasible_observations_mask
 
-    def set_output_constraints(self, constraints: list[Callable] or None = None):
-        """Set non-linear output_constraints on the output domain (Y)."""
+    @property
+    def output_constraints(self):
+        return self._output_constraints
+
+    @output_constraints.setter
+    def output_constraints(self, constraints: list[Callable] | None = None):
         validate_constraints(constraints)
         self._output_constraints = constraints
 
-    def get_output_constraints(self):
-        return self._output_constraints
+    @property
+    def input_constraints(self):
+        return self._input_constraints
 
-    def set_input_constraints(self, constraints: list[Callable] or None = None):
-        """Set non-linear input_constraints on the input domain (X)."""
+    @input_constraints.setter
+    def input_constraints(self, constraints: list[Callable] | None = None):
         validate_constraints(constraints)
         self._input_constraints = constraints
 
-    def get_input_constraints(self):
-        return self._input_constraints
-
     def add_constraint(self, constraint: Callable):
-        validate_constraints([constraint,])
+        validate_constraints([constraint])
+        if self._output_constraints is None:
+            self._output_constraints = []
         self._output_constraints.append(constraint)
 
-    def get_hypervolume(self):
+    @property
+    def hypervolume(self):
         return self._hypervolume
 
-    def get_ref_point(self):
+    @hypervolume.setter
+    def hypervolume(self, hv: list[float]):
+        self._hypervolume = hv
+
+    @property
+    def ref_point(self):
         return self._ref_point
 
-    def get_elapsed_time(self):
+    @property
+    def elapsed_time(self):
         return self._elapsed_time
+
+    @elapsed_time.setter
+    def elapsed_time(self, t: list[float]):
+        self._elapsed_time = t
 
     """ Optimizer """
 
     def initialize_model(self, verbose=True):
-        """ Initialize Gaussian Process models for the objectives and constraints.
+        """ Initialize Gaussian Process model(s) for the objectives and constraints.
 
         This method prepares the training dataset by combining the objective and constraint
         observations (and optionally their variances). Then it creates one independent
@@ -310,15 +388,21 @@ class Mobo:
         Important: The GP model in BoTorch is a pure regression model: it simply fits the data
         it receives. It does not know or care about whether the model is for objectives to
         minimize or maximize. As such, the model must always and only receive the true, unnegated
-        objective values as training data. In other words, the model is always fit to the true data."""
+        objective values as training data. In other words, the model is always fit to the true data.
+
+        Note: by setting an input transform and an outcome transform, input (X) and output data (Y) are
+        transformed and untransformed accordingly across the whole optimization pipeline, including
+        the optimization of the acquisition function. For example, by setting an outcome transform to
+        standardization, the Ys are standardized before the optimization and unstandardized right after.
+        However, if a penalty is added in the forward method, this is not standardized properly and a
+        pre-factor (or scaling) results in different penalty weights."""
 
         if verbose:
             print("Initializing model... ", end="")
 
-        # Prepare dataset by concatenating the objectives
+        # Prepare dataset by concatenating the objectives and initialize models - one model
+        # for each objective (or observable)
         train_x, train_y, train_y_var = self.prepare_training_dataset()
-
-        # Initialize models - one model for each objective (or observable)
         models = []
         for i in range(0, train_y.shape[-1]):
             models.append(
@@ -326,7 +410,7 @@ class Mobo:
                     train_X=train_x,
                     train_Y=train_y[..., i: i + 1],
                     train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
-                    input_transform=Normalize(d=self._X.shape[-1], bounds=self._bounds),
+                    input_transform=Normalize(d=self._X.shape[-1], bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
                 )
@@ -376,35 +460,27 @@ class Mobo:
         if verbose:
             print("✓")
 
-    def compute_reference_point(self, verbose=True, buffer=0.1):
+    def compute_reference_point(self, verbose=True):
         """
-        Compute and set the reference point for hypervolume calculations.
+        Compute and set the reference point in the maximization space.
 
         The reference point is a key component in multi-objective optimization,
         representing a point in objective space that is dominated by all observed
         solutions. It is used to compute the hypervolume improvement metric.
 
-        This method sets the reference point only once (typically at the first iteration).
-        If the objective already provides a reference point (`self._objective.ref_point`),
-        that point is used directly. Otherwise, the reference point is automatically
-        computed based on observed objective values, with a small buffer added to ensure
-        it lies beyond the worst observed point.
+        This method sets the reference point only if the reference point is None
+        (typically at the first iteration). Note that the reference point must provide
+        explicitly by the objective ("self._objective.ref_point").
+        """
 
-        The method correctly handles whether the problem is a maximization or
-        minimization problem by using the `negate` flag in the objective:
-        - For maximization (negate=False), the reference point is set slightly worse
-          than the minimum observed objective values.
-        - For minimization (negate=True), the reference point is set slightly worse
-          than the maximum negated objective values (i.e., the worst true objective)."""
-        
         # The reference point is calculated only for the first iteration step
-        if isinstance(self._ref_point, torch.Tensor):
+        if isinstance(self.ref_point, torch.Tensor):
             return
 
         if verbose:
             print("Defining reference point... ", end="")
 
-        # The reference point must provided within the objective class.
+        # The reference point must be provided within the objective class.
         ref_point = getattr(self._objective, "ref_point", None)
         if ref_point is None:
             raise ValueError("Reference point must be defined.")
@@ -420,32 +496,32 @@ class Mobo:
             print("Initializing acquisition function... ", end="")
 
         if self._acquisition_function_type == AcquisitionFunctionType.qEHVI:
-            raise NotImplementedError("qEHVI is not yet implemented.")
-            # self._acquisition_function_instance = qExpectedHypervolumeImprovement(
-            #     model=self._model,
-            #     ref_point=self._ref_point,
-            #     partitioning=self._partitioning,
-            #     sampler=self._sampler_instance,
-            #     objective=self._objective,
-            #     constraints=self._output_constraints,
-            # )
+            self.initialize_partitioning()
+            self._acquisition_function_instance = qExpectedHypervolumeImprovement(
+                model=self._model,
+                ref_point=self._ref_point,
+                partitioning=self._partitioning,
+                sampler=self._sampler_instance,
+                objective=self._objective,
+                constraints=self._output_constraints,
+            )
 
         elif self._acquisition_function_type == AcquisitionFunctionType.qLogEHVI:
-            raise NotImplementedError("qLohEHVI is not yet implemented.")
-            # self._acquisition_function_instance = qLogExpectedHypervolumeImprovement(
-            #     model=self._model,
-            #     ref_point=self._ref_point,
-            #     partitioning=self._partitioning,
-            #     sampler=self._sampler_instance,
-            #     objective=self._objective,
-            #     constraints=self._output_constraints,
-            # )
+            self.initialize_partitioning()
+            self._acquisition_function_instance = qLogExpectedHypervolumeImprovement(
+                model=self._model,
+                ref_point=self._ref_point,
+                partitioning=self._partitioning,
+                sampler=self._sampler_instance,
+                objective=self._objective,
+                constraints=self._output_constraints,
+            )
 
         elif self._acquisition_function_type == AcquisitionFunctionType.qNEHVI:
             self._acquisition_function_instance = qNoisyExpectedHypervolumeImprovement(
                 model=self._model,
                 ref_point=self._ref_point,
-                X_baseline=normalize(self._X, self._bounds),
+                X_baseline=self._X,
                 sampler=self._sampler_instance,
                 prune_baseline=True,
                 objective=self._objective,
@@ -457,13 +533,58 @@ class Mobo:
                 qLogNoisyExpectedHypervolumeImprovement(
                     model=self._model,
                     ref_point=self._ref_point,
-                    X_baseline=normalize(self._X, self._bounds),
+                    X_baseline=self._X,
                     prune_baseline=True,
                     sampler=self._sampler_instance,
                     objective=self._objective,
                     constraints=self._output_constraints,
                 )
             )
+
+        elif self._acquisition_function_type == AcquisitionFunctionType.qEWNEHVI:
+            self._acquisition_function_instance = (
+                qExplorationWeightedNEHVI(
+                    model=self._model,
+                    ref_point=self._ref_point,
+                    X_baseline=self._X,
+                    prune_baseline=True,
+                    sampler=self._sampler_instance,
+                    objective=self._objective,
+                    constraints=self._output_constraints,
+                    exploration_weight=1.0,
+                )
+            )
+
+        elif self._acquisition_function_type == AcquisitionFunctionType.qDWNEHVI:
+            self._acquisition_function_instance = (
+                qDiversityWeightedNEHVI(
+                    model=self._model,
+                    ref_point=self._ref_point,
+                    X_baseline=self._X,
+                    prune_baseline=True,
+                    sampler=self._sampler_instance,
+                    objective=self._objective,
+                    constraints=self._output_constraints,
+                    min_dist_radius = 1.0,
+                    distance_penalty_weight = 1.0,
+                )
+            )
+
+        elif self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
+            with torch.no_grad():
+                pred = self._model.posterior(self._X).mean
+            self.__setattr__(__name="_acquisition_function_list", __value=[])
+            for _ in range(self._batch_size):
+                weights = sample_simplex(self.objective.num_objectives, device=self._device, dtype=self._dtype).squeeze()
+                objective = GenericMCObjective(get_chebyshev_scalarization(weights=weights, Y=pred))
+                acq_func = qNoisyExpectedImprovement(
+                    model=self._model,
+                    objective=objective,
+                    X_baseline=normalize(self._X, self.objective.bounds),
+                    sampler=self._sampler_instance,
+                    prune_baseline=True,
+                )
+                self._acquisition_function_list.append(acq_func)
 
         else:
             raise ValueError(
@@ -473,17 +594,11 @@ class Mobo:
         if verbose:
             print("✓")
 
-    def initialize_partitioning(self, verbose=True):
-        raise NotImplementedError("Partitioning is not yet implemented.")
-        # if verbose:
-        #      print("Initializing partitioning function... ", end="")
-        #
-        # self._partitioning = FastNondominatedPartitioning(
-        #     ref_point=self._ref_point, Y=self._Yobj
-        # )
-        #
-        # if verbose:
-        #     print(" Done.")
+    def initialize_partitioning(self):
+        with torch.no_grad():
+            # TODO: when using qEHVI, use non_dominated_partitioning and pass only feasible Ys
+            prediction = self._model.posterior(normalize(self._X, self.objective.bounds)).mean
+        self._partitioning = NondominatedPartitioning(ref_point=self._ref_point, Y=prediction)
 
     def fit_model(self, restart_on_error=True, verbose=True):
         if not isinstance(self._model, ModelListGP):
@@ -501,48 +616,45 @@ class Mobo:
                 break  # Exit the inner loop on success
 
             except Exception as e:
-                if restart_on_error and restart_count < self._max_n_acqf_opt_restarts:
+                if restart_on_error and restart_count < self.n_model_fit_restarts:
                     print("x")
                     print(
-                        f"Restarting fitting... (Attempt {restart_count + 1}/{self._max_n_acqf_opt_restarts})"
+                        f"Restarting fitting... (Attempt {restart_count + 1}/{self.n_model_fit_restarts})"
                     )
                     restart_count += 1
                 else:
                     raise e  # Raise if not restarting or max restarts reached
         return None
 
-    def optimize_acquisition_function_loop(self, verbose=True):
-        if self._input_constraints:
-            for attempt in range(1, self._max_attempts + 1):
-                if verbose:
-                    if attempt > 1:
-                        print("The new X does not satisfy the input constraints\n")
-                    print(f"Attempt {attempt}/{self._max_attempts}. Optimizing acquisition function... ", end="")
-                self.optimize_acquisition_function()
-                if verbose:
-                    print("✓")
+    def optimize_acquisition_function(self, verbose=True):
+        if verbose:
+            print(f"Optimizing acquisition function... ", end="")
 
-                if all(torch.all(c(self._new_X) < 0) for c in self._input_constraints):
-                    break
-            else:
-                raise ValueError(f"Could not find a new X that satisfies all input constraints after {self._max_attempts} attempts.")
+        if self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
+            candidates, _ = optimize_acqf_list(
+                acq_function_list=self._acquisition_function_list,
+                bounds=self.objective.bounds,
+                num_restarts=self.n_acqf_opt_restarts,
+                raw_samples=self._num_raw_samples,
+                options={"batch_limit": 5, "maxiter": self.n_acqf_opt_iter},
+            )
         else:
-            if verbose:
-                print("Optimizing acquisition function... ", end="")
-            self.optimize_acquisition_function()
-            if verbose:
-                print("✓")
+            candidates, _ = optimize_acqf(
+                acq_function=self._acquisition_function_instance,
+                bounds=self.objective.bounds,
+                q=self._batch_size,
+                num_restarts=self.n_acqf_opt_restarts,
+                raw_samples=self._num_raw_samples,
+                options={"maxiter": self.n_acqf_opt_iter, "disp": True},
+                sequential=True,
+                equality_constraints=None,  #self.objective.linear_equality_constraints,
+                inequality_constraints=None,  #self.objective.linear_inequality_constraints,
+                nonlinear_inequality_constraints=None,  #self.objective.non_linear_inequality_constraints,
+            )
+        self._new_X = candidates.detach()
 
-    def optimize_acquisition_function(self):
-        self._new_X, _ = optimize_acqf(
-            acq_function=self._acquisition_function_instance,
-            bounds=self._bounds,
-            q=self._batch_size,
-            num_restarts=self._max_n_acqf_opt_restarts,
-            raw_samples=self._num_raw_samples,
-            options={"maxiter": self._n_acqf_opt_iter, "disp": True},
-            sequential=True,
-        )
+        if verbose:
+            print("✓")
 
     def compute_acquisition_function_value_at_X(self,X: torch.Tensor, verbose=True):
         acq_val = self._acquisition_function_instance(X)
@@ -553,6 +665,13 @@ class Mobo:
         posterior = self._model.posterior(X)
         if verbose:
             print(f"Posterior mean at {X.detach().cpu().numpy()}: {posterior.mean.detach().cpu().numpy()}")
+        return posterior
+
+    def compute_posterior_variance_at_X(self, X: torch.Tensor, verbose=True):
+        posterior_var = self._model.posterior(X).variance
+        if verbose:
+            print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
+        return posterior_var
 
     def compute_pareto_front(self, verbose=True):
         """
@@ -617,20 +736,18 @@ class Mobo:
             hv = torch.nan
             if verbose:
                 print("✗ Cannot compute hypervolume. No Pareto front found.")
-            self._hypervolume = hv
+            self._hypervolume.append(hv)
             return
 
         # Negate only the dimensions that are minimization objectives
         pareto_front = self._pareto_front.clone()
         pareto_front[..., self._objective.negate] *= -1
-        # ref_point = self._objective.ref_point.clone()
-        # ref_point[..., self._objective.negate] *= -1
         hv = Hypervolume(self._ref_point).compute(pareto_front)
-        self._hypervolume = hv
+        self._hypervolume.append(hv)
 
         if verbose:
             print("✓")
-            print(f"Hypervolume = {self._hypervolume:>4.2f}")
+            print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
 
     def optimize(self, verbose=True):
 
@@ -645,13 +762,12 @@ class Mobo:
         self.compute_reference_point(verbose=verbose)
         self.initialize_sampler(verbose=verbose)
         self.fit_model(verbose=verbose)
-        if self._acquisition_function_type.value in AcquisitionFunctionType.require_partitioning():
-            self.initialize_partitioning(verbose=verbose)
         self.initialize_acquisition_function(verbose=verbose)
-        self.optimize_acquisition_function_loop(verbose=verbose)
+        self.optimize_acquisition_function(verbose=verbose)
         t1 = time.monotonic()
-        self._elapsed_time = t1 - t0
-        print(f"Calculation Time = {t1 - t0:>4.2f} s")
+        self._elapsed_time.append(t1 - t0)
+        if verbose:
+            print(f"Calculation Time = {t1 - t0:>4.2f} s")
 
     def update_XY(
             self,
@@ -663,21 +779,26 @@ class Mobo:
     ) -> None:
 
         if new_X is not None:
+            new_X = new_X.to(self._device, self._dtype)
             self._X = torch.cat([self._X, new_X], dim=0)
         if new_Yobj is not None:
+            new_Yobj = new_Yobj.to(self._device, self._dtype)
             self._Yobj = torch.cat([self._Yobj, new_Yobj], dim=0)
         if new_Yobj_var is not None:
+            new_Yobj_var = new_Yobj_var.to(self._device, self._dtype)
             self._Yobj_var = torch.cat([self._Yobj_var, new_Yobj_var], dim=0)
         if new_Ycon is not None:
+            new_Ycon = new_Ycon.to(self._device, self._dtype)
             self._Ycon = torch.cat([self._Ycon, new_Ycon], dim=0)
         if new_Ycon_var is not None:
+            new_Ycon_var = new_Ycon_var.to(self._device, self._dtype)
             self._Ycon_var = torch.cat([self._Ycon_var, new_Ycon_var], dim=0)
 
     """ I/O """
 
-    def to_file(self, output_path=None):
+    def to_file(self, output_path: Path = None):
         if output_path is None:
-            output_path = Path.cwd() / "mobo.dat"  # compose_model_filename(iteration_number=self._iteration_number)
+            output_path = Path.cwd() / "mobo.dat"
         # Ensure the parent directory exists
         path_obj = Path(output_path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -701,6 +822,76 @@ class Mobo:
 
         XY = XY.detach().cpu().numpy()
         np.savetxt(output_path, XY, delimiter=",", comments="")
+
+    def to_json(self, output_path: Path = None):
+        """
+         Serializes the serializable attributes of the Experiment instance to a JSON string.
+
+         This method iterates through the instance's attributes (those starting with '_')
+         and converts them to a JSON-compatible format. It handles:
+         - datetime objects: converted to ISO 8601 strings.
+         - torch.Tensor objects: converted to Python lists.
+         - torch.device objects: converted to string representations (e.g., 'cpu', 'cuda:0').
+         - torch.dtype objects: converted to their string name (e.g., 'float64').
+         - Enum objects: converted to their string value.
+         - Basic Python types (int, float, str, bool, None, lists of basic types):
+           serialized directly.
+         - Complex objects (like Callables, ModelListGP, ExactMarginalLogLikelihood instances)
+           and lists containing them are skipped as they are not directly JSON serializable.
+
+         Returns:
+             str: A JSON string representation of the serializable attributes,
+                  formatted with an indent of 4 for readability.
+         """
+
+        if output_path is None:
+            output_path = Path.cwd() / "model.json"
+
+        serializable_data = {}
+
+        def serialize_value(value):
+            """Helper function to recursively serialize individual values."""
+            if isinstance(value, datetime.datetime):
+                return value.isoformat()
+            elif isinstance(value, torch.Tensor):
+                return value.tolist()
+            elif isinstance(value, torch.device):
+                return str(value)
+            elif isinstance(value, torch.dtype):
+                return str(value).split('.')[-1]
+            elif isinstance(value, Enum):
+                return value.value
+            elif isinstance(value, (int, float, str, bool)) or value is None:
+                return value
+            elif isinstance(value, list):
+                if all(isinstance(item, (int, float, str, bool, type(None))) for item in value):
+                    return value
+                else:
+                    return None  # Skip complex lists
+            elif isinstance(value, dict):
+                if all(isinstance(k, str) for k in value.keys()):
+                    serialized_dict = {}
+                    for k, v in value.items():
+                        serialized_item = serialize_value(v)
+                        if serialized_item is not None:
+                            serialized_dict[k] = serialized_item
+                    return serialized_dict
+                else:
+                    return None  # Skip dicts with non-string keys
+            else:
+                return None  # Skip unhandled types
+
+        # Iterate over all instance attributes
+        for key, value in self.__dict__.items():
+            json_key = key.lstrip('_')
+            serialized_value = serialize_value(value)
+            if serialized_value is not None:
+                serializable_data[json_key] = serialized_value
+            # else: skip
+
+        # Save to disk
+        with open(output_path, "w") as file:
+            json.dump(serializable_data, file, indent=4)
 
     def load_dataset_from_csv(
             self,

@@ -2,7 +2,7 @@ import os
 import torch
 from pathlib import Path
 from pybo.mobo.mobo import Mobo
-from pybo.mobo.samplers import Sampler
+from pybo.samplers.samplers import Sampler
 from pybo.utils.io import create_experiment_directory
 from pybo.utils.make_video import create_video_from_images
 from pybo.utils.types import AcquisitionFunctionType, SamplerType
@@ -59,7 +59,7 @@ def main(n_samples=64, q: int = 1, ):
         Yobj_var=None,
         Ycon=None,
         Ycon_var=None,
-        bounds=objective.bounds,
+        # bounds=objective.bounds,
         objective=objective,
         output_constraints=None,
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
@@ -78,8 +78,8 @@ def main(n_samples=64, q: int = 1, ):
 
         """ Optimize and get new X """
         mobo.optimize()
-        elapsed_time_list.append(mobo.get_elapsed_time())
-        new_X = mobo.get_new_X()
+        elapsed_time_list.append(mobo.elapsed_time)
+        new_X = mobo.new_X
         print(f"New X: {new_X.detach().cpu().numpy()}")
 
         """ Evaluate posterior and acquisition function at new X """
@@ -94,7 +94,7 @@ def main(n_samples=64, q: int = 1, ):
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
-        hypervolume_list.append(mobo.get_hypervolume())
+        hypervolume_list.append(mobo.hypervolume)
 
         """ Save"""
         mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
@@ -116,11 +116,11 @@ def main(n_samples=64, q: int = 1, ):
             output_path=Path.cwd() / f"pareto_front_{i}.png"
         )
         plot_log_hypervolume_improvement(
-            hv=hypervolume_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"hvi{i}.png"
         )
         plot_elapsed_time(
-            elapsed_time=elapsed_time_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"elapsed_time{i}.png"
         )
 

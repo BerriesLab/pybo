@@ -1,0 +1,13 @@
+# Virtual environment
+venv/
+env/
+.env
+
+# Virtual environment cleanup
+.venv_cleanup/
+# IDE-specific files
+.vscode/
+.idea/
+
+# Data
+/data/

@@ -142,3 +142,13 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputObjective, ABC):
             selected = selected.index_select(-1, self.outcomes)
         selected[..., self.negate] *= -1
         return selected
+
+    # TODO: implement the following as methods or properties
+    def linear_equality_constraints(self) -> Tensor:
+        raise ValueError("No linear equality constraints for this objective.")
+
+    def linear_inequality_constraints(self) -> Tensor:
+        raise ValueError("No linear inequality constraints for this objective.")
+
+    def nonlinear_inequality_constraints(self) -> Tensor:
+        raise ValueError("No nonlinear inequality constraints for this objective.")

@@ -2,7 +2,7 @@ import os
 import torch
 from pathlib import Path
 from pybo.mobo.mobo import Mobo
-from pybo.mobo.samplers import Sampler
+from pybo.samplers.samplers import Sampler
 from pybo.objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from pybo.constraints.output_constraints import Identity
 from pybo.utils.io import create_experiment_directory
@@ -122,11 +122,11 @@ def main(n_samples=64, q: int = 1, ):
             output_path=Path.cwd() / f"pareto_front_{i}.png"
         )
         plot_log_hypervolume_improvement(
-            hv=hypervolume_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"hvi{i}.png"
         )
         plot_elapsed_time(
-            elapsed_time=elapsed_time_list,
+            mobo=mobo,
             output_path=Path.cwd() / f"elapsed_time{i}.png"
         )
 
