@@ -1,14 +1,14 @@
 import os
 import torch
 from pathlib import Path
-from pybo.mobo.mobo import Mobo
-from pybo.samplers.samplers import Sampler
-from pybo.objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
-from pybo.constraints.output_constraints import Identity
-from pybo.utils.io import create_experiment_directory
-from pybo.utils.make_video import create_video_from_images
-from pybo.utils.types import AcquisitionFunctionType, SamplerType
-from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
+from mobo.mobo import Mobo
+from samplers.samplers import Sampler
+from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
+from constraints.output_constraints import Identity
+from utils.io import create_experiment_directory
+from utils.make_video import create_video_from_images
+from utils.types import AcquisitionFunctionType, SamplerType
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     make_grid
 
 """ Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
@@ -17,6 +17,7 @@ obtained with this script against the official BoTorch tutorial. """
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
+
 
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
@@ -67,7 +68,7 @@ def main(n_samples=64, q: int = 1, ):
         Ycon_var=None,
         bounds=objective.bounds,
         objective=objective,
-        output_constraints=[Identity(index=-1)],
+        # output_constraints=[Identity(index=-1)],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         raw_samples=256,

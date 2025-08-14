@@ -5,7 +5,7 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from matplotlib.tri import Triangulation
 import matplotlib as mpl
-from pybo.mobo.mobo import Mobo
+from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
 
 

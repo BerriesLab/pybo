@@ -41,7 +41,6 @@ class AvagamaMCMultiOutputConstrainedObjective(MCMultiOutputObjective, ABC):
         self.outcomes = [0, 1]
         self.num_outcomes = 2
         self.max_hv: float or None = None
-
         # Bounds validation and registration
         if len(self.bounds) != self.dim:
             raise InputDataError(

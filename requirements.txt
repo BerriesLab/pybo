@@ -7,3 +7,5 @@ scikit-optimize~=0.10.2
 scikit-learn~=1.6.1
 gpytorch~=1.14
 opencv-python~=4.11.0.86
+torch~=2.8.0
+sympy~=1.14.0

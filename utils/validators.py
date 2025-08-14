@@ -7,7 +7,7 @@ from collections.abc import Callable
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.test_functions.base import MultiObjectiveTestProblem
 
-from pybo.utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
+from utils.types import AcquisitionFunctionType, OptimizationProblemType, SamplerType
 
 
 def validate_experiment_name(name: str):

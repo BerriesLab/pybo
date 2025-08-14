@@ -1,7 +1,5 @@
 import torch
 import math
-
-from sympy import false
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
@@ -9,41 +7,34 @@ from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputD
 from botorch.utils.transforms import normalize_indices
 
 
-class C2DTLZ2MCMultiOutputObjective(MCMultiOutputObjective, ABC):
-    r"""
-    DLTZ2 test problem.
+class BraninCurrinMCMultiOutputObjective(MCMultiOutputObjective, ABC):
+    """
+    Two objective problem composed of the Branin and Currin functions.
 
-    d-dimensional problem evaluated on `[0, 1]^d`:
+    Note:
+    - Branin Function: Originally intended for minimization.
+    - Currin Exponential Function: Originally intended for maximization.
+    - Both the Branin and Currin functions are positive on their domain.
 
-        f_0(x) = (1 + g(x)) * cos(x_0 * pi / 2)
-        f_1(x) = (1 + g(x)) * sin(x_0 * pi / 2)
-        g(x) = \sum_{i=m}^{d-1} (x_i - 0.5)^2
-
-    The pareto front is given by the unit hypersphere \sum{i} f_i^2 = 1.
-    Note: the pareto front is completely concave. The goal is to minimize
-    both objectives.
-
-    The constraint computes the minimum distance to two types of structures in objective space:
-    Notes: negative constraint values imply feasibility in botorch.
+    For testing purposes, and following BoTorch authors implementation,
+    both test functions are intended for minimization, against their original
+    nature. Therefore, here it is important to negate both.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype,):
         super().__init__()
         self.device = device
         self.dtype = dtype
-        self.dim = 4
+        self.dim = 2
         self.num_objectives = 2
-        self.num_constraints = 1
+        self.num_constraints = 0
         self.negate = [True, True]
-        self.ref_point = [1.1 for _ in range(self.num_objectives)]
+        self.ref_point = 18.0, 6.0
         self.noise_std: float or list[float] or None = None
-        self.bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
+        self.bounds = [(0.0, 1.0), (0.0, 1.0)]
         self.outcomes = [0, 1]
         self.num_outcomes = 2
-        self.max_hv = 0.3996406303723544
-
-        self.k = self.dim - self.num_objectives + 1
-        self._r = 0.2
+        self.max_hv = 59.36011874867746  # this is approximated using NSGA-II
 
         # Bounds validation and registration
         if len(self.bounds) != self.dim:
@@ -83,6 +74,34 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputObjective, ABC):
         self.outcomes = torch.tensor(self.outcomes, device=self.device)
         self.bounds = torch.tensor(self.bounds).transpose(-1, -2)
 
+    @staticmethod
+    def _branin(X: Tensor) -> Tensor:
+        t1 = (
+            X[..., 1]
+            - 5.1 / (4 * math.pi**2) * X[..., 0].pow(2)
+            + 5 / math.pi * X[..., 0]
+            - 6
+        )
+        t2 = 10 * (1 - 1 / (8 * math.pi)) * torch.cos(X[..., 0])
+        return t1.pow(2) + t2 + 10
+
+    def _rescaled_branin(self, X: Tensor) -> Tensor:
+        """ For a visual reference visit: https://www.sfu.ca/~ssurjano/branin.html"""
+        # return to Branin bounds
+        x_0 = 15 * X[..., 0] - 5
+        x_1 = 15 * X[..., 1]
+        return self._branin(torch.stack([x_0, x_1], dim=-1))
+
+    @staticmethod
+    def _currin(X: Tensor) -> Tensor:
+        """ For a visual reference visit: https://www.sfu.ca/~ssurjano/curretal88exp.html """
+        x_0 = X[..., 0]
+        x_1 = X[..., 1]
+        factor1 = 1 - torch.exp(-1 / (2 * x_1))
+        numer = 2300 * x_0.pow(3) + 1900 * x_0.pow(2) + 2092 * x_0 + 60
+        denom = 100 * x_0.pow(3) + 500 * x_0.pow(2) + 4 * x_0 + 20
+        return factor1 * numer / denom
+
     # Optional — not required by MCMultiOutputObjective
     def evaluate_true(self, X: Tensor) -> Tensor:
         """ Evaluate the true (noise-free, unnegated) objective functions at the given input locations.
@@ -90,41 +109,10 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputObjective, ABC):
         sign flipping. It serves as the ground-truth evaluation of the problem and is typically used for benchmarking,
         visualization (e.g., plotting the true Pareto front), or performance assessment of optimization algorithms.
         It should never be used for optimization as it does not take into account any possibly necessary sign flip. """
-        X_m = X[..., -self.k:]
-        g_X = (X_m - 0.5).pow(2).sum(dim=-1)
-        g_X_plus1 = 1 + g_X
-        fs = []
-        pi_over_2 = math.pi / 2
-        for i in range(self.num_objectives):
-            idx = self.num_objectives - 1 - i
-            f_i = g_X_plus1.clone()
-            f_i *= torch.cos(X[..., :idx] * pi_over_2).prod(dim=-1)
-            if i > 0:
-                f_i *= torch.sin(X[..., idx] * pi_over_2)
-            fs.append(f_i)
-        return torch.stack(fs, dim=-1)
-
-    def evaluate_slack_true(self, X: Tensor) -> Tensor:
-        """Evaluate the constraint slack (w/o observation noise) on a set of points.
-        This constraint has been changed with respect to the original problem to account for
-        the fact that negative values imply feasibility in botorch"""
-        if X.ndim > 2:
-            raise NotImplementedError("Batch X is not supported.")
-        f_X = self.evaluate_true(X)
-        term1 = (f_X - 1).pow(2)
-        mask = ~(torch.eye(f_X.shape[-1], device=f_X.device).bool())
-        indices = torch.arange(f_X.shape[1], device=f_X.device).repeat(f_X.shape[1], 1)
-        indexer = indices[mask].view(f_X.shape[1], f_X.shape[-1] - 1)
-        term2_inner = (
-            f_X.unsqueeze(1)
-            .expand(f_X.shape[0], f_X.shape[-1], f_X.shape[-1])
-            .gather(dim=-1, index=indexer.repeat(f_X.shape[0], 1, 1))
-        )
-        term2 = (term2_inner.pow(2) - self._r**2).sum(dim=-1)
-        min1 = (term1 + term2).min(dim=-1).values
-        min2 = ((f_X - 1 / math.sqrt(f_X.shape[-1])).pow(2) - self._r**2).sum(dim=-1)
-        slack_true = -torch.min(min1, min2).unsqueeze(-1)
-        return -slack_true
+        # branin rescaled with inputs to [0,1]^2
+        branin = self._rescaled_branin(X=X)
+        currin = self._currin(X=X)
+        return torch.stack([branin, currin], dim=-1)
 
     # Optional — not required by MCMultiOutputObjective
     def add_noise(self, Y: Tensor) -> Tensor:
@@ -132,6 +120,16 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputObjective, ABC):
         if self.noise_std is not None:
             noise = self.noise_std.to(Y.device) * torch.randn_like(Y)
             return Y + noise
+        return Y
+
+    # Optional — not required by MCMultiOutputObjective
+    def evaluate_in_optimization_space(self, X: Tensor, noise: bool = True) -> Tensor:
+        """ Evaluate the objective function (w/o noise) on input X in the optimization space.
+        It can be conveniently used to evaluate the function in the optimization space for e.g.,
+        debugging purposes. """
+        Y = self.evaluate_true(X)
+        Y = self.add_noise(Y) if noise else Y
+        Y[..., self.negate] *= -1
         return Y
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
@@ -145,17 +143,12 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputObjective, ABC):
         selected[..., self.negate] *= -1
         return selected
 
-    def evaluate_slack(self):
-        return
+    # TODO: implement the following as methods or properties
+    def linear_equality_constraints(self) -> Tensor:
+        raise ValueError("No linear equality constraints for this objective.")
 
-    def is_feasible(self):
-        return
+    def linear_inequality_constraints(self) -> Tensor:
+        raise ValueError("No linear inequality constraints for this objective.")
 
-    def linear_input_constraints(self):
-        return
-
-    def linear_output_constraints(self):
-        return
-
-    def non_linear_input_constraints(self):
-        return
+    def nonlinear_inequality_constraints(self) -> Tensor:
+        raise ValueError("No nonlinear inequality constraints for this objective.")
