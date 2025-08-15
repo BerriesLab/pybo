@@ -27,10 +27,10 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             num_constraints: int,
             obj_to_minimize: list[bool],
             bounds: list[float],
-            ref_point: Tensor,
+            ref_point: list[float],
             outcomes: list[int],
             num_outcomes: int,
-            noise_std: float | list[float],
+            gt_noise_std: float | list[float],
             max_hv: float | None,
             linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
@@ -52,7 +52,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.bounds = bounds
         self.outcomes = outcomes
         self.num_outcomes = num_outcomes
-        self.noise_std = noise_std
+        self.gt_noise_std = gt_noise_std
         self.max_hv = max_hv
 
         # === Constraints ===
@@ -191,11 +191,11 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self._num_outcomes = value
 
     @property
-    def noise_std(self) -> torch.Tensor | None:
+    def gt_noise_std(self) -> torch.Tensor | None:
         return self._noise_std
 
-    @noise_std.setter
-    def noise_std(self, value: float | int | list[float] | None):
+    @gt_noise_std.setter
+    def gt_noise_std(self, value: float | int | list[float] | None):
         if value is None:
             self._noise_std = None
             return
@@ -275,10 +275,11 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         A list of tuples representing the nonlinear
         inequality constraints. The first element in the tuple is a callable
         representing a constraint of the form `callable(x) >= 0`. In the case of an
-        intra-point constraint, `callable()` takes in a one-dimensional tensor of
-        shape `d` and returns a scalar. In the case of an inter-point constraint,
-        `callable()` takes a two-dimensional tensor of shape `q x d` and again
-        returns a scalar. The second element is a boolean, indicating if it is an
+        intra-point constraint (single candidate or q=1), `callable()` takes in a
+        one-dimensional tensor of shape `d` and returns a scalar. In the case of an
+        inter-point constraint (multiple candidates or q >1), `callable()` takes a
+        two-dimensional tensor of shape `q x d` and again returns a scalar.
+        The second element is a boolean, indicating if it is an
         intra-point or inter-point constraint (`True` for intra-point. `False` for
         inter-point). For more information on intra-point vs. inter-point
         constraints, see the docstring of the `inequality_constraints` argument to
@@ -315,7 +316,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self._output_constraints = value
 
     # === GROUND TRUTH METHODS ===
-    def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor:
+    def evaluate_true(self, X: Tensor) -> Tensor:
         """
         Evaluate the true, unnegated objective function at the given input
         locations X. This method serves as the ground-truth evaluation of the
@@ -323,24 +324,26 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         plotting the true Pareto front), or performance assessment of
         optimization algorithms.
         """
-        # Y = f(X)...
-        # if add_noise:
-        #     Y = self.add_noise(Y)
-        # return Y
-        pass
+        # X = f(X)...
+        if self.gt_noise_std is not None:
+            X = self.add_noise(X)
+        return X
 
     def evaluate_slack_true(self, X: Tensor) -> Tensor:
         """
         Evaluate the constraints on a set of points X. Note that negative
         values imply feasibility in botorch.
         """
-        pass
+        # X = f(X)
+        if self.gt_noise_std is not None:
+            X = self.add_noise(X)
+        return X
 
     def add_noise(self, Y: Tensor) -> Tensor:
         """
         A method to add noise to the observations.
         """
-        if self.noise_std is None:
+        if self.gt_noise_std is None:
             raise ValueError("noise_std is required to add_noise.")
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise

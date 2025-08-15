@@ -15,10 +15,10 @@ def create_experiment_directory(main_directory: Path or str, experiment_name: st
 
 def save_dataset_to_csv(
         X: torch.Tensor,
-        Yobj: torch.Tensor,
-        Yobj_var: torch.Tensor or None,
-        Ycon: torch.Tensor or None,
-        Ycon_var: torch.Tensor or None,
+        Y_obj: torch.Tensor,
+        Y_obj_var: torch.Tensor or None,
+        Y_con: torch.Tensor or None,
+        Y_con_var: torch.Tensor or None,
         output_path: Path or str,
 ):
     """
@@ -31,19 +31,19 @@ def save_dataset_to_csv(
     """
 
     # Handle missing objective values cases
-    if Yobj is None:
-        Yobj = torch.zeros([X.shape[0], 1]).fill_(torch.nan)
-    if Yobj_var is None:
-        Yobj_var = torch.zeros_like(Yobj).fill_(torch.nan)
+    if Y_obj is None:
+        Y_obj = torch.zeros([X.shape[0], 1]).fill_(torch.nan)
+    if Y_obj_var is None:
+        Y_obj_var = torch.zeros_like(Y_obj).fill_(torch.nan)
 
-    if Ycon is not None:
+    if Y_con is not None:
         # Handle constrained problems
-        if Ycon_var is None:
-            Ycon_var = torch.zeros_like(Ycon).fill_(torch.nan)
-        Y = torch.cat([Yobj, Yobj_var, Ycon, Ycon_var], dim=-1)
+        if Y_con_var is None:
+            Y_con_var = torch.zeros_like(Y_con).fill_(torch.nan)
+        Y = torch.cat([Y_obj, Y_obj_var, Y_con, Y_con_var], dim=-1)
     else:
         # Handle unconstrained problems
-        Y = torch.cat([Yobj, Yobj_var], dim=-1)
+        Y = torch.cat([Y_obj, Y_obj_var], dim=-1)
 
     XY = torch.cat([X, Y], dim=-1)
     XY = XY.detach().cpu().numpy()

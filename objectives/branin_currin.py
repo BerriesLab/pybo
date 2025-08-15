@@ -34,7 +34,7 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
             ref_point=[18.0, 6.0],
             num_outcomes=2,
             outcomes=[0, 1],
-            noise_std=None,
+            gt_noise_std=None,
             max_hv=59.36011874867746,  # this is approximated using NSGA-II
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=None,
@@ -73,7 +73,8 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
     def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor | None:
         branin = self._rescaled_branin(X=X)
         currin = self._currin(X=X)
-        return torch.stack([branin, currin], dim=-1)
+        f = torch.stack([branin, currin], dim=-1)
+        return super().evaluate_true(f)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

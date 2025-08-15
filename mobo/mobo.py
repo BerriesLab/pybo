@@ -1,6 +1,4 @@
-import json
 import pickle
-from enum import Enum
 from datetime import datetime
 
 import warnings
@@ -11,7 +9,6 @@ from pathlib import Path
 
 import botorch
 import gpytorch
-import numpy as np
 
 from botorch.exceptions import (
     BadInitialCandidatesWarning,
@@ -19,17 +16,17 @@ from botorch.exceptions import (
     OptimizationWarning,
 )
 from botorch.exceptions.warnings import NumericsWarning
-from botorch.models import ModelList
 from botorch.optim.optimize import optimize_acqf_list
-from botorch.sampling import SobolQMCNormalSampler
+from botorch.sampling import SobolQMCNormalSampler, MCSampler
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume, get_chebyshev_scalarization
 from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
+from botorch.optim.initializers import gen_batch_initial_conditions
 from botorch.acquisition import (
-    qNoisyExpectedImprovement, GenericMCObjective
+    qNoisyExpectedImprovement, GenericMCObjective, AcquisitionFunction
 )
 from botorch.acquisition.multi_objective import (
     qExpectedHypervolumeImprovement,
@@ -41,16 +38,13 @@ from botorch.utils.transforms import normalize
 from botorch.utils.sampling import sample_simplex
 
 from gpytorch.constraints import GreaterThan
-from torch import Tensor
 
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
 
 from objectives.base_class import MCMultiOutputBase
-from utils import AcquisitionFunctionType, SamplerType
-from utils.cuda import get_device, get_supported_dtype
 from utils.validators import *
 
-from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
+from gpytorch.mlls import SumMarginalLogLikelihood
 
 
 class Mobo:
@@ -67,10 +61,10 @@ class Mobo:
             dtype: torch.device.type,
             objective: MCMultiOutputBase,
             X: torch.Tensor | None = None,
-            Yobj: torch.Tensor | None = None,
-            Yobj_var: torch.Tensor | None = None,
-            Ycon: torch.Tensor | None = None,
-            Ycon_var: torch.Tensor | None = None,
+            Y_obj: torch.Tensor | None = None,
+            Y_obj_var: torch.Tensor | None = None,
+            Y_con: torch.Tensor | None = None,
+            Y_con_var: torch.Tensor | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qNEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
@@ -90,10 +84,10 @@ class Mobo:
         self._datetime = datetime.datetime.now()
         self.objective = objective
         self.X: torch.Tensor = X
-        self.Yobj: torch.Tensor = Yobj
-        self.Yobj_var: torch.Tensor = Yobj_var
-        self.Ycon: torch.Tensor = Ycon
-        self.Ycon_var: torch.Tensor = Ycon_var
+        self.Y_obj: torch.Tensor = Y_obj
+        self.Y_obj_var: torch.Tensor = Y_obj_var
+        self.Y_con: torch.Tensor = Y_con
+        self.Y_con_var: torch.Tensor = Y_con_var
 
         # === Optimization attributes ===
         self.acquisition_function_type = acquisition_function_type
@@ -105,9 +99,20 @@ class Mobo:
         self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
         self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
 
+        # === State attributes ===
+        self._new_X: torch.Tensor | None = None
+        self._model: ModelListGP | None = None
+        self._mll: SumMarginalLogLikelihood | None = None
+        self._ref_point: torch.Tensor | None = None
+        self._acquisition_function_list: list[AcquisitionFunction] | None = None
+        self._partitioning: torch.Tensor | None = None
+        self._pareto_front: torch.Tensor | None = None
+        self._acquisition_function_instance: AcquisitionFunction | None = None
+        self._sampler_instance: MCSampler | None = None
+
         # === Metrics ===
-        self.hypervolume: list[float] = []
-        self.elapsed_time: list[float] = []
+        self._hypervolume: list[float] = []
+        self._elapsed_time: list[float] = []
 
     # === Pickling helper ===
     def __getstate__(self):
@@ -186,52 +191,52 @@ class Mobo:
         self._X = X.to(self._device, self._dtype)
 
     @property
-    def Yobj(self) -> torch.Tensor | None:
-        return self._Yobj
+    def Y_obj(self) -> torch.Tensor | None:
+        return self._Y_obj
 
-    @Yobj.setter
-    def Yobj(self, Yobj: torch.Tensor):
-        if not isinstance(Yobj, Union[torch.Tensor, None]):
-            raise ValueError("Yobj must be of type torch.Tensor or None.")
-        if Yobj is not None and Yobj.shape[-1] != self.objective.num_objectives:
-            raise ValueError("Yobj must have the same number of dimensions as objective.")
-        self._Yobj = Yobj.to(self._device, self._dtype) if Yobj is not None else None
-
-    @property
-    def Yobj_var(self) -> torch.Tensor | None:
-        return self._Yobj_var
-
-    @Yobj_var.setter
-    def Yobj_var(self, Yobj_var: torch.Tensor | None = None):
-        if not isinstance(Yobj_var, Union[torch.Tensor, None]):
-            raise ValueError("Yobj_var must be of type torch.Tensor or None.")
-        if Yobj_var is not None and Yobj_var.shape[-1] != self.objective.num_objectives:
-            raise ValueError("Yobj_var must have the same number of dimensions as objective.")
-        self._Yobj_var = Yobj_var.to(self._device, self._dtype) if Yobj_var is not None else None
+    @Y_obj.setter
+    def Y_obj(self, Y_obj: torch.Tensor):
+        if not isinstance(Y_obj, Union[torch.Tensor, None]):
+            raise ValueError("Y_obj must be of type torch.Tensor or None.")
+        if Y_obj is not None and Y_obj.shape[-1] != self.objective.num_objectives:
+            raise ValueError("Y_obj must have the same number of dimensions as objective.")
+        self._Y_obj = Y_obj.to(self._device, self._dtype) if Y_obj is not None else None
 
     @property
-    def Ycon(self) -> torch.Tensor | None:
-        return self._Ycon
+    def Y_obj_var(self) -> torch.Tensor | None:
+        return self._Y_obj_var
 
-    @Ycon.setter
-    def Ycon(self, Ycon: torch.Tensor | None):
-        if not isinstance(Ycon, Union[torch.Tensor, None]):
-            raise ValueError("Ycon must be of type torch.Tensor or None.")
-        if Ycon is not None and Ycon.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Ycon must have the same number of constraints as objective.")
-        self._Ycon = Ycon.to(self._device, self._dtype) if Ycon is not None else None
+    @Y_obj_var.setter
+    def Y_obj_var(self, Y_obj_var: torch.Tensor | None = None):
+        if not isinstance(Y_obj_var, Union[torch.Tensor, None]):
+            raise ValueError("Y_obj_var must be of type torch.Tensor or None.")
+        if Y_obj_var is not None and Y_obj_var.shape[-1] != self.objective.num_objectives:
+            raise ValueError("Y_obj_var must have the same number of dimensions as objective.")
+        self._Y_obj_var = Y_obj_var.to(self._device, self._dtype) if Y_obj_var is not None else None
 
     @property
-    def Ycon_var(self) -> torch.Tensor | None:
-        return self._Ycon_var
+    def Y_con(self) -> torch.Tensor | None:
+        return self._Y_con
 
-    @Ycon_var.setter
-    def Ycon_var(self, Ycon_var: torch.Tensor | None = None):
-        if not isinstance(Ycon_var, Union[torch.Tensor, None]):
-            raise ValueError("Ycon_var must be of type torch.Tensor or None.")
-        if Ycon_var is not None and Ycon_var.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Ycon_var must have the same number of constraints as objective.")
-        self._Ycon_var = Ycon_var.to(self._device, self._dtype) if Ycon_var is not None else None
+    @Y_con.setter
+    def Y_con(self, Y_con: torch.Tensor | None):
+        if not isinstance(Y_con, Union[torch.Tensor, None]):
+            raise ValueError("Y_con must be of type torch.Tensor or None.")
+        if Y_con is not None and Y_con.shape[-1] != self.objective.num_constraints:
+            raise ValueError("Y_con must have the same number of constraints as objective.")
+        self._Y_con = Y_con.to(self._device, self._dtype) if Y_con is not None else None
+
+    @property
+    def Y_con_var(self) -> torch.Tensor | None:
+        return self._Y_con_var
+
+    @Y_con_var.setter
+    def Y_con_var(self, Y_con_var: torch.Tensor | None = None):
+        if not isinstance(Y_con_var, Union[torch.Tensor, None]):
+            raise ValueError("Y_con_var must be of type torch.Tensor or None.")
+        if Y_con_var is not None and Y_con_var.shape[-1] != self.objective.num_constraints:
+            raise ValueError("Y_con_var must have the same number of constraints as objective.")
+        self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
 
     @property
     def acquisition_function_type(self) -> AcquisitionFunctionType:
@@ -313,47 +318,65 @@ class Mobo:
 
     # === STATE properties ===
     @property
-    def model(self):
+    def model(self) -> SingleTaskGP | None:
+        if self._model is None:
+            print("A model has not been generated yet.")
         return self._model
 
     @property
-    def mll(self):
+    def mll(self) -> SumMarginalLogLikelihood | None:
+        if self._mll is None:
+            print("A model has not been generated yet.")
         return self._mll
 
     @property
-    def pareto_front(self):
+    def ref_point(self) -> torch.Tensor | None:
+        if self._ref_point is None:
+            print("A reference point (in maximization space) has not been computed yet.")
+        return self._ref_point
+
+    @property
+    def acquisition_function_list(self) -> list[AcquisitionFunction] | None:
+        if self._acquisition_function_list is None:
+            print("The acquisition function has not been initialized yet.")
+        return self._acquisition_function_list
+
+    @property
+    def partitioning(self) -> NondominatedPartitioning | None:
+        if self._partitioning is None:
+            print("A partitioning has not been computed yet.")
+        return self._partitioning
+
+    @property
+    def pareto_front(self) -> torch.Tensor | None:
+        if self._pareto_front is None:
+            print("A pareto front has not been computed yet.")
         return self._pareto_front
 
     @property
-    def new_X(self) -> torch.Tensor:
-        if getattr(self, "_new_X", None) is None:
+    def new_X(self) -> torch.Tensor | None:
+        if self._new_X is None:
             print("A new_X has not been computed yet.")
-            return None
         return self._new_X
-    # @property
-    # def pareto_front_mask(self):
-    #     return self._pareto_front_mask
-    #
-    # @property
-    # def feasible_observations_mask(self):
-    #     return self._feasible_observations_mask
-    #
 
     @property
     def hypervolume(self):
         return self._hypervolume
 
-    @hypervolume.setter
-    def hypervolume(self, hv: list[float]):
-        self._hypervolume = hv
-
     @property
     def elapsed_time(self):
         return self._elapsed_time
 
-    @elapsed_time.setter
-    def elapsed_time(self, t: list[float]):
-        self._elapsed_time = t
+    @property
+    def acquisition_function_instance(self) -> AcquisitionFunction | None:
+        if self._acquisition_function_instance is None:
+            print("An acquisition function has not been initialized yet.")
+        return self._acquisition_function_instance
+
+    def sampler_instance(self) -> MCSampler | None:
+        if self._sampler_instance is None:
+            print("A sampler has not been initialized yet.")
+        return self._sampler_instance
 
     """ Optimizer """
 
@@ -363,7 +386,7 @@ class Mobo:
         This method prepares the training dataset by combining the objective and constraint
         observations (and optionally their variances). Then it creates one independent
         SingleTaskGP model for each output dimension (each objective or constraint).
-        These models are combined into a ModelListGP to jointly represent the full
+        The SingleTaskGP are finally combined into a ModelListGP to jointly represent the full
         multi-output model.
 
         Important: The GP model in BoTorch is a pure regression model: it simply fits the data
@@ -396,11 +419,8 @@ class Mobo:
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
                 )
             )
-        self.__setattr__("_model", ModelListGP(*models))
-        self.__setattr__("_mll", SumMarginalLogLikelihood(self._model.likelihood, self._model))
-
-        # self._model = ModelListGP(*models)
-        # self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
+        self._model = ModelListGP(*models)
+        self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
         if verbose:
             print("✓")
@@ -413,17 +433,17 @@ class Mobo:
             - Concatenates variances for both objectives and constraints if available, else None."""
 
         train_x = self._X.clone()
-        train_y = self._Yobj.clone()
+        train_y = self._Y_obj.clone()
 
         # Concatenate constraints if available (not None)
-        if self._Ycon is not None:
-            train_y_con = self._Ycon.clone()
+        if self._Y_con is not None:
+            train_y_con = self._Y_con.clone()
             train_y = torch.cat((train_y, train_y_con), dim=-1)
 
         # Define train_y_var
-        if self._Yobj_var is not None and self._Ycon_var is not None:
-            train_y_var = self._Yobj_var.clone()
-            train_y_con_var = self._Ycon_var.clone()
+        if self._Y_obj_var is not None and self._Y_con_var is not None:
+            train_y_var = self._Y_obj_var.clone()
+            train_y_con_var = self._Y_con_var.clone()
             train_var = torch.cat((train_y_var, train_y_con_var), dim=-1)
         else:
             train_var = None
@@ -446,26 +466,14 @@ class Mobo:
 
     def compute_reference_point(self, verbose=True):
         """
-        Compute and set the reference point in the maximization space.
-
-        The reference point is a key component in multi-objective optimization,
-        representing a point in objective space that is dominated by all observed
-        solutions. It is used to compute the hypervolume improvement metric.
-
-        This method sets the reference point only if the reference point is None
-        (typically at the first iteration). Note that the reference point must provide
-        explicitly by the objective ("self._objective.ref_point").
+        Compute and set the reference point in the maximization space. Note that the reference point in the
+        original space must be provided explicitly by the objective ("self._objective.ref_point").
         """
-
-        # The reference point is calculated only for the first iteration step
-        if hasattr(self, "_ref_point"):
-            return
 
         if verbose:
             print("Defining reference point... ", end="")
 
-        ref_point = self.objective.ref_point.clone().to(self._device, self._dtype)
-        self.__setattr__("_ref_point", ref_point)
+        self._ref_point = self.objective.ref_point.clone().to(self._device, self._dtype)
         self._ref_point[..., self._objective.obj_to_minimize] *= -1
 
         if verbose:
@@ -554,7 +562,7 @@ class Mobo:
         elif self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
             with torch.no_grad():
                 pred = self._model.posterior(self._X).mean
-            self.__setattr__(__name="_acquisition_function_list", __value=[])
+            self._acquisition_function_list = []
             for _ in range(self._batch_size):
                 weights = sample_simplex(self.objective.num_objectives, device=self._device, dtype=self._dtype).squeeze()
                 objective = GenericMCObjective(get_chebyshev_scalarization(weights=weights, Y=pred))
@@ -580,8 +588,7 @@ class Mobo:
             warnings.warn("Partitioning is not taking into account output constraints, if any", OptimizationWarning)
             # TODO: when using qEHVI, use non_dominated_partitioning and pass only feasible Ys
             prediction = self._model.posterior(normalize(self._X, self._objective.bounds)).mean
-            partitioning = NondominatedPartitioning(ref_point=self._ref_point, Y=prediction)
-            self.__setattr__(__name="_partitioning", __value=partitioning)
+            self._partitioning = NondominatedPartitioning(ref_point=self._ref_point, Y=prediction)
 
     def fit_model(self, restart_on_error=True, verbose=True):
         if not isinstance(self._model, ModelListGP):
@@ -614,7 +621,7 @@ class Mobo:
             print(f"Optimizing acquisition function... ", end="")
 
         if self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
-            candidates, _ = optimize_acqf_list(
+            self._new_X, _ = optimize_acqf_list(
                 acq_function_list=self._acquisition_function_list,
                 bounds=self._objective.bounds,
                 num_restarts=self._n_acqf_opt_restarts,
@@ -622,7 +629,7 @@ class Mobo:
                 options={"batch_limit": 5, "maxiter": self._n_acqf_opt_iter},
             )
         else:
-            candidates, _ = optimize_acqf(
+            self._new_X, _ = optimize_acqf(
                 acq_function=self._acquisition_function_instance,
                 bounds=self._objective.bounds,
                 q=self._batch_size,
@@ -633,11 +640,87 @@ class Mobo:
                 equality_constraints=self._objective.linear_equality_input_constraints,
                 inequality_constraints=self._objective.linear_inequality_input_constraints,
                 nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
+                ic_generator=self._feasible_ic_generator()
             )
-        self.__setattr__("_new_X", candidates)
 
         if verbose:
             print("✓")
+
+    # TODO: define an ic generator based on the constraints
+    def _recommend_initial_candidates(self, q: int, d: int, constraint_factor: float = 1.0):
+        """
+        Recommend number of raw samples and num_restarts for BoTorch optimization.
+        """
+        # Base raw samples by dimension
+        if d <= 2:
+            base_raw = 100
+        elif d <= 5:
+            base_raw = 200
+        elif d <= 10:
+            base_raw = 500
+        else:
+            base_raw = 1000
+
+        # Scale raw samples by batch size and constraint tightness
+        raw_samples = int(base_raw * q * constraint_factor)
+        raw_samples = max(raw_samples, 50 * q)  # minimum floor
+
+        # num_restarts is usually 1/5 of raw_samples, but at least 5
+        num_restarts = max(int(raw_samples / 5), 5)
+
+        # Number of feasible candidates to try to find
+        # Heuristic: 0.7 × raw_samples, but at least num_restarts
+        num_of_initial_candidates = max(int(0.7 * raw_samples), num_restarts)
+
+        return num_restarts, raw_samples, num_of_initial_candidates
+
+    def _feasible_ic_generator(self, max_retries=5, constraint_factor=1.0):
+        """
+        Generates initial candidates for BoTorch optimization while satisfying nonlinear constraints.
+        """
+        # No nonlinear constraints → use default BoTorch generator
+        if self.objective.nonlinear_inequality_input_constraints is None:
+            return None
+
+        # Determine input dimension and batch size
+        d = self.objective.bounds.shape[1]
+        q = self.batch_size
+
+        # Get recommended num_restarts and raw_samples based on q, d, constraints
+        num_restarts, raw_samples, num_init_candidate = self._recommend_initial_candidates(q, d, constraint_factor)
+
+        for attempt in range(max_retries):
+            X_init = gen_batch_initial_conditions(
+                acq_function=self.acquisition_function_instance,
+                bounds=self.objective.bounds,
+                q=q,
+                num_restarts=num_restarts,
+                raw_samples=raw_samples,
+            ).to(dtype=self.dtype, device=self.device)
+
+            # Filter points by constraints
+            feasible_mask = torch.ones(X_init.shape[0], dtype=torch.bool, device=self.device)
+            for (constraint_fn, is_inter_point) in self.objective.nonlinear_inequality_input_constraints:
+                vals = constraint_fn(X_init).squeeze(-1)
+                if is_inter_point:
+                    feasible_mask &= vals >= 0
+                else:
+                    feasible_mask &= (vals >= 0).all(dim=-1)
+
+            X_feasible = X_init[feasible_mask]
+            print(X_feasible)
+
+            # Enough feasible points found
+            if X_feasible.shape[0] >= num_init_candidate:
+                return X_feasible[:num_init_candidate]
+
+        # Fallback after retries
+        if X_feasible.shape[0] > 0:
+            return X_feasible
+        else:
+            raise RuntimeError(
+                f"No feasible initial points found after {max_retries} retries."
+            )
 
     def compute_acquisition_function_value_at_X(self, X: torch.Tensor, verbose=True):
         if not isinstance(X, torch.Tensor):
@@ -672,8 +755,8 @@ class Mobo:
         if verbose:
             print("Finding Pareto front... ", end="")
 
-        Yobj_for_pareto = self._Yobj.clone()
-        Yobj_for_pareto[..., self._objective.obj_to_minimize] *= -1
+        Y_obj_for_pareto = self._Y_obj.clone()
+        Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
 
         # If the objective is unconstrained, all observations are feasible.
         # Otherwise, concatenate objectives and constraints along the last
@@ -681,18 +764,17 @@ class Mobo:
         # only if all constraints are ≤ 0
         if self._objective.output_constraints is None:
             #TODO: check -2 is scorrect
-            feasible_mask = torch.ones(self._Yobj.shape[-2], dtype=torch.bool, device=self._device)
+            feasible_mask = torch.ones(self._Y_obj.shape[-2], dtype=torch.bool, device=self._device)
         else:
-            Y_full = torch.cat([self._Yobj, self._Ycon], dim=-1)
+            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
             feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._objective.output_constraints]).all(dim=0)
 
         # Compute the pareto-optimal mask among feasible points. Then, extract
         # the pareto front from the original objective values.
         pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
         if feasible_mask.any():
-            pareto_mask[feasible_mask] = is_non_dominated(Yobj_for_pareto[feasible_mask])
-        pareto_front = self._Yobj[pareto_mask]
-        self.__setattr__("_pareto_front", pareto_front)
+            pareto_mask[feasible_mask] = is_non_dominated(Y_obj_for_pareto[feasible_mask])
+        self._pareto_front = self._Y_obj[pareto_mask]
 
         if verbose:
             print("✓.")
@@ -741,222 +823,35 @@ class Mobo:
         if verbose:
             print(f"Calculation Time = {t1 - t0:>4.2f} s")
 
-    def update_XY(
-            self,
-            new_X: torch.Tensor,
-            new_Yobj: torch.Tensor,
-            new_Yobj_var: torch.Tensor or None = None,
-            new_Ycon: torch.Tensor or None = None,
-            new_Ycon_var=None,
-    ) -> None:
-
+    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None,
+            new_Y_con: torch.Tensor or None = None, new_Y_con_var=None) -> None:
         if new_X is not None:
             new_X = new_X.to(self._device, self._dtype)
             self._X = torch.cat([self._X, new_X], dim=0)
-        if new_Yobj is not None:
-            new_Yobj = new_Yobj.to(self._device, self._dtype)
-            self._Yobj = torch.cat([self._Yobj, new_Yobj], dim=0)
-        if new_Yobj_var is not None:
-            new_Yobj_var = new_Yobj_var.to(self._device, self._dtype)
-            self._Yobj_var = torch.cat([self._Yobj_var, new_Yobj_var], dim=0)
-        if new_Ycon is not None:
-            new_Ycon = new_Ycon.to(self._device, self._dtype)
-            self._Ycon = torch.cat([self._Ycon, new_Ycon], dim=0)
-        if new_Ycon_var is not None:
-            new_Ycon_var = new_Ycon_var.to(self._device, self._dtype)
-            self._Ycon_var = torch.cat([self._Ycon_var, new_Ycon_var], dim=0)
+        if new_Y_obj is not None:
+            new_Y_obj = new_Y_obj.to(self._device, self._dtype)
+            self._Y_obj = torch.cat([self._Y_obj, new_Y_obj], dim=0)
+        if new_Y_obj_var is not None:
+            new_Y_obj_var = new_Y_obj_var.to(self._device, self._dtype)
+            self._Y_obj_var = torch.cat([self._Y_obj_var, new_Y_obj_var], dim=0)
+        if new_Y_con is not None:
+            new_Y_con = new_Y_con.to(self._device, self._dtype)
+            self._Y_con = torch.cat([self._Y_con, new_Y_con], dim=0)
+        if new_Y_con_var is not None:
+            new_Y_con_var = new_Y_con_var.to(self._device, self._dtype)
+            self._Y_con_var = torch.cat([self._Y_con_var, new_Y_con_var], dim=0)
 
     """ I/O """
 
-    def to_file(self, output_path: Path = None):
+    def to_file(self, output_path: Path or str = None):
         if output_path is None:
             output_path = Path.cwd() / "mobo.dat"
-        # Ensure the parent directory exists
         path_obj = Path(output_path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
 
         with open(output_path, "wb") as file:
-            pickle.dump(self, file)
+            pickle.dump(self, file)  # type: ignore
         return output_path
-
-    def save_dataset_to_csv(self, output_path: Path = None):
-
-        if output_path is None:
-            output_path = Path.cwd() / "dataset.csv"
-
-        XY = torch.cat([self._X, self._Yobj], dim=-1)
-        if self._Yobj_var is not None:
-            XY = torch.cat([XY, self._Yobj_var], dim=-1)
-        if self._Ycon is not None:
-            XY = torch.cat([XY, self._Ycon], dim=-1)
-            if self._Ycon_var is not None:
-                XY = torch.cat([XY, self._Ycon_var], dim=-1)
-
-        XY = XY.detach().cpu().numpy()
-        np.savetxt(output_path, XY, delimiter=",", comments="")
-
-    def to_json(self, output_path: Path = None):
-        """
-         Serializes the serializable attributes of the Experiment instance to a JSON string.
-
-         This method iterates through the instance's attributes (those starting with '_')
-         and converts them to a JSON-compatible format. It handles:
-         - datetime objects: converted to ISO 8601 strings.
-         - torch.Tensor objects: converted to Python lists.
-         - torch.device objects: converted to string representations (e.g., 'cpu', 'cuda:0').
-         - torch.dtype objects: converted to their string name (e.g., 'float64').
-         - Enum objects: converted to their string value.
-         - Basic Python types (int, float, str, bool, None, lists of basic types):
-           serialized directly.
-         - Complex objects (like Callables, ModelListGP, ExactMarginalLogLikelihood instances)
-           and lists containing them are skipped as they are not directly JSON serializable.
-
-         Returns:
-             str: A JSON string representation of the serializable attributes,
-                  formatted with an indent of 4 for readability.
-         """
-
-        if output_path is None:
-            output_path = Path.cwd() / "model.json"
-
-        serializable_data = {}
-
-        def serialize_value(value):
-            """Helper function to recursively serialize individual values."""
-            if isinstance(value, datetime.datetime):
-                return value.isoformat()
-            elif isinstance(value, torch.Tensor):
-                return value.tolist()
-            elif isinstance(value, torch.device):
-                return str(value)
-            elif isinstance(value, torch.dtype):
-                return str(value).split('.')[-1]
-            elif isinstance(value, Enum):
-                return value.value
-            elif isinstance(value, (int, float, str, bool)) or value is None:
-                return value
-            elif isinstance(value, list):
-                if all(isinstance(item, (int, float, str, bool, type(None))) for item in value):
-                    return value
-                else:
-                    return None  # Skip complex lists
-            elif isinstance(value, dict):
-                if all(isinstance(k, str) for k in value.keys()):
-                    serialized_dict = {}
-                    for k, v in value.items():
-                        serialized_item = serialize_value(v)
-                        if serialized_item is not None:
-                            serialized_dict[k] = serialized_item
-                    return serialized_dict
-                else:
-                    return None  # Skip dicts with non-string keys
-            else:
-                return None  # Skip unhandled types
-
-        # Iterate over all instance attributes
-        for key, value in self.__dict__.items():
-            json_key = key.lstrip('_')
-            serialized_value = serialize_value(value)
-            if serialized_value is not None:
-                serializable_data[json_key] = serialized_value
-            # else: skip
-
-        # Save to disk
-        with open(output_path, "w") as file:
-            json.dump(serializable_data, file, indent=4)
-
-    def load_dataset_from_csv(
-            self,
-            input_space_dim: int | None = None,
-            objective_space_dim: int | None = None,
-            constraint_space_dim: int | None = None,
-            objective_variance: bool = False,
-            constraint_variance: bool = False,
-            filepath: str or None = None,
-            skiprows: int = 0,
-            skipcols: int = 0,
-    ):
-        """Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
-        X ¦ Yobj ¦ Yobj_var ¦ Ycon ¦ Ycon_var."""
-
-        if input_space_dim is None:
-            try:
-                # Get input dimensions from existing X tensor if available
-                input_space_dim = self._X.shape[-1]
-            except (AttributeError, RuntimeError, TypeError):
-                # X tensor isn't properly initialized or doesn't exist
-                raise ValueError(
-                    "Input space dimension must be provided explicitly as a parameter "
-                    "when X tensor is not initialized. Could not infer dimension from self._X."
-                )
-
-        if objective_space_dim is None:
-            try:
-                # Get objective dimensions from existing Yobj tensor if available
-                objective_space_dim = self._Yobj.shape[-1]
-            except (AttributeError, RuntimeError, TypeError):
-                # Yobj tensor not properly initialized or doesn't exist
-                raise ValueError(
-                    "Objective space dimension must be provided explicitly as a parameter "
-                    "when Yobj tensor is not initialized. Could not infer dimension from self._Yobj."
-                )
-
-        if constraint_space_dim is None:
-            try:
-                constraints = self.get_output_constraints()
-                if constraints is not None and self._Ycon is not None:
-                    # The Problem is constrained and Ycon tensor exists
-                    constraint_space_dim = self._Ycon.shape[-1]
-                else:
-                    # The Problem is unconstrained or Ycon tensor doesn't exist
-                    constraint_space_dim = 0
-            except (AttributeError, RuntimeError, TypeError):
-                raise ValueError(
-                    "Constraint space dimension must be provided explicitly as a parameter "
-                    "since constraint tensor (Ycon) could not be determined automatically."
-                )
-
-        if filepath is None:
-            csv_files = list(Path("..").glob("*.csv"))
-            if not csv_files:
-                raise FileNotFoundError("No CSV files found in the current directory")
-            filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
-
-        xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
-
-        i = skipcols + 0
-        j = skipcols + input_space_dim
-        self._X = torch.tensor(xy[..., i:j])
-
-        if objective_space_dim > 0:
-            i = j
-            j += objective_space_dim
-            self._Yobj = torch.tensor(xy[..., i:j])
-
-            if objective_variance:
-                i = j
-                j += objective_space_dim
-                self._Yobj_var = torch.tensor(xy[..., i:j])
-            else:
-                self._Yobj_var = None
-        else:
-            self._Yobj = None
-            self._Yobj_var = None
-
-        if constraint_space_dim > 0:
-            i = j
-            j += constraint_space_dim
-            self._Ycon = torch.tensor(xy[..., i:j])
-
-            if constraint_variance:
-                i = j
-                j += constraint_space_dim
-                self._Ycon_var = torch.tensor(xy[..., i:j])
-            else:
-                self._Ycon_var = None
-        else:
-            self._Ycon = None
-            self._Ycon_var = None
 
     @classmethod
     def from_file(cls, filepath: str | Path = None):
@@ -971,3 +866,130 @@ class Mobo:
 
         with open(filepath, "rb") as f:
             return pickle.load(f)
+
+
+    # def save_dataset_to_csv(self, output_path: Path = None):
+    #
+    #     if output_path is None:
+    #         output_path = Path.cwd() / "dataset.csv"
+    #
+    #     XY = torch.cat([self._X, self._Y_obj], dim=-1)
+    #     if self._Y_obj_var is not None:
+    #         XY = torch.cat([XY, self._Y_obj_var], dim=-1)
+    #     if self._Y_con is not None:
+    #         XY = torch.cat([XY, self._Y_con], dim=-1)
+    #         if self._Y_con_var is not None:
+    #             XY = torch.cat([XY, self._Y_con_var], dim=-1)
+    #
+    #     XY = XY.detach().cpu().numpy()
+    #     np.savetxt(output_path, XY, delimiter=",", comments="")
+
+    # def to_json(self, output_path: Path = None):
+    #
+    #     if output_path is None:
+    #         output_path = Path.cwd() / "model.json"
+    #
+    #     serializable_data = {}
+    #     for key, value in self.__dict__.items():
+    #         json_key = key.lstrip('_')
+    #         serialized_value = serialize_value(value)
+    #         if serialized_value is not None:
+    #             serializable_data[json_key] = serialized_value
+    #
+    #     # Save to disk
+    #     with open(output_path, "w") as file:
+    #         json.dump(serializable_data, file, indent=4)
+
+    # def load_dataset_from_csv(
+    #         self,
+    #         input_space_dim: int | None = None,
+    #         objective_space_dim: int | None = None,
+    #         constraint_space_dim: int | None = None,
+    #         objective_variance: bool = False,
+    #         constraint_variance: bool = False,
+    #         filepath: str or None = None,
+    #         skiprows: int = 0,
+    #         skipcols: int = 0,
+    # ):
+    #     """Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
+    #     X ¦ Y_obj ¦ Y_obj_var ¦ Y_con ¦ Y_con_var."""
+    #
+    #     if input_space_dim is None:
+    #         try:
+    #             # Get input dimensions from existing X tensor if available
+    #             input_space_dim = self._X.shape[-1]
+    #         except (AttributeError, RuntimeError, TypeError):
+    #             # X tensor isn't properly initialized or doesn't exist
+    #             raise ValueError(
+    #                 "Input space dimension must be provided explicitly as a parameter "
+    #                 "when X tensor is not initialized. Could not infer dimension from self._X."
+    #             )
+    #
+    #     if objective_space_dim is None:
+    #         try:
+    #             # Get objective dimensions from existing Y_obj tensor if available
+    #             objective_space_dim = self._Y_obj.shape[-1]
+    #         except (AttributeError, RuntimeError, TypeError):
+    #             # Y_obj tensor not properly initialized or doesn't exist
+    #             raise ValueError(
+    #                 "Objective space dimension must be provided explicitly as a parameter "
+    #                 "when Y_obj tensor is not initialized. Could not infer dimension from self._Y_obj."
+    #             )
+    #
+    #     if constraint_space_dim is None:
+    #         try:
+    #             constraints = self.get_output_constraints()
+    #             if constraints is not None and self._Y_con is not None:
+    #                 # The Problem is constrained and Y_con tensor exists
+    #                 constraint_space_dim = self._Y_con.shape[-1]
+    #             else:
+    #                 # The Problem is unconstrained or Y_con tensor doesn't exist
+    #                 constraint_space_dim = 0
+    #         except (AttributeError, RuntimeError, TypeError):
+    #             raise ValueError(
+    #                 "Constraint space dimension must be provided explicitly as a parameter "
+    #                 "since constraint tensor (Y_con) could not be determined automatically."
+    #             )
+    #
+    #     if filepath is None:
+    #         csv_files = list(Path("..").glob("*.csv"))
+    #         if not csv_files:
+    #             raise FileNotFoundError("No CSV files found in the current directory")
+    #         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
+    #
+    #     xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
+    #
+    #     i = skipcols + 0
+    #     j = skipcols + input_space_dim
+    #     self._X = torch.tensor(xy[..., i:j])
+    #
+    #     if objective_space_dim > 0:
+    #         i = j
+    #         j += objective_space_dim
+    #         self._Y_obj = torch.tensor(xy[..., i:j])
+    #
+    #         if objective_variance:
+    #             i = j
+    #             j += objective_space_dim
+    #             self._Y_obj_var = torch.tensor(xy[..., i:j])
+    #         else:
+    #             self._Y_obj_var = None
+    #     else:
+    #         self._Y_obj = None
+    #         self._Y_obj_var = None
+    #
+    #     if constraint_space_dim > 0:
+    #         i = j
+    #         j += constraint_space_dim
+    #         self._Y_con = torch.tensor(xy[..., i:j])
+    #
+    #         if constraint_variance:
+    #             i = j
+    #             j += constraint_space_dim
+    #             self._Y_con_var = torch.tensor(xy[..., i:j])
+    #         else:
+    #             self._Y_con_var = None
+    #     else:
+    #         self._Y_con = None
+    #         self._Y_con_var = None
+

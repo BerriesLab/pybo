@@ -1,14 +1,13 @@
 import os
 import torch
 from pathlib import Path
-from pybo.mobo.mobo import Mobo
-from pybo.samplers.samplers import Sampler
-from pybo.utils.io import create_experiment_directory
-from pybo.utils.make_video import create_video_from_images
-from pybo.utils.types import AcquisitionFunctionType, SamplerType
-from pybo.utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
+from mobo.mobo import Mobo
+from samplers.samplers import Sampler
+from utils.io import create_experiment_directory
+from utils.types import AcquisitionFunctionType, SamplerType
+from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     make_grid
-from pybo.objectives.binh_and_korn import BinhAndKornMCMultiOutputObjective
+from objectives.binh_and_korn import BinhAndKornMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -16,7 +15,7 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"binh_and_korn_64iter_{q}q_512mc_256rs_qnehvi"
+    experiment_name = f"binh_and_korn"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
@@ -40,13 +39,12 @@ def main(n_samples=64, q: int = 1, ):
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Yobj = objective.evaluate_true(X)
+    Y_obj = objective.evaluate_true(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    # gnd_truth_X = sampler.draw_samples(n=1000)
-    gnd_truth_X = make_grid(
+    X_gt = make_grid(
         size=100,
         bounds=objective.bounds,
         device=DEVICE,
@@ -58,36 +56,24 @@ def main(n_samples=64, q: int = 1, ):
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,
-        X=X,
-        Yobj=Yobj,
-        Yobj_var=None,
-        Ycon=None,
-        Ycon_var=None,
-        bounds=objective.bounds,
         objective=objective,
-        output_constraints=None,
-        input_constraints=[
-            BinhAndKornMCMultiOutputObjective.c1,
-            BinhAndKornMCMultiOutputObjective.c2
-        ],
         acquisition_function_type=AcquisitionFunctionType.qNEHVI,
-        sampler_type=SamplerType.Sobol,
-        raw_samples=256,
-        mc_samples=512,
-        batch_size=q,
+        X=X,
+        Y_obj=Y_obj,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
+
     )
 
     """ Main optimization loop """
-    hypervolume_list = []
-    elapsed_time_list = []
     for i in range(int(n_samples / q)):
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
         mobo.optimize()
-        elapsed_time_list.append(mobo.get_elapsed_time())
-        new_X = mobo.get_new_X()
+        new_X = mobo.new_X()
         print(f"New X: {new_X.detach().cpu().numpy()}")
 
         """ Evaluate posterior and acquisition function at new X """
@@ -95,18 +81,16 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Yobj = objective.evaluate_true(new_X)
-        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
+        new_Y_obj = objective.evaluate_true(new_X)
+        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
-        hypervolume_list.append(mobo.get_hypervolume())
 
         """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
-        mobo.save_dataset_to_csv(output_path=Path.cwd() / f"dataset_{i}.csv")
+        mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         plot_multi_objective_from_RN_to_R2(
             mobo=mobo,
@@ -119,19 +103,18 @@ def main(n_samples=64, q: int = 1, ):
             f1_lims=(-10, 140),
             f2_lims=(0, 55),
             display_figures=False,
-            ground_truth_X=gnd_truth_X,
-            output_path=Path.cwd() / f"pareto_front_{i}.png"
+            X=X_gt,
+            output_path=Path.cwd() / f"pareto_front.png"
         )
         plot_log_hypervolume_improvement(
             mobo=mobo,
-            output_path=Path.cwd() / f"hvi{i}.png"
+            output_path=Path.cwd() / f"hvi.png"
         )
         plot_elapsed_time(
             mobo=mobo,
-            output_path=Path.cwd() / f"elapsed_time{i}.png"
+            output_path=Path.cwd() / f"elapsed_time.png"
         )
 
-    create_video_from_images()
     print("Optimization Finished.")
 
 

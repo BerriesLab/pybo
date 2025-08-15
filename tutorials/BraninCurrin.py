@@ -4,7 +4,6 @@ from pathlib import Path
 from mobo.mobo import Mobo
 from samplers.samplers import Sampler
 from utils.io import create_experiment_directory
-from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType
 from utils.plotters import plot_log_hypervolume_improvement, plot_elapsed_time, make_grid, \
     plot_multi_objective_from_RN_to_R2
@@ -24,7 +23,7 @@ def main(n_samples=64, q: int = 1, ):
     """ Define the objective """
     objective = BraninCurrinMCMultiOutputObjective(
         device=DEVICE,
-        dtype=DTYPE
+        dtype=DTYPE,
     )
 
     """ Instantiate a random generator """
@@ -37,13 +36,12 @@ def main(n_samples=64, q: int = 1, ):
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Yobj = objective.evaluate_true(X)
+    Y_obj = objective.evaluate_true(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    # gnd_truth_X = sampler.draw_samples(n=1000)
-    gnd_truth_X = make_grid(
+    X_gt = make_grid(
         size=100,
         bounds=objective.bounds,
         device=DEVICE,
@@ -56,11 +54,12 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
+        acquisition_function_type=AcquisitionFunctionType.qNEHVI,
         X=X,
-        Yobj=Yobj,
-        Yobj_var=None,
-        Ycon=None,
-        Ycon_var=None,
+        Y_obj=Y_obj,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
     )
 
     """ Main optimization loop """
@@ -80,15 +79,14 @@ def main(n_samples=64, q: int = 1, ):
         """ Simulate experiment at new X """
         new_Yobj = objective.evaluate_true(new_X)
         print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Yobj=new_Yobj)
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
 
         """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
-        mobo.save_dataset_to_csv(output_path=Path.cwd() / f"dataset_{i}.csv")
+        mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
         plot_multi_objective_from_RN_to_R2(
@@ -102,19 +100,18 @@ def main(n_samples=64, q: int = 1, ):
             f1_lims=(-10, 250),
             f2_lims=(0, 15),
             display_figures=False,
-            X=gnd_truth_X, #rnd_X,
-            output_path=Path.cwd() / f"pareto_front_{i}.png"
+            X=X_gt,
+            output_path=Path.cwd() / f"pareto_front.png"
         )
         plot_log_hypervolume_improvement(
             mobo=mobo,
-            output_path=Path.cwd() / f"hvi{i}.png"
+            output_path=Path.cwd() / f"hvi.png"
         )
         plot_elapsed_time(
             mobo=mobo,
-            output_path=Path.cwd() / f"elapsed_time{i}.png"
+            output_path=Path.cwd() / f"elapsed_time.png"
         )
 
-    create_video_from_images()
     print("Optimization Finished.")
 
 
