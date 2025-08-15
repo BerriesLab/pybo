@@ -64,15 +64,12 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Main optimization loop """
-    # hypervolume_list = []
-    # elapsed_time_list = []
     for i in range(int(n_samples / q)):
         print("\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
         mobo.optimize()
-        # elapsed_time_list.append(mobo.elapsed_time)
         new_X = mobo.new_X
         print(f"New X: {new_X.detach().cpu().numpy()}")
 
@@ -88,7 +85,6 @@ def main(n_samples=64, q: int = 1, ):
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
-        # hypervolume_list.append(mobo.hypervolume)
 
         """ Save"""
         mobo.to_file(output_path=Path.cwd() / f"mobo_{i}.dat")
@@ -106,7 +102,7 @@ def main(n_samples=64, q: int = 1, ):
             f1_lims=(-10, 250),
             f2_lims=(0, 15),
             display_figures=False,
-            ground_truth_X=gnd_truth_X, #rnd_X,
+            X=gnd_truth_X, #rnd_X,
             output_path=Path.cwd() / f"pareto_front_{i}.png"
         )
         plot_log_hypervolume_improvement(

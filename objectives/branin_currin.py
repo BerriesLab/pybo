@@ -70,7 +70,7 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
         denom = 100 * x_0.pow(3) + 500 * x_0.pow(2) + 4 * x_0 + 20
         return factor1 * numer / denom
 
-    def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor:
+    def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor | None:
         branin = self._rescaled_branin(X=X)
         currin = self._currin(X=X)
         return torch.stack([branin, currin], dim=-1)

@@ -664,48 +664,35 @@ class Mobo:
 
     def compute_pareto_front(self, verbose=True):
         """
-        Compute the Pareto front including constraints. It uses
-        "is_non_dominated", which assumes maximization.
+        Compute the Pareto front including constraints. Note that as
+        "is_non_dominated" assumes maximization, the Y must be cast into a
+        maximization problem before computing the pareto front.
         """
 
         if verbose:
             print("Finding Pareto front... ", end="")
 
-        # Determine which Yobj to use for Pareto computation
-        # If any of the objectives is negated, flip their sign to work in maximization space. This is
-        # necessary as is_non_dominated method works by default in maximization mode.
         Yobj_for_pareto = self._Yobj.clone()
         Yobj_for_pareto[..., self._objective.obj_to_minimize] *= -1
 
-        # Check if the problem is unconstrained (no constraints defined).
-        # If unconstrained, all observations are feasible. Otherwise,
-        # concatenate objectives and constraints along the last dimension,
-        # then compute the feasibility mask: a point is feasible only if all
-        # constraints ≤ 0
-        if self._Ycon is None or self._output_constraints is None:
-            feasible_mask = torch.ones(self._Yobj.shape[0], dtype=torch.bool, device=self._device)
+        # If the objective is unconstrained, all observations are feasible.
+        # Otherwise, concatenate objectives and constraints along the last
+        # dimension, then compute the feasibility mask: a point is feasible
+        # only if all constraints are ≤ 0
+        if self._objective.output_constraints is None:
+            #TODO: check -2 is scorrect
+            feasible_mask = torch.ones(self._Yobj.shape[-2], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Yobj, self._Ycon], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._output_constraints]).all(dim=0)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._objective.output_constraints]).all(dim=0)
 
-        # Store the feasibility mask
-        # self._feasible_observations_mask = feasible_mask
-
-        # Initialize Pareto front mask with all False (no points marked yet)
+        # Compute the pareto-optimal mask among feasible points. Then, extract
+        # the pareto front from the original objective values.
         pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
-
-        # If there are any feasible points, compute Pareto front within
-        # the dataset of feasible points only.
         if feasible_mask.any():
             pareto_mask[feasible_mask] = is_non_dominated(Yobj_for_pareto[feasible_mask])
-
-        # Store the Pareto front mask
-        # self._pareto_front_mask = pareto_mask
-
-        # Extract objective values corresponding to the Pareto front points
         pareto_front = self._Yobj[pareto_mask]
         self.__setattr__("_pareto_front", pareto_front)
-        # self._pareto_front = self._Yobj[pareto_mask]
 
         if verbose:
             print("✓.")
