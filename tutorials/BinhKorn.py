@@ -102,7 +102,7 @@ def main(n_samples=64, q: int = 1, ):
             show_observations=True,
             f1_lims=(-10, 140),
             f2_lims=(0, 55),
-            display_figures=False,
+            display_figure=False,
             X=X_gt,
             output_path=Path.cwd() / f"pareto_front.png"
         )

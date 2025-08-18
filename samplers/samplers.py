@@ -64,3 +64,4 @@ class Sampler:
             raise RuntimeError(f"Only {valid_samples.shape[0]} valid samples found after {num_attempts} attempts.")
 
         return valid_samples[:n]
+

@@ -36,11 +36,12 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
             num_outcomes=2,
             outcomes=[0, 1],
             gt_noise_std=None,
-            max_hv=0.3996406303723544,
+            max_hv=0.3996406303723544,  # approximate from nsga-ii
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
-            output_constraints=[Identity(index=-1)]
+            output_constraints=[Identity(index=-1)],
+            estimate_max_hv=False
         )
 
         self.k = self.dim - self.num_objectives + 1
@@ -78,8 +79,8 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
         term2 = (term2_inner.pow(2) - self._r**2).sum(dim=-1)
         min1 = (term1 + term2).min(dim=-1).values
         min2 = ((f_X - 1 / math.sqrt(f_X.shape[-1])).pow(2) - self._r**2).sum(dim=-1)
-        slack_true = -torch.min(min1, min2).unsqueeze(-1)
-        return -super().evaluate_slack_true(slack_true)
+        slack_true = torch.min(min1, min2).unsqueeze(-1)
+        return super().evaluate_slack_true(slack_true)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

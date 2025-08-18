@@ -39,7 +39,8 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
-            output_constraints=None
+            output_constraints=None,
+            estimate_max_hv=False,
         )
 
     @staticmethod

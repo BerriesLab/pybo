@@ -34,15 +34,17 @@ from botorch.acquisition.multi_objective import (
     qLogExpectedHypervolumeImprovement,
     qLogNoisyExpectedHypervolumeImprovement,
 )
-from botorch.utils.transforms import normalize
+from botorch.utils.transforms import normalize, unnormalize
 from botorch.utils.sampling import sample_simplex
 
 from gpytorch.constraints import GreaterThan
+from torch.quasirandom import SobolEngine
 
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
 
 from objectives.base_class import MCMultiOutputBase
 from utils.validators import *
+from samplers.samplers import Sampler
 
 from gpytorch.mlls import SumMarginalLogLikelihood
 
@@ -640,87 +642,17 @@ class Mobo:
                 equality_constraints=self._objective.linear_equality_input_constraints,
                 inequality_constraints=self._objective.linear_inequality_input_constraints,
                 nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
-                ic_generator=self._feasible_ic_generator()
+                ic_generator=self.ic_generator_for_non_linear_inout_constraints if
+                self.objective.nonlinear_inequality_input_constraints else None,
             )
 
         if verbose:
             print("✓")
 
-    # TODO: define an ic generator based on the constraints
-    def _recommend_initial_candidates(self, q: int, d: int, constraint_factor: float = 1.0):
-        """
-        Recommend number of raw samples and num_restarts for BoTorch optimization.
-        """
-        # Base raw samples by dimension
-        if d <= 2:
-            base_raw = 100
-        elif d <= 5:
-            base_raw = 200
-        elif d <= 10:
-            base_raw = 500
-        else:
-            base_raw = 1000
-
-        # Scale raw samples by batch size and constraint tightness
-        raw_samples = int(base_raw * q * constraint_factor)
-        raw_samples = max(raw_samples, 50 * q)  # minimum floor
-
-        # num_restarts is usually 1/5 of raw_samples, but at least 5
-        num_restarts = max(int(raw_samples / 5), 5)
-
-        # Number of feasible candidates to try to find
-        # Heuristic: 0.7 × raw_samples, but at least num_restarts
-        num_of_initial_candidates = max(int(0.7 * raw_samples), num_restarts)
-
-        return num_restarts, raw_samples, num_of_initial_candidates
-
-    def _feasible_ic_generator(self, max_retries=5, constraint_factor=1.0):
-        """
-        Generates initial candidates for BoTorch optimization while satisfying nonlinear constraints.
-        """
-        # No nonlinear constraints → use default BoTorch generator
-        if self.objective.nonlinear_inequality_input_constraints is None:
-            return None
-
-        # Determine input dimension and batch size
-        d = self.objective.bounds.shape[1]
-        q = self.batch_size
-
-        # Get recommended num_restarts and raw_samples based on q, d, constraints
-        num_restarts, raw_samples, num_init_candidate = self._recommend_initial_candidates(q, d, constraint_factor)
-
-        for attempt in range(max_retries):
-            X_init = gen_batch_initial_conditions(
-                acq_function=self.acquisition_function_instance,
-                bounds=self.objective.bounds,
-                q=q,
-                num_restarts=num_restarts,
-                raw_samples=raw_samples,
-            ).to(dtype=self.dtype, device=self.device)
-
-            # Filter points by constraints
-            feasible_mask = torch.ones(X_init.shape[0], dtype=torch.bool, device=self.device)
-            for (constraint_fn, is_inter_point) in self.objective.nonlinear_inequality_input_constraints:
-                vals = constraint_fn(X_init).squeeze(-1)
-                if is_inter_point:
-                    feasible_mask &= vals >= 0
-                else:
-                    feasible_mask &= (vals >= 0).all(dim=-1)
-
-            X_feasible = X_init[feasible_mask]
-            print(X_feasible)
-
-            # Enough feasible points found
-            if X_feasible.shape[0] >= num_init_candidate:
-                return X_feasible[:num_init_candidate]
-
-        # Fallback after retries
-        if X_feasible.shape[0] > 0:
-            return X_feasible
-        else:
-            raise RuntimeError(
-                f"No feasible initial points found after {max_retries} retries."
-            )
+    # TODO: implement function
+    def ic_generator_for_non_linear_inout_constraints(self):
+        batch_initial_candidates = None
+        return batch_initial_candidates
 
     def compute_acquisition_function_value_at_X(self, X: torch.Tensor, verbose=True):
         if not isinstance(X, torch.Tensor):

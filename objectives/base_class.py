@@ -3,6 +3,7 @@ from collections.abc import Callable
 import torch
 import math
 
+from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from torch import Tensor
 from abc import ABC, abstractmethod
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
@@ -35,7 +36,8 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
-            output_constraints: list[Callable] | None
+            output_constraints: list[Callable] | None,
+            estimate_max_hv: bool = False,
     ):
 
         super().__init__()
@@ -54,6 +56,8 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.num_outcomes = num_outcomes
         self.gt_noise_std = gt_noise_std
         self.max_hv = max_hv
+        if estimate_max_hv is True:
+            self.estimate_max_hv()
 
         # === Constraints ===
         self.linear_equality_input_constraints = linear_equality_input_constraints
@@ -331,7 +335,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
 
     def evaluate_slack_true(self, X: Tensor) -> Tensor:
         """
-        Evaluate the constraints on a set of points X. Note that negative
+        Evaluate the constraints on a set of points X. Negative
         values imply feasibility in botorch.
         """
         # X = f(X)
@@ -347,6 +351,51 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             raise ValueError("noise_std is required to add_noise.")
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
+
+    def estimate_max_hv(self, n_samples: int = 1_000, verbose=True):
+        """ Estimates the maximum theoretical hypervolume using Sobol-based Monte Carlo sampling.
+            Parameters:
+                - n_samples (int): Number of MC samples for objective space.
+                - verbose (bool): If True, prints progress and results.
+            Sets:
+                - self._max_hv: Estimated maximum hypervolume value.
+            """
+
+        if verbose:
+            print("Estimating maximum theoretical hypervolume... ", end="")
+
+        # 1. Sample input space to get Pareto front
+        lb, ub = self.bounds[0], self.bounds[1]
+        X = (ub - lb) * torch.rand(n_samples, self.dim, device=self.device, dtype=self.dtype) + lb
+
+        # 2. Evaluate and filter feasible points only if constraints exist
+        Y = self.evaluate_true(X)
+        if self.num_constraints > 0:
+            constraint_slack = self.evaluate_slack_true(X)  # shape: (n_samples, num_constraints)
+            feasible_mask = constraint_slack <= 0  # all constraints satisfied
+            feasible_mask = feasible_mask.all(dim=-1)
+            feasible_Y = Y[feasible_mask]
+        else:
+            feasible_Y = Y
+        if feasible_Y.shape[0] == 0:
+            raise ValueError("No feasible samples found to estimate hypervolume.")
+
+        # 3. Work in maximization space: flip only objectives marked as "negate"
+        feasible_Y_max = feasible_Y.clone()
+        feasible_Y_max[..., self.obj_to_minimize] *= -1
+
+        # 4. Compute Pareto front among feasible samples (in maximization space)
+        pareto_mask = is_non_dominated(feasible_Y_max)
+        pareto_front_max = feasible_Y_max[pareto_mask]
+
+        # 5. Compute hypervolume in maximization space
+        ref_point_max = self.ref_point.clone()
+        ref_point_max[..., self.obj_to_minimize] *= -1
+        hv = Hypervolume(ref_point_max).compute(pareto_front_max)
+        self.max_hv = hv
+
+        if verbose:
+            print(f"{self.max_hv:.4f}")
 
     # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:

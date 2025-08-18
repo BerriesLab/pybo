@@ -1,6 +1,7 @@
 import torch
 from torch import Tensor
 from objectives.base_class import MCMultiOutputBase
+from constraints.output_constraints import Identity
 
 
 class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
@@ -15,20 +16,21 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim = 2,
-            num_objectives = 2,
-            num_constraints = 0,
-            obj_to_minimize = [True, True],
-            bounds = [(0.0, 5.0), (0.0, 3.0)],
-            ref_point = [80.0, 30.0],
-            num_outcomes = 2,
+            dim=2,
+            num_objectives=2,
+            num_constraints=0,
+            obj_to_minimize=[True, True],
+            bounds=[(0.0, 5.0), (0.0, 3.0)],
+            ref_point=[80.0, 30.0],
+            num_outcomes=2,
             outcomes=[0, 1],
             gt_noise_std=None,
             max_hv=None,
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=[(self.c1, True), (self.c2, True)],
-            output_constraints=[Identity(index=-1)]
+            output_constraints=[Identity(index=-1)],
+            estimate_max_hv=False,
         )
 
     @staticmethod

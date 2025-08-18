@@ -2,6 +2,7 @@ import os
 import torch
 from pathlib import Path
 from mobo.mobo import Mobo
+from objectives.formaco import FormACOMCMultiOutputConstrainedObjective
 from samplers.samplers import Sampler
 from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.io import create_experiment_directory
@@ -10,10 +11,6 @@ from utils.types import AcquisitionFunctionType, SamplerType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
     make_grid
 
-""" Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
-refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results
-obtained with this script against the official BoTorch tutorial. """
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
@@ -21,25 +18,23 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"c2dtlz2"
+    experiment_name = f"formaco_constrained"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = C2DTLZ2MCMultiOutputObjective(
+    objective = FormACOMCMultiOutputConstrainedObjective(
         device=DEVICE,
         dtype=DTYPE,
     )
 
-    """ Instantiate a random generator """
+    """ Generate initial dataset """
     sampler = Sampler(
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.dim,
         normalize=False,
     )
-
-    """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true(X)
     Y_con = objective.evaluate_slack_true(X)
@@ -47,7 +42,12 @@ def main(n_samples=64, q: int = 1, ):
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    gnd_truth_X = sampler.draw_samples(n=10000)
+    gnd_truth_X = make_grid(
+        size=20,
+        bounds=objective.bounds,
+        device=DEVICE,
+        dtype=DTYPE
+    )
 
     """ Instantiate a Mobo object """
     mobo = Mobo(
@@ -95,12 +95,12 @@ def main(n_samples=64, q: int = 1, ):
         """ Plots """
         plot_multi_objective_from_RN_to_R2(
             mobo=mobo,
-            title="C2DTLZ2 Test Problem",
+            title="FormACO Test Problem",
+            f1_label="Machining Down Time (min)",
+            f2_label=r"Electrode Wear $(\mu m)$",
             show_ref_point=True,
             show_ground_truth=True,
             show_observations=True,
-            f1_lims=(0, 1.5),
-            f2_lims=(0, 1.5),
             display_figure=False,
             X=gnd_truth_X,
             output_path=Path.cwd() / f"pareto_front.png"

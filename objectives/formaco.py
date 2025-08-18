@@ -1,0 +1,269 @@
+import torch
+from botorch.utils.multi_objective import Hypervolume
+from torch import Tensor
+from abc import ABC
+from botorch.acquisition.multi_objective import MCMultiOutputObjective
+from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputDataError
+from botorch.utils.transforms import normalize_indices
+from botorch.utils.multi_objective.pareto import is_non_dominated
+
+from constraints.output_constraints import LowerBound, Identity
+from objectives.base_class import MCMultiOutputBase
+
+
+class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
+    """
+    2x objectives:
+        - Machining Time: Originally intended for minimization.
+        - Electrode Wear: Originally intended for minimization.
+
+    1x constraints:
+        - Orbiting Time: Requires values > 40 mins.
+
+    3x parameters:
+        - Maximum Current [7.5, 15]
+        - Pedestal Current [3.0, 7.5]
+        - Maximum Ramp Time [0.1*78, 1*78], where ON time = 78 us
+
+    Reference point:
+        - Machining Time: 300 min
+        - Electrode Wear: 150 um
+    """
+
+    def __init__(self, device: torch.device, dtype: torch.dtype):
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            dim=3,
+            num_objectives=2,
+            num_constraints=1,
+            obj_to_minimize=[True, True],
+            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
+            ref_point=[300, 150],
+            num_outcomes=2,
+            outcomes=[0, 1],
+            gt_noise_std=None,
+            max_hv=None,
+            linear_equality_input_constraints=None,
+            linear_inequality_input_constraints=None,
+            nonlinear_inequality_input_constraints=None,
+            output_constraints=[Identity(index=-1)],
+            estimate_max_hv=True,
+        )
+
+    @staticmethod
+    def _electrode_wear(X: Tensor) -> Tensor:
+        """
+        Simulates wear in microns based on a pre-fitted polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=26.301475188947435
+                             - 19.166867643857774 * i_max
+                             + 48.32116975101596 * i_p
+                             - 2.2004820692692393 * tau_r_max
+                             + 1.610831887686114 * i_max ** 2
+                             - 1.7060582358070433 * i_max * i_p
+                             - 0.09448612682328417 * i_max * tau_r_max
+                             - 2.2369331180580914 * i_p ** 2
+                             + 0.12893509602180986 * i_p * tau_r_max
+                             + 0.02736891179134915 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    @staticmethod
+    def _machining_time(X: Tensor) -> Tensor:
+        """
+        Simulates machining time (down phase) in seconds based on a pre-fitted
+        polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=616.3490679119025
+                             - 39.079346209938606 * i_max
+                             - 46.683313051874606 * i_p
+                             + 1.732712663059158 * tau_r_max
+                             + 0.17007512603265695 * i_max ** 2
+                             + 0.5782395309343626 * i_max * i_p
+                             + 0.5065065733380472 * i_max * tau_r_max
+                             + 3.069882379450696 * i_p ** 2
+                             - 0.4865913603357419 * i_p * tau_r_max
+                             - 0.046096819818593815 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    @staticmethod
+    def _orbiting_time(X: Tensor) -> Tensor:
+        """
+        Simulates orbiting time in seconds based on a pre-fitted polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=188.4485094756797
+                             - 21.28654897663603 * i_max
+                             - 4.222217726699118 * i_p
+                             + 0.17654656533899832 * tau_r_max
+                             + 0.6689645319172054 * i_max ** 2
+                             + 0.6548427659792726 * i_max * i_p
+                             - 0.024689990372160464 * i_max * tau_r_max
+                             - 0.6374105462985316 * i_p ** 2
+                             + 0.03550705380735647 * i_p * tau_r_max
+                             - 0.00016572486105292938 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    def evaluate_true(self, X: Tensor) -> Tensor:
+        machining_time = self._machining_time(X=X)
+        electrode_wear = self._electrode_wear(X=X)
+        return super().evaluate_true(torch.stack([machining_time, electrode_wear], dim=-1))
+
+    def evaluate_slack_true(self, X: Tensor) -> Tensor:
+        slack = 40 - self._orbiting_time(X=X)
+        return super().evaluate_slack_true(slack.unsqueeze(dim=-1))
+
+    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
+        selected = samples.clone()
+        if self.outcomes is not None:
+            selected = selected.index_select(-1, self.outcomes)
+        selected[..., self.obj_to_minimize] *= -1
+        return selected
+
+
+class FormACOMCMultiOutputObjective(MCMultiOutputBase):
+    """
+    3x objectives:
+        - Machining Time: Originally intended for minimization.
+        - Electrode Wear: Originally intended for minimization.
+        - Orbiting Time: Requires values > 40 mins -> intended for maximization.
+
+    3x parameters:
+        - Maximum Current [7.5, 15]
+        - Pedestal Current [3.0, 7.5]
+        - Maximum Ramp Time [0.1*78, 1*78], where ON time = 78 us
+
+    Reference point:
+        - Machining Time: 300 min
+        - Electrode Wear: 150 um
+        - Orbiting penalty Time: -50 min
+    """
+
+    def __init__(self, device: torch.device, dtype: torch.dtype):
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            dim=3,
+            num_objectives=3,
+            num_constraints=0,
+            obj_to_minimize=[True, True, False],
+            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
+            ref_point=[300, 150, -50],
+            num_outcomes=3,
+            outcomes=[0, 1, 2],
+            gt_noise_std=None,
+            max_hv=None,
+            linear_equality_input_constraints=None,
+            linear_inequality_input_constraints=None,
+            nonlinear_inequality_input_constraints=None,
+            output_constraints=None,
+            estimate_max_hv=True,
+        )
+
+    @staticmethod
+    def _electrode_wear(X: Tensor) -> Tensor:
+        """
+        Simulates wear in microns based on a pre-fitted polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=26.301475188947435
+                             - 19.166867643857774 * i_max
+                             + 48.32116975101596 * i_p
+                             - 2.2004820692692393 * tau_r_max
+                             + 1.610831887686114 * i_max ** 2
+                             - 1.7060582358070433 * i_max * i_p
+                             - 0.09448612682328417 * i_max * tau_r_max
+                             - 2.2369331180580914 * i_p ** 2
+                             + 0.12893509602180986 * i_p * tau_r_max
+                             + 0.02736891179134915 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    @staticmethod
+    def _machining_time(X: Tensor) -> Tensor:
+        """
+        Simulates machining time (down phase) in seconds based on a pre-fitted
+        polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=616.3490679119025
+                             - 39.079346209938606 * i_max
+                             - 46.683313051874606 * i_p
+                             + 1.732712663059158 * tau_r_max
+                             + 0.17007512603265695 * i_max ** 2
+                             + 0.5782395309343626 * i_max * i_p
+                             + 0.5065065733380472 * i_max * tau_r_max
+                             + 3.069882379450696 * i_p ** 2
+                             - 0.4865913603357419 * i_p * tau_r_max
+                             - 0.046096819818593815 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    @staticmethod
+    def _orbiting_time(X: Tensor) -> Tensor:
+        """
+        Simulates orbiting time in seconds based on a pre-fitted polynomial function.
+        """
+        i_max = X[..., 0]
+        i_p = X[..., 1]
+        tau_r_max = X[..., 2]
+
+        return torch.clamp(x=188.4485094756797
+                             - 21.28654897663603 * i_max
+                             - 4.222217726699118 * i_p
+                             + 0.17654656533899832 * tau_r_max
+                             + 0.6689645319172054 * i_max ** 2
+                             + 0.6548427659792726 * i_max * i_p
+                             - 0.024689990372160464 * i_max * tau_r_max
+                             - 0.6374105462985316 * i_p ** 2
+                             + 0.03550705380735647 * i_p * tau_r_max
+                             - 0.00016572486105292938 * tau_r_max ** 2,
+                           min=0
+                           )
+
+    def evaluate_true(self, X: Tensor) -> Tensor:
+        machining_time = self._machining_time(X=X)
+        electrode_wear = self._electrode_wear(X=X)
+        orbiting_time = self._orbiting_time(X=X)
+        return super().evaluate_true(torch.stack([machining_time, electrode_wear, orbiting_time], dim=-1))
+
+    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
+        selected = samples.clone()
+        if self.outcomes is not None:
+            selected = selected.index_select(-1, self.outcomes)
+
+        # Transform the orbiting time objective to a "satisfaction" metric.
+        # The objective is 0 if time >= 40, and it is time - 40, if time < 40.
+        orbiting_time = selected[..., 2]
+
+        # === Exponential penalty ===
+        # violation = torch.clamp(40.0 - orbiting_time, min=0.0)
+        # satisfaction = - torch.exp(violation / 1)  # k=5.0
+
+        # === Linear penalty ===
+        satisfaction = 1000 * torch.clamp(orbiting_time - 40.0, max=0.0)
+
+        selected[..., 2] = satisfaction
+        # Negate objectives for minimization
+        selected[..., self.obj_to_minimize] *= -1
+        return selected

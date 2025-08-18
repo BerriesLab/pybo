@@ -42,10 +42,10 @@ def main(n_samples=64, q: int = 1, ):
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
     X_gt = make_grid(
+        device=DEVICE,
+        dtype=DTYPE,
         size=100,
         bounds=objective.bounds,
-        device=DEVICE,
-        dtype=DTYPE
     )
 
     """ Instantiate a Mobo object """
@@ -99,7 +99,7 @@ def main(n_samples=64, q: int = 1, ):
             show_observations=True,
             f1_lims=(-10, 250),
             f2_lims=(0, 15),
-            display_figures=False,
+            display_figure=False,
             X=X_gt,
             output_path=Path.cwd() / f"pareto_front.png"
         )

@@ -2,17 +2,15 @@ import os
 import torch
 from pathlib import Path
 from mobo.mobo import Mobo
+from objectives.formaco import FormACOMCMultiOutputObjective
 from samplers.samplers import Sampler
 from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.io import create_experiment_directory
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
+from utils.plotters import plot_multi_objective_from_RN_to_R3_with_color_coded_R3, plot_log_hypervolume_improvement, plot_elapsed_time, \
     make_grid
 
-""" Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
-refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results
-obtained with this script against the official BoTorch tutorial. """
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -21,33 +19,35 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"c2dtlz2"
+    experiment_name = f"formaco"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = C2DTLZ2MCMultiOutputObjective(
+    objective = FormACOMCMultiOutputObjective(
         device=DEVICE,
         dtype=DTYPE,
     )
 
-    """ Instantiate a random generator """
+    """ Generate initial dataset """
     sampler = Sampler(
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.dim,
         normalize=False,
     )
-
-    """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true(X)
-    Y_con = objective.evaluate_slack_true(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    gnd_truth_X = sampler.draw_samples(n=10000)
+    gnd_truth_X = make_grid(
+        size=20,
+        bounds=objective.bounds,
+        device=DEVICE,
+        dtype=DTYPE
+    )
 
     """ Instantiate a Mobo object """
     mobo = Mobo(
@@ -60,7 +60,7 @@ def main(n_samples=64, q: int = 1, ):
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
-        Y_con=Y_con,
+        Y_con=None,
         Y_con_var=None,
     )
 
@@ -80,10 +80,8 @@ def main(n_samples=64, q: int = 1, ):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true(new_X)
-        new_Y_con = objective.evaluate_slack_true(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
@@ -93,14 +91,19 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        plot_multi_objective_from_RN_to_R2(
+        plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
             mobo=mobo,
-            title="C2DTLZ2 Test Problem",
+            title="FormACO Test Problem",
+            f1_label="Machining Down Time (min)",
+            f2_label=r"Electrode Wear $(\mu m)$",
+            f3_label="Orbiting Time (min)",
+            f3_lims=(20, 80),
+            f1_idx=0,
+            f2_idx=1,
+            f3_idx=2,
             show_ref_point=True,
             show_ground_truth=True,
             show_observations=True,
-            f1_lims=(0, 1.5),
-            f2_lims=(0, 1.5),
             display_figure=False,
             X=gnd_truth_X,
             output_path=Path.cwd() / f"pareto_front.png"
