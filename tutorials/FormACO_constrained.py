@@ -4,14 +4,13 @@ from pathlib import Path
 from mobo.mobo import Mobo
 from objectives.formaco import FormACOMCMultiOutputConstrainedObjective
 from samplers.samplers import Sampler
-from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
-from utils.io import create_experiment_directory
-from utils.make_video import create_video_from_images
+from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
-    make_grid
+    make_grid, plot_parameters_evolution, plot_objectives_evolution, \
+    plot_constraints_evolution
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")
 DTYPE = torch.float64
 
 
@@ -36,8 +35,8 @@ def main(n_samples=64, q: int = 1, ):
         normalize=False,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true(X)
-    Y_con = objective.evaluate_slack_true(X)
+    Y_obj = objective.evaluate_true_objective(X)
+    Y_con = objective.evaluate_true_constraint(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
@@ -79,8 +78,8 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true(new_X)
-        new_Y_con = objective.evaluate_slack_true(new_X)
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_con = objective.evaluate_true_constraint(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
         mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
@@ -105,14 +104,11 @@ def main(n_samples=64, q: int = 1, ):
             X=gnd_truth_X,
             output_path=Path.cwd() / f"pareto_front.png"
         )
-        plot_log_hypervolume_improvement(
-            mobo=mobo,
-            output_path=Path.cwd() / f"hvi.png"
-        )
-        plot_elapsed_time(
-            mobo=mobo,
-            output_path=Path.cwd() / f"elapsed_time.png"
-        )
+        plot_log_hypervolume_improvement(mobo=mobo)
+        plot_elapsed_time(mobo=mobo)
+        plot_parameters_evolution(mobo=mobo)
+        plot_objectives_evolution(mobo=mobo)
+        plot_constraints_evolution(mobo=mobo)
 
     print("Optimization Finished.")
 

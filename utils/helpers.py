@@ -1,8 +1,7 @@
 import datetime
+from pathlib import Path
 import torch
 from enum import Enum
-
-from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from torch import Tensor, device, dtype
 
 
@@ -40,7 +39,6 @@ def serialize_value(value):
     return None
 
 
-
 def deserialize_value(value, target_type=None):
     """
     Recursively deserializes a JSON-compatible value back to its original type.
@@ -75,3 +73,12 @@ def deserialize_value(value, target_type=None):
         return {k: deserialize_value(v) for k, v in value.items()}
 
     return value  # basic types remain as-is
+
+
+def create_experiment_directory(main_directory: Path or str, experiment_name: str):
+    if isinstance(main_directory, str):
+        main_directory = Path(main_directory)
+    date_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    directory = main_directory / Path(f'{date_time} - {experiment_name}')
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory

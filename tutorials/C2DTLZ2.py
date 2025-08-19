@@ -4,7 +4,7 @@ from pathlib import Path
 from mobo.mobo import Mobo
 from samplers.samplers import Sampler
 from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
-from utils.io import create_experiment_directory
+from utils.helpers import create_experiment_directory
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType
 from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
@@ -41,8 +41,8 @@ def main(n_samples=64, q: int = 1, ):
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true(X)
-    Y_con = objective.evaluate_slack_true(X)
+    Y_obj = objective.evaluate_true_objective(X)
+    Y_con = objective.evaluate_true_slack(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
@@ -79,8 +79,8 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true(new_X)
-        new_Y_con = objective.evaluate_slack_true(new_X)
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_con = objective.evaluate_true_slack(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
         mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)

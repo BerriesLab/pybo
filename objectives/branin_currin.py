@@ -22,7 +22,7 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
     nature. Therefore, here it is important to negate both.
     """
 
-    def __init__(self, device: torch.device, dtype: torch.dtype,):
+    def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
             dtype=dtype,
@@ -46,10 +46,10 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
     @staticmethod
     def _branin(X: Tensor) -> Tensor:
         t1 = (
-            X[..., 1]
-            - 5.1 / (4 * math.pi**2) * X[..., 0].pow(2)
-            + 5 / math.pi * X[..., 0]
-            - 6
+                X[..., 1]
+                - 5.1 / (4 * math.pi ** 2) * X[..., 0].pow(2)
+                + 5 / math.pi * X[..., 0]
+                - 6
         )
         t2 = 10 * (1 - 1 / (8 * math.pi)) * torch.cos(X[..., 0])
         return t1.pow(2) + t2 + 10
@@ -71,11 +71,11 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
         denom = 100 * x_0.pow(3) + 500 * x_0.pow(2) + 4 * x_0 + 20
         return factor1 * numer / denom
 
-    def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor | None:
+    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor | None:
         branin = self._rescaled_branin(X=X)
         currin = self._currin(X=X)
         f = torch.stack([branin, currin], dim=-1)
-        return super().evaluate_true(f)
+        return super().evaluate_true_objective(f)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

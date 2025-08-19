@@ -9,7 +9,6 @@ from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 
-
 ms = 7
 
 feasible_pareto_observations_kwargs = {
@@ -117,11 +116,7 @@ def make_grid(size: int, bounds: torch.Tensor, dtype=torch.float64, device='cpu'
     return grid
 
 
-def plot_objective_from_R1_to_R1():
-    raise NotImplementedError("Function not yet implemented.")
-
-
-def plot_objective_from_R2_to_R1():
+def plot_objective_from_RN_to_R1():
     raise NotImplementedError("Function not yet implemented.")
 
 
@@ -134,13 +129,12 @@ def plot_multi_objective_from_RN_to_R2(
         f1_lims=None,
         f2_lims=None,
         show_ref_point=True,
-        show_observations=True,
-        display_figure=True,
         show_ground_truth=False,
         show_posterior=False,
+        show_observations=True,
+        display_figure=True,
         output_path=None,
 ):
-
     # Initialize the figure
     fig, axes = plt.subplots(1, 1, figsize=(6, 6))
     axes.set_title(title or "Pareto Front")
@@ -149,23 +143,21 @@ def plot_multi_objective_from_RN_to_R2(
     axes.set_xlim(f1_lims[0], f1_lims[1]) if f1_lims is not None else axes.autoscale(enable=True, axis='x')
     axes.set_ylim(f2_lims[0], f2_lims[1]) if f2_lims is not None else axes.autoscale(enable=True, axis='y')
     if output_path is None:
-        output_path = Path.cwd() / "plot_multi_objective_from_RN_to_R2.png"
-
-    # Validate inputs
-    if show_ground_truth and mobo.objective.evaluate_true(X) is None:
-        raise ValueError("Cannot plot ground truth: ground truth is not available.")
+        output_path = Path.cwd() / "pareto_front.png"
 
     """ Plot ground truth """
     if show_ground_truth:
 
-        Y_gt = mobo.objective.evaluate_true(X)
+        if mobo.objective.evaluate_true_objective(X) is None:
+            raise ValueError("Cannot plot ground truth: ground truth is not available.")
+        Y_gt = mobo.objective.evaluate_true_objective(X)
 
         # === Compute feasible and infeasible masks ===
         if mobo.objective.output_constraints is None:
             feasible_mask = torch.ones(Y_gt.shape[-2], dtype=torch.bool)
             infeasible_mask = torch.zeros_like(Y_gt, dtype=torch.bool)
         else:
-            ground_truth_con = mobo.objective.evaluate_slack_true(X)
+            ground_truth_con = mobo.objective.evaluate_true_slack(X)
             feasible_mask = (ground_truth_con <= 0).all(dim=-1)
             infeasible_mask = torch.logical_not(feasible_mask)
 
@@ -216,7 +208,7 @@ def plot_multi_objective_from_RN_to_R2(
     """ Plot reference point """
     if show_ref_point is True:
         ref_point = mobo.objective.ref_point.detach().cpu().numpy()
-        plt.scatter(ref_point[0], ref_point[1], **ref_point_kwargs)
+        axes.scatter(ref_point[0], ref_point[1], **ref_point_kwargs)
 
     """ Plot observations """
     if show_observations is True:
@@ -269,21 +261,21 @@ def plot_multi_objective_from_RN_to_R2(
 
 def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
         mobo,
-        X: torch.Tensor or None = None,
+        X: torch.Tensor | None = None,
         title: str | None = None,
         f1_label: str = "$f_{1}",
         f2_label: str = "$f_{2}$",
         f3_label: str = "$f_{3}$",
-        f1_lims: tuple[float, float]=None,
-        f2_lims: tuple[float, float]=None,
-        f3_lims: tuple[float, float]=None,
+        f1_lims: tuple[float, float] = None,
+        f2_lims: tuple[float, float] = None,
+        f3_lims: tuple[float, float] = None,
         f1_idx: int = 0,
         f2_idx: int = 1,
         f3_idx: int = 2,
         show_ref_point: bool = True,
-        show_observations: bool = True,
         show_ground_truth: bool = False,
         show_posterior: bool = False,
+        show_observations: bool = True,
         display_figure: bool = True,
         output_path=None,
 ):
@@ -307,7 +299,7 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
     axes.set_ylim(f2_lims[0], f2_lims[1]) if f2_lims is not None else axes.autoscale(enable=True, axis='y')
     legend_elements = []
     if output_path is None:
-        output_path = Path.cwd() / "plot_multi_objective_general.png"
+        output_path = Path.cwd() / "pareto_front.png"
 
     # If the limits for the third observable are given, use them to define the colormap
     # norm. Otherwise, collect the ground truth and the observations, and find the
@@ -317,15 +309,16 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
     else:
         Y_colors = None
         if X is not None:
-            if hasattr(mobo.objective, "evaluate_true") and callable(mobo.objective.evaluate_true):
+            if callable(mobo.objective.evaluate_true_objective):
                 X = X.to(mobo.device, mobo.dtype)
-                Y_colors = mobo.objective.evaluate_true(X)
+                Y_colors = mobo.objective.evaluate_true_objective(X)
         if mobo.Y_obj is not None:
             if Y_colors is not None:
                 Y_colors = torch.cat([Y_colors, mobo.Y_obj], dim=0)
             else:
                 Y_colors = mobo.Y_obj
         if Y_colors is not None:
+            Y_colors = Y_colors.detach().cpu().numpy()[:, f3_idx]
             norm = mpl.colors.Normalize(vmin=Y_colors.min().item(), vmax=Y_colors.max().item())
         else:
             raise ValueError("Cannot compute color coding.")
@@ -333,14 +326,14 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
 
     """ Plot ground truth """
     if show_ground_truth:
-        Y_gt = mobo.objective.evaluate_true(X)
+        Y_gt = mobo.objective.evaluate_true_objective(X)
 
         # === Compute feasible and infeasible masks ===
         if mobo.objective.output_constraints is None:
             feasible_mask = torch.ones(Y_gt.shape[-2], dtype=torch.bool)
             infeasible_mask = torch.zeros_like(Y_gt, dtype=torch.bool)
         else:
-            ground_truth_con = mobo.objective.evaluate_slack_true(X)
+            ground_truth_con = mobo.objective.evaluate_true_slack(X)
             feasible_mask = (ground_truth_con <= 0).all(dim=-1)
             infeasible_mask = torch.logical_not(feasible_mask)
 
@@ -362,7 +355,7 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
                 kwargs = dict(infeasible_ground_truth_kwargs)  # make a local copy
                 kwargs.pop("color", None)
                 c = cmap(norm(color_values))
-                axes.scatter(x=Y_gt_inf[:, f1_idx], y=zY_gt_inf[:, f2_idx], c=c, **kwargs)
+                axes.scatter(x=Y_gt_inf[:, f1_idx], y=Y_gt_inf[:, f2_idx], c=c, **kwargs)
                 legend_elements.append(Line2D(
                     [0], [0], marker=infeasible_ground_truth_kwargs['marker'],
                     label=infeasible_ground_truth_kwargs['label'],
@@ -502,117 +495,162 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
 
 def plot_multi_objective_from_RN_to_R3(
         mobo: Mobo,
-        x: torch.Tensor,
-        f_lims=None,
-        f_labels=("$f_{01}$", "$f_{02}$", "$f_{03}$"),
-        show_ref_point=True,
-        show_observations=True,
-        display_figure=True,
-        show_ground_truth=False,
-        show_posterior=False,
+        X: torch.Tensor,
+        title: str | None = None,
+        f1_label: str = "$f_{1}",
+        f2_label: str = "$f_{2}$",
+        f3_label: str = "$f_{3}$",
+        f1_lims: tuple[float, float] = None,
+        f2_lims: tuple[float, float] = None,
+        f3_lims: tuple[float, float] = None,
+        show_ref_point: bool = True,
+        show_ground_truth: bool = False,
+        show_posterior: bool = False,
+        show_observations: bool = True,
+        display_figure: bool = True,
         output_path=None,
 ):
-    fig = plt.figure(figsize=(8, 6))
+    # Initialize the figure
+    fig = plt.figure()
     axes = fig.add_subplot(111, projection='3d')
-    axes.set_title(r'Multi-objective Bayesian Optimization for $\mathbf{f_0}:\mathbb{R}^N \rightarrow \mathbb{R}^3$')
-
-    # Set axis labels
-    axes.set_xlabel(f_labels[0])
-    axes.set_ylabel(f_labels[1])
-    axes.set_zlabel(f_labels[2])
-
-    # Set limits if provided
-    if f_lims is not None and isinstance(f_lims, tuple) and len(f_lims) == 3:
-        axes.set_xlim(f_lims[0])
-        axes.set_ylim(f_lims[1])
-        axes.set_zlim(f_lims[2])
+    axes.set_title(title or 'Pareto Front')
+    axes.set_xlabel("$f_{1}$") if not f1_label else axes.set_xlabel(f1_label)
+    axes.set_ylabel("$f_{2}$") if not f2_label else axes.set_ylabel(f2_label)
+    axes.set_zlabel("$f_{3}$") if not f3_label else axes.set_ylabel(f3_label)
+    axes.set_xlim(f1_lims[0], f1_lims[1]) if f1_lims is not None else axes.autoscale(enable=True, axis='x')
+    axes.set_ylim(f2_lims[0], f2_lims[1]) if f2_lims is not None else axes.autoscale(enable=True, axis='y')
+    axes.set_zlim(f3_lims[0], f3_lims[1]) if f3_lims is not None else axes.autoscale(enable=True, axis='z')
+    if output_path is None:
+        output_path = Path.cwd() / "pareto_front_3d.png"
 
     """ Plot ground truth """
     if show_ground_truth:
-        if mobo.get_true_objective() is None:
-            raise ValueError("Ground truth not available.")
 
-        x = x.to(mobo.get_device(), mobo.get_dtype())
-        ground_truth_obj = mobo.get_true_objective()(x)
+        if mobo.objective.evaluate_true_objective(X) is None:
+            raise ValueError("Cannot plot ground truth: ground truth is not available.")
+        Y_gt = mobo.objective.evaluate_true_objective(X)
 
-        if mobo.get_output_constraints() is None:
-            feas_mask = torch.ones_like(ground_truth_obj, dtype=torch.bool).all(dim=-1)
+        # === Compute feasible and infeasible masks ===
+        if mobo.objective.output_constraints is None:
+            feasible_mask = torch.ones(Y_gt.shape[-2], dtype=torch.bool)
+            infeasible_mask = torch.zeros_like(Y_gt, dtype=torch.bool)
         else:
-            con = -mobo.get_true_objective().evaluate_slack(x)
-            feas_mask = (con <= 0).all(dim=-1)
+            ground_truth_con = mobo.objective.evaluate_true_slack(X)
+            feasible_mask = (ground_truth_con <= 0).all(dim=-1)
+            infeasible_mask = torch.logical_not(feasible_mask)
 
-        feas = ground_truth_obj[feas_mask].detach().cpu().numpy()
-        axes.scatter(feas[:, 0], feas[:, 1], feas[:, 2], **feasible_non_pareto_ground_truth_kwargs)
+        # === Compute pareto masks ===
+        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
+        if feasible_mask.any():
+            Y_par = Y_gt.clone()
+            Y_par[..., mobo.objective.obj_to_minimize] *= -1
+            Y_par = Y_par[feasible_mask]
+            pareto_mask[feasible_mask] = is_non_dominated(Y_par)
+        feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
+        feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
+
+        # === Plot infeasible ground truth ===
+        if mobo.objective.output_constraints is not None:
+            if torch.any(infeasible_mask):
+                Y_gt_inf = Y_gt[infeasible_mask].detach().cpu().numpy()
+                axes.scatter(Y_gt_inf[:, 0], Y_gt_inf[:, 1], Y_gt_inf[:, 2], **infeasible_ground_truth_kwargs)
+
+        # === Plot feasible non-pareto-front ground truth ===
+        if torch.any(feasible_non_pareto_mask):
+            Y_gt_feas_non_par = Y_gt[feasible_non_pareto_mask].detach().cpu().numpy()
+            axes.scatter(Y_gt_feas_non_par[:, 0], Y_gt_feas_non_par[:, 1], Y_gt_feas_non_par[:, 2],
+                         **feasible_non_pareto_ground_truth_kwargs)
+
+        # === Plot feasible pareto-front ground truth ===
+        if torch.any(feasible_mask):
+            Y_gt_feas_par = Y_gt[feasible_pareto_mask].detach().cpu().numpy()
+            axes.scatter(Y_gt_feas_par[:, 0], Y_gt_feas_par[:, 1], Y_gt_feas_par[:, 2],
+                         **feasible_pareto_ground_truth_kwargs)
 
     """ Plot posterior """
     if show_posterior:
-        x = x.to(mobo.get_device(), mobo.get_dtype())
-        posterior = mobo.get_model().posterior(x)
-        mean = posterior.mean.detach().cpu().numpy()
-        std = posterior.variance.sqrt().detach().cpu().numpy()
-
-        axes.errorbar(
-            mean[:, 0], mean[:, 1], mean[:, 2],
-            xerr=3 * std[:, 0],
-            yerr=3 * std[:, 1],
-            zerr=3 * std[:, 2],
-            fmt='o', **posterior_pareto_kwargs,
-        )
+        # TODO: implement posterior plot
+        raise NotImplementedError("Posterior not yet implemented.")
+        # x = x.to(mobo.device, mobo.dtype)
+        # posterior = mobo.model.posterior(x)
+        # mean = posterior.mean.detach().cpu().numpy()
+        # std = posterior.variance.sqrt().detach().cpu().numpy()
+        #
+        # axes.errorbar(
+        #     mean[:, 0], mean[:, 1], mean[:, 2],
+        #     xerr=3 * std[:, 0],
+        #     yerr=3 * std[:, 1],
+        #     zerr=3 * std[:, 2],
+        #     fmt='o', **posterior_pareto_kwargs,
+        # )
 
     """ Plot reference point """
     if show_ref_point is True:
-        ref_point = mobo.get_objective().ref_point.detach().cpu().numpy()
+        ref_point = mobo.objective.ref_point.detach().cpu().numpy()
         axes.scatter(ref_point[0], ref_point[1], ref_point[2], **ref_point_kwargs)
 
     """ Plot observations """
     if show_observations:
-        y_obj = mobo.get_Yobj()
 
-        # Compute masks
-        obs_feas_mask = mobo.get_feasible_observations_mask()
-        obs_par_mask = mobo.get_pareto_front_mask()
-        obs_inf_mask = torch.logical_not(mobo.get_feasible_observations_mask())
-        obs_feas_and_par_mask = torch.logical_and(obs_feas_mask, obs_par_mask)
-        obs_feas_and_not_par_mask = torch.logical_and(obs_feas_mask, torch.logical_not(obs_par_mask))
+        Y_obj = mobo.Y_obj.clone()
 
-        # Plot Pareto surface
-        pareto_points = y_obj[obs_feas_and_par_mask].detach().cpu().numpy()
-        if pareto_points.shape[0] >= 3:
-            # Reduce 3D points to 2D parameters
-            pca = PCA(n_components=2)
-            params_2d = pca.fit_transform(pareto_points)  # shape (num_points, 2)
-            # Triangulate in param space
-            tri = Triangulation(params_2d[:, 0], params_2d[:, 1])
-            # Plot trisurf in 3D using original coordinates and the 2D triangulation
-            axes.plot_trisurf(
-                pareto_points[:, 0],
-                pareto_points[:, 1],
-                pareto_points[:, 2],
-                triangles=tri.triangles,
-                cmap='Blues',
-                alpha=0.4,
-                edgecolor='gray'
-            )
+        # === Compute feasible and infeasible masks ===
+        if mobo.objective.output_constraints is None:
+            feasible_mask = torch.ones(mobo.Y_obj.shape[-2], dtype=torch.bool)
+            infeasible_mask = torch.zeros_like(mobo.Y_obj, dtype=torch.bool)
+        else:
+            Y_full = torch.cat([mobo.Y_obj, mobo.Y_con], dim=-1)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in mobo.objective.output_constraints]).all(dim=-2)
+            infeasible_mask = torch.logical_not(feasible_mask)
 
-        # Plot infeasible observations
-        if mobo.get_Ycon() is not None and torch.any(obs_inf_mask):
-            obs_inf = y_obj[obs_inf_mask].detach().cpu().numpy()
-            axes.scatter(obs_inf[:, 0], obs_inf[:, 1], obs_inf[:, 2], **infeasible_observations_kwargs)
+        # === Compute pareto masks ===
+        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
+        if feasible_mask.any():
+            Y_par = Y_obj.clone()
+            Y_par[..., mobo.objective.obj_to_minimize] *= -1
+            Y_par = Y_par[feasible_mask]
+            pareto_mask[feasible_mask] = is_non_dominated(Y_par)
+        feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
+        feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
 
-        # Plot feasible non-pareto-front observations
-        if torch.any(obs_feas_and_not_par_mask):
-            obs = y_obj[obs_feas_and_not_par_mask].detach().cpu().numpy()
-            axes.scatter(obs[:, 0], obs[:, 1], obs[:, 2], **feasible_non_pareto_observations_kwargs)
+        # === Plot infeasible observations ===
+        if mobo.objective.output_constraints is not None:
+            if torch.any(infeasible_mask):
+                Y_obj_inf = Y_obj[infeasible_mask].detach().cpu().numpy()
+                axes.scatter(Y_obj_inf[:, 0], Y_obj_inf[:, 1], Y_obj_inf[:, 2], **infeasible_observations_kwargs)
 
-        # Plot feasible pareto-front observations
-        if torch.any(obs_feas_and_par_mask):
-            obs = y_obj[obs_feas_and_par_mask].detach().cpu().numpy()
-            axes.scatter(obs[:, 0], obs[:, 1], obs[:, 2], **feasible_pareto_observations_kwargs)
+        # === Plot feasible non-pareto-front observations ===
+        if torch.any(feasible_non_pareto_mask):
+            Y_obj_feas_non_par = Y_obj[feasible_non_pareto_mask].detach().cpu().numpy()
+            axes.scatter(Y_obj_feas_non_par[:, 0], Y_obj_feas_non_par[:, 1], Y_obj_feas_non_par[:, 2],
+                         **feasible_non_pareto_observations_kwargs)
 
-    # Add legend and save
+        # === Plot feasible pareto-front observations ===
+        if torch.any(feasible_mask):
+            Y_obj_feas_par = Y_obj[feasible_pareto_mask].detach().cpu().numpy()
+            axes.scatter(Y_obj_feas_par[:, 0], Y_obj_feas_par[:, 1], Y_obj_feas_par[:, 2],
+                         **feasible_pareto_observations_kwargs)
+
+            # Plot Pareto surface
+            if Y_obj_feas_par.shape[0] >= 3:
+                # Reduce 3D points to 2D parameters
+                pca = PCA(n_components=2)
+                params_2d = pca.fit_transform(Y_obj_feas_par)  # shape (num_points, 2)
+                # Triangulate in param space
+                tri = Triangulation(params_2d[:, 0], params_2d[:, 1])
+                # Plot trisurf in 3D using original coordinates and the 2D triangulation
+                axes.plot_trisurf(
+                    Y_obj_feas_par[:, 0],
+                    Y_obj_feas_par[:, 1],
+                    Y_obj_feas_par[:, 2],
+                    triangles=tri.triangles,
+                    cmap='Blues',
+                    alpha=0.4,
+                    edgecolor='gray'
+                )
+
+    axes.autoscale_view(tight=False)  # Update the view limits if limits are not set
     plt.legend()
-    if output_path is None:
-        output_path = Path.cwd() / "plot_multi_objective_from_RN_to_R3.png"
     fig.savefig(output_path, dpi=300, bbox_inches='tight', format='png')
 
     if display_figure:
@@ -631,14 +669,6 @@ def plot_log_hypervolume_improvement(
     Plots two scatter plots:
     1. Cumulative hypervolume over iterations.
     2. log10 of relative hypervolume improvement.
-
-    Args:
-        hv (list[float]): List of cumulative hypervolume values.
-        output_path (Path, optional): Where to save the figure.
-        batch_size (int): Number of new samples per BO iteration.
-        display_figure (bool): If True, displays plot interactively.
-        epsilon (float): Minimum improvement to avoid log10(0).
-        color (str): Color used in scatter plots.
     """
 
     hv = mobo.hypervolume
@@ -657,7 +687,7 @@ def plot_log_hypervolume_improvement(
     x = np.arange(len(hv)) * batch_size
 
     if output_path is None:
-        output_path = Path.cwd() / "hv_and_log_hvi.png"
+        output_path = Path.cwd() / "hv.png"
 
     fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
@@ -692,12 +722,12 @@ def plot_elapsed_time(
         mobo: Mobo,
         output_path: Path or None = None,
         batch_size: int = 1,  # Number of new X drawn per iteration
-        show=False):
-
+        display_figure=False
+):
     elapsed_time = mobo.elapsed_time
 
     if output_path is None:
-        output_path = Path.cwd() / "plot_elapsed_time.png"
+        output_path = Path.cwd() / "elapsed_time.png"
 
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
     ax.set_xlabel("Number of observations (beyond initial points)")
@@ -708,7 +738,108 @@ def plot_elapsed_time(
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches='tight', format='png')
 
-    if show:
+    if display_figure:
         plt.show()
     plt.close(fig)
 
+
+def plot_parameters_evolution(
+        mobo,
+        parameter_names: list[str] | None = None,
+        display_figure: bool = False,
+        output_path: Path | None = None,
+):
+    X = mobo.X.clone().cpu().numpy()
+    n = mobo.objective.dim
+    bounds = mobo.objective.bounds.clone().cpu().numpy()
+    if parameter_names is None:
+        if mobo.objective.parameter_names is not None:
+            parameter_names = mobo.objective.parameter_names
+        else:
+            parameter_names = [f"p{i}" for i in range(n)]
+
+    for i in range(n):
+        fig = plt.figure(figsize=(10, 6))
+        plt.plot(range(X.shape[0]), X[:, i], marker="o", label=parameter_names[i])
+        plt.axhline(y=bounds[0][i], linestyle='--', color='black')
+        plt.axhline(y=bounds[1][i], linestyle='--', color='black')
+        plt.xlabel("Iteration")
+        plt.ylabel(parameter_names[i])
+        plt.title(f"Evolution of {parameter_names[i]}")
+        plt.legend()
+        plt.tight_layout()
+
+        save_path = output_path or (
+                Path.cwd() / f"parameter_evolution_{parameter_names[i].replace(' ', '_').lower()}.png")
+        plt.savefig(save_path, dpi=300)
+
+        if display_figure:
+            plt.show()
+        plt.close(fig)
+
+
+def plot_objectives_evolution(
+        mobo,
+        objective_names: list[str] | None = None,
+        display_figure: bool = False,
+        output_path: Path | None = None,
+):
+    Y_obj = mobo.Y_obj.clone().cpu().numpy()
+    n = mobo.objective.num_objectives
+    if objective_names is None:
+        if mobo.objective.objective_names is not None:
+            objective_names = mobo.objective.objective_names
+        else:
+            objective_names = [f"obj{i}" for i in range(n)]
+
+    for i in range(n):
+        fig = plt.figure(figsize=(10, 6))
+        plt.plot(range(Y_obj.shape[0]), Y_obj[:, i], marker="o", label=objective_names[i])
+        plt.xlabel("Iteration")
+        plt.ylabel(objective_names[i])
+        plt.title(f"Evolution of {objective_names[i]}")
+        plt.legend()
+        plt.tight_layout()
+
+        save_path = output_path or (
+                Path.cwd() / f"objective_evolution_{objective_names[i].replace(' ', '_').lower()}.png")
+        plt.savefig(save_path, dpi=300)
+
+        if display_figure:
+            plt.show()
+        plt.close(fig)
+
+
+def plot_constraints_evolution(
+        mobo,
+        constraint_names: list[str] | None = None,
+        display_figure: bool = False,
+        output_path: Path | None = None,
+):
+    if mobo.objective.num_constraints == 0:
+        return
+    Y_con = mobo.Y_con.clone().cpu().numpy()  # assuming constraints stored in mobo.C
+    n = mobo.objective.num_constraints
+    if constraint_names is None:
+        if mobo.objective.constraint_names is not None:
+            constraint_names = mobo.objective.constraint_names
+        else:
+            constraint_names = [f"c{i}" for i in range(n)]
+
+    for i in range(n):
+        fig = plt.figure(figsize=(10, 6))
+        plt.plot(range(Y_con.shape[0]), Y_con[:, i], marker="o", label=constraint_names[i])
+        plt.axhline(0.0, color="red", linestyle="--", label="feasibility boundary")
+        plt.xlabel("Iteration")
+        plt.ylabel(constraint_names[i])
+        plt.title(f"Evolution of {constraint_names[i]}")
+        plt.legend()
+        plt.tight_layout()
+
+        save_path = output_path or (
+                Path.cwd() / f"constraint_evolution_{constraint_names[i].replace(' ', '_').lower()}.png")
+        plt.savefig(save_path, dpi=300)
+
+        if display_figure:
+            plt.show()
+        plt.close(fig)

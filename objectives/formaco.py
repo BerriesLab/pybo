@@ -1,13 +1,6 @@
 import torch
-from botorch.utils.multi_objective import Hypervolume
 from torch import Tensor
-from abc import ABC
-from botorch.acquisition.multi_objective import MCMultiOutputObjective
-from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputDataError
-from botorch.utils.transforms import normalize_indices
-from botorch.utils.multi_objective.pareto import is_non_dominated
-
-from constraints.output_constraints import LowerBound, Identity
+from constraints.output_constraints import Identity
 from objectives.base_class import MCMultiOutputBase
 
 
@@ -35,10 +28,22 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             device=device,
             dtype=dtype,
             dim=3,
+            parameter_names=[
+                "Maximum Current",
+                "Pedestal Current",
+                "Maximum Ramp Time"
+            ],
             num_objectives=2,
+            objective_names=[
+                "Machining Time",
+                "Electrode Wear",
+            ],
             num_constraints=1,
-            obj_to_minimize=[True, True],
+            constraint_names=[
+                "Orbiting Time"
+            ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
+            obj_to_minimize=[True, True],
             ref_point=[300, 150],
             num_outcomes=2,
             outcomes=[0, 1],
@@ -60,18 +65,19 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=26.301475188947435
-                             - 19.166867643857774 * i_max
-                             + 48.32116975101596 * i_p
-                             - 2.2004820692692393 * tau_r_max
-                             + 1.610831887686114 * i_max ** 2
-                             - 1.7060582358070433 * i_max * i_p
-                             - 0.09448612682328417 * i_max * tau_r_max
-                             - 2.2369331180580914 * i_p ** 2
-                             + 0.12893509602180986 * i_p * tau_r_max
-                             + 0.02736891179134915 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=26.301475188947435
+                  - 19.166867643857774 * i_max
+                  + 48.32116975101596 * i_p
+                  - 2.2004820692692393 * tau_r_max
+                  + 1.610831887686114 * i_max ** 2
+                  - 1.7060582358070433 * i_max * i_p
+                  - 0.09448612682328417 * i_max * tau_r_max
+                  - 2.2369331180580914 * i_p ** 2
+                  + 0.12893509602180986 * i_p * tau_r_max
+                  + 0.02736891179134915 * tau_r_max ** 2,
+            min=0
+        )
 
     @staticmethod
     def _machining_time(X: Tensor) -> Tensor:
@@ -83,18 +89,19 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=616.3490679119025
-                             - 39.079346209938606 * i_max
-                             - 46.683313051874606 * i_p
-                             + 1.732712663059158 * tau_r_max
-                             + 0.17007512603265695 * i_max ** 2
-                             + 0.5782395309343626 * i_max * i_p
-                             + 0.5065065733380472 * i_max * tau_r_max
-                             + 3.069882379450696 * i_p ** 2
-                             - 0.4865913603357419 * i_p * tau_r_max
-                             - 0.046096819818593815 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=616.3490679119025
+                  - 39.079346209938606 * i_max
+                  - 46.683313051874606 * i_p
+                  + 1.732712663059158 * tau_r_max
+                  + 0.17007512603265695 * i_max ** 2
+                  + 0.5782395309343626 * i_max * i_p
+                  + 0.5065065733380472 * i_max * tau_r_max
+                  + 3.069882379450696 * i_p ** 2
+                  - 0.4865913603357419 * i_p * tau_r_max
+                  - 0.046096819818593815 * tau_r_max ** 2,
+            min=0
+        )
 
     @staticmethod
     def _orbiting_time(X: Tensor) -> Tensor:
@@ -105,27 +112,31 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=188.4485094756797
-                             - 21.28654897663603 * i_max
-                             - 4.222217726699118 * i_p
-                             + 0.17654656533899832 * tau_r_max
-                             + 0.6689645319172054 * i_max ** 2
-                             + 0.6548427659792726 * i_max * i_p
-                             - 0.024689990372160464 * i_max * tau_r_max
-                             - 0.6374105462985316 * i_p ** 2
-                             + 0.03550705380735647 * i_p * tau_r_max
-                             - 0.00016572486105292938 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=188.4485094756797
+                  - 21.28654897663603 * i_max
+                  - 4.222217726699118 * i_p
+                  + 0.17654656533899832 * tau_r_max
+                  + 0.6689645319172054 * i_max ** 2
+                  + 0.6548427659792726 * i_max * i_p
+                  - 0.024689990372160464 * i_max * tau_r_max
+                  - 0.6374105462985316 * i_p ** 2
+                  + 0.03550705380735647 * i_p * tau_r_max
+                  - 0.00016572486105292938 * tau_r_max ** 2,
+            min=0
+        )
 
-    def evaluate_true(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        return super().evaluate_true(torch.stack([machining_time, electrode_wear], dim=-1))
+        return super().evaluate_true_objective(torch.stack([machining_time, electrode_wear], dim=-1))
 
-    def evaluate_slack_true(self, X: Tensor) -> Tensor:
-        slack = 40 - self._orbiting_time(X=X)
-        return super().evaluate_slack_true(slack.unsqueeze(dim=-1))
+    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
+        """
+        orbiting_time >= 40 min -> 40 - orbiting_time <= 0
+        """
+        c = 40 - self._orbiting_time(X=X)
+        return super().evaluate_true_constraint(c.unsqueeze(dim=-1))
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()
@@ -150,7 +161,14 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     Reference point:
         - Machining Time: 300 min
         - Electrode Wear: 150 um
-        - Orbiting penalty Time: -50 min
+        - Orbiting Time: 10 min
+        - Orbiting Penalty Time: -50 min (see Note below)
+
+    Note: this objective exhibits the typical user flexibility in defining objective penalties. Specifically,
+    "evaluate_true_objective" can be defined to return the "orbiting_time" or the "orbiting_time_penalty". If it
+    returns the "orbiting_time", then the penalty must be included in the forward method, and it is subject to
+    rescale. If it returns the "orbiting_time_penalty", then the forward method should pass the unaltered values
+    without adding any penalty. Both strategies are legit. The reference point must reflect the choice of objective.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
@@ -158,11 +176,21 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
             device=device,
             dtype=dtype,
             dim=3,
+            parameter_names=[
+                "Maximum Current",
+                "Pedestal Current",
+                "Maximum Ramp Time"
+            ],
             num_objectives=3,
-            num_constraints=0,
-            obj_to_minimize=[True, True, False],
+            objective_names=[
+                "Machining Time",
+                "Electrode Wear",
+                "Orbiting Time Penalty",  # "Orbiting Time" #
+            ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
+            obj_to_minimize=[True, True, False],
             ref_point=[300, 150, -50],
+            num_constraints=0,
             num_outcomes=3,
             outcomes=[0, 1, 2],
             gt_noise_std=None,
@@ -183,18 +211,19 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=26.301475188947435
-                             - 19.166867643857774 * i_max
-                             + 48.32116975101596 * i_p
-                             - 2.2004820692692393 * tau_r_max
-                             + 1.610831887686114 * i_max ** 2
-                             - 1.7060582358070433 * i_max * i_p
-                             - 0.09448612682328417 * i_max * tau_r_max
-                             - 2.2369331180580914 * i_p ** 2
-                             + 0.12893509602180986 * i_p * tau_r_max
-                             + 0.02736891179134915 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=26.301475188947435
+                  - 19.166867643857774 * i_max
+                  + 48.32116975101596 * i_p
+                  - 2.2004820692692393 * tau_r_max
+                  + 1.610831887686114 * i_max ** 2
+                  - 1.7060582358070433 * i_max * i_p
+                  - 0.09448612682328417 * i_max * tau_r_max
+                  - 2.2369331180580914 * i_p ** 2
+                  + 0.12893509602180986 * i_p * tau_r_max
+                  + 0.02736891179134915 * tau_r_max ** 2,
+            min=0
+        )
 
     @staticmethod
     def _machining_time(X: Tensor) -> Tensor:
@@ -206,18 +235,19 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=616.3490679119025
-                             - 39.079346209938606 * i_max
-                             - 46.683313051874606 * i_p
-                             + 1.732712663059158 * tau_r_max
-                             + 0.17007512603265695 * i_max ** 2
-                             + 0.5782395309343626 * i_max * i_p
-                             + 0.5065065733380472 * i_max * tau_r_max
-                             + 3.069882379450696 * i_p ** 2
-                             - 0.4865913603357419 * i_p * tau_r_max
-                             - 0.046096819818593815 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=616.3490679119025
+                  - 39.079346209938606 * i_max
+                  - 46.683313051874606 * i_p
+                  + 1.732712663059158 * tau_r_max
+                  + 0.17007512603265695 * i_max ** 2
+                  + 0.5782395309343626 * i_max * i_p
+                  + 0.5065065733380472 * i_max * tau_r_max
+                  + 3.069882379450696 * i_p ** 2
+                  - 0.4865913603357419 * i_p * tau_r_max
+                  - 0.046096819818593815 * tau_r_max ** 2,
+            min=0
+        )
 
     @staticmethod
     def _orbiting_time(X: Tensor) -> Tensor:
@@ -228,42 +258,69 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         i_p = X[..., 1]
         tau_r_max = X[..., 2]
 
-        return torch.clamp(x=188.4485094756797
-                             - 21.28654897663603 * i_max
-                             - 4.222217726699118 * i_p
-                             + 0.17654656533899832 * tau_r_max
-                             + 0.6689645319172054 * i_max ** 2
-                             + 0.6548427659792726 * i_max * i_p
-                             - 0.024689990372160464 * i_max * tau_r_max
-                             - 0.6374105462985316 * i_p ** 2
-                             + 0.03550705380735647 * i_p * tau_r_max
-                             - 0.00016572486105292938 * tau_r_max ** 2,
-                           min=0
-                           )
+        return torch.clamp(
+            input=188.4485094756797
+                  - 21.28654897663603 * i_max
+                  - 4.222217726699118 * i_p
+                  + 0.17654656533899832 * tau_r_max
+                  + 0.6689645319172054 * i_max ** 2
+                  + 0.6548427659792726 * i_max * i_p
+                  - 0.024689990372160464 * i_max * tau_r_max
+                  - 0.6374105462985316 * i_p ** 2
+                  + 0.03550705380735647 * i_p * tau_r_max
+                  - 0.00016572486105292938 * tau_r_max ** 2,
+            min=0
+        )
 
-    def evaluate_true(self, X: Tensor) -> Tensor:
+    def _linear_orbiting_penalty(self, X: Tensor) -> Tensor:
+        """
+        Define a linear orbiting penalty for X < 40.
+        """
+        orbiting_time = self._orbiting_time(X)
+        return torch.clamp(orbiting_time - 40.0, max=0.0)
+
+    def _exponential_orbiting_penalty(self, X: Tensor, k: float = 1) -> Tensor:
+        """
+        Define an exponential orbiting penalty for X < 40.
+        """
+        orbiting_time = self._orbiting_time(X)
+        violation = torch.clamp(40.0 - orbiting_time, min=0.0)
+        return - torch.exp(violation / k)
+
+    # def evaluate_true_objective(self, X: Tensor) -> Tensor:
+    #     machining_time = self._machining_time(X=X)
+    #     electrode_wear = self._electrode_wear(X=X)
+    #     orbiting_time = self._orbiting_time(X=X)
+    #     return super().evaluate_true_objective(torch.stack([machining_time, electrode_wear, orbiting_time], dim=-1))
+
+    # def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
+    #     selected = samples.clone()
+    #     if self.outcomes is not None:
+    #         selected = selected.index_select(-1, self.outcomes)
+    #     orbiting_time = selected[..., 2]
+    #
+    #     # === Exponential penalty ===
+    #     # violation = torch.clamp(40.0 - orbiting_time, min=0.0)
+    #     # satisfaction = - torch.exp(violation / 1)  # k=5.0
+    #
+    #     # === Linear penalty ===
+    #     satisfaction = torch.clamp(orbiting_time - 40.0, max=0.0)
+    #
+    #     selected[..., 2] = satisfaction
+    #     selected[..., self.obj_to_minimize] *= -1
+    #     return selected
+
+    def evaluate_true_objective(self, X: Tensor) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        orbiting_time = self._orbiting_time(X=X)
-        return super().evaluate_true(torch.stack([machining_time, electrode_wear, orbiting_time], dim=-1))
+        orbiting_time_penalty = self._linear_orbiting_penalty(X)
+        # orbiting_time_penalty = self._exponential_orbiting_penalty(X)
+        return super().evaluate_true_objective(
+            torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1))
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-
-        # Transform the orbiting time objective to a "satisfaction" metric.
-        # The objective is 0 if time >= 40, and it is time - 40, if time < 40.
-        orbiting_time = selected[..., 2]
-
-        # === Exponential penalty ===
-        # violation = torch.clamp(40.0 - orbiting_time, min=0.0)
-        # satisfaction = - torch.exp(violation / 1)  # k=5.0
-
-        # === Linear penalty ===
-        satisfaction = 1000 * torch.clamp(orbiting_time - 40.0, max=0.0)
-
-        selected[..., 2] = satisfaction
-        # Negate objectives for minimization
         selected[..., self.obj_to_minimize] *= -1
         return selected

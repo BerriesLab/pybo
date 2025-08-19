@@ -51,11 +51,11 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
         """ A constraint on the input: (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 """
         return 7.7 - ((X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2)
 
-    def evaluate_true(self, X: Tensor, add_noise=False) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         f1 = self._f1(X=X)
         f2 = self._f2(X=X)
         f = torch.stack([f1, f2], dim=-1)
-        f = super().evaluate_true(f)
+        f = super().evaluate_true_objective(f)
         return f
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
@@ -68,4 +68,3 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
             selected = selected.index_select(-1, self.outcomes)
         selected[..., self.obj_to_minimize] *= -1
         return selected
-

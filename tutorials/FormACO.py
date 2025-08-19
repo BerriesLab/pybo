@@ -4,13 +4,11 @@ from pathlib import Path
 from mobo.mobo import Mobo
 from objectives.formaco import FormACOMCMultiOutputObjective
 from samplers.samplers import Sampler
-from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
-from utils.io import create_experiment_directory
-from utils.make_video import create_video_from_images
+from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
-from utils.plotters import plot_multi_objective_from_RN_to_R3_with_color_coded_R3, plot_log_hypervolume_improvement, plot_elapsed_time, \
-    make_grid
-
+from utils.plotters import plot_multi_objective_from_RN_to_R3, plot_log_hypervolume_improvement, \
+    plot_elapsed_time, make_grid, plot_multi_objective_from_RN_to_R3_with_color_coded_R3, plot_parameters_evolution, \
+    plot_objectives_evolution, plot_constraints_evolution
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -37,13 +35,13 @@ def main(n_samples=64, q: int = 1, ):
         normalize=False,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true(X)
+    Y_obj = objective.evaluate_true_objective(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
     gnd_truth_X = make_grid(
-        size=20,
+        size=10,
         bounds=objective.bounds,
         device=DEVICE,
         dtype=DTYPE
@@ -79,7 +77,7 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true(new_X)
+        new_Y_obj = objective.evaluate_true_objective(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
@@ -96,8 +94,8 @@ def main(n_samples=64, q: int = 1, ):
             title="FormACO Test Problem",
             f1_label="Machining Down Time (min)",
             f2_label=r"Electrode Wear $(\mu m)$",
-            f3_label="Orbiting Time (min)",
-            f3_lims=(20, 80),
+            f3_label="Orbiting Time Penalty (min)",
+            # f3_lims=(-30, 0),
             f1_idx=0,
             f2_idx=1,
             f3_idx=2,
@@ -106,16 +104,27 @@ def main(n_samples=64, q: int = 1, ):
             show_observations=True,
             display_figure=False,
             X=gnd_truth_X,
-            output_path=Path.cwd() / f"pareto_front.png"
+            output_path=Path.cwd() / f"pareto_front_2d.png"
         )
-        plot_log_hypervolume_improvement(
-            mobo=mobo,
-            output_path=Path.cwd() / f"hvi.png"
-        )
-        plot_elapsed_time(
-            mobo=mobo,
-            output_path=Path.cwd() / f"elapsed_time.png"
-        )
+        # The following plot is commented as the displayed result is easily interpreted in interactive mode.
+        # plot_multi_objective_from_RN_to_R3(
+        #     mobo=mobo,
+        #     X=gnd_truth_X,
+        #     title="FormACO Test Problem",
+        #     f1_label="Machining Down-Time (min)",
+        #     f2_label=r"Electrode Wear $(\mu m)$",
+        #     f3_label="Orbiting Time (min)",
+        #     show_ref_point=True,
+        #     show_ground_truth=False,
+        #     show_observations=True,
+        #     display_figure=True,
+        #     output_path=Path.cwd() / f"pareto_front_3d.png"
+        # )
+        plot_log_hypervolume_improvement(mobo=mobo)
+        plot_elapsed_time(mobo=mobo)
+        plot_parameters_evolution(mobo=mobo)
+        plot_objectives_evolution(mobo=mobo)
+        plot_constraints_evolution(mobo=mobo)
 
     print("Optimization Finished.")
 

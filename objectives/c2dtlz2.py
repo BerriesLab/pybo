@@ -23,7 +23,7 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
     Notes: negative constraint values imply feasibility in botorch.
     """
 
-    def __init__(self, device: torch.device, dtype: torch.dtype,):
+    def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
             dtype=dtype,
@@ -47,7 +47,7 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
         self.k = self.dim - self.num_objectives + 1
         self._r = 0.2
 
-    def evaluate_true(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor) -> Tensor:
         X_m = X[..., -self.k:]
         g_X = (X_m - 0.5).pow(2).sum(dim=-1)
         g_X_plus1 = 1 + g_X
@@ -61,12 +61,12 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
                 f_i *= torch.sin(X[..., idx] * pi_over_2)
             fs.append(f_i)
         f = torch.stack(fs, dim=-1)
-        return super().evaluate_true(f)
+        return super().evaluate_true_objective(f)
 
-    def evaluate_slack_true(self, X: Tensor) -> Tensor:
+    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         if X.ndim > 2:
             raise NotImplementedError("Batch X is not supported.")
-        f_X = self.evaluate_true(X)
+        f_X = self.evaluate_true_objective(X)
         term1 = (f_X - 1).pow(2)
         mask = ~(torch.eye(f_X.shape[-1], device=f_X.device).bool())
         indices = torch.arange(f_X.shape[1], device=f_X.device).repeat(f_X.shape[1], 1)
@@ -76,11 +76,11 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
             .expand(f_X.shape[0], f_X.shape[-1], f_X.shape[-1])
             .gather(dim=-1, index=indexer.repeat(f_X.shape[0], 1, 1))
         )
-        term2 = (term2_inner.pow(2) - self._r**2).sum(dim=-1)
+        term2 = (term2_inner.pow(2) - self._r ** 2).sum(dim=-1)
         min1 = (term1 + term2).min(dim=-1).values
-        min2 = ((f_X - 1 / math.sqrt(f_X.shape[-1])).pow(2) - self._r**2).sum(dim=-1)
+        min2 = ((f_X - 1 / math.sqrt(f_X.shape[-1])).pow(2) - self._r ** 2).sum(dim=-1)
         slack_true = torch.min(min1, min2).unsqueeze(-1)
-        return super().evaluate_slack_true(slack_true)
+        return super().evaluate_true_slack(slack_true)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

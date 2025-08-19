@@ -1,5 +1,8 @@
 import pickle
-from datetime import datetime
+from typing import Union
+
+import torch
+import datetime
 
 import warnings
 import time
@@ -24,7 +27,6 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.optim.initializers import gen_batch_initial_conditions
 from botorch.acquisition import (
     qNoisyExpectedImprovement, GenericMCObjective, AcquisitionFunction
 )
@@ -43,10 +45,11 @@ from torch.quasirandom import SobolEngine
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
 
 from objectives.base_class import MCMultiOutputBase
-from utils.validators import *
 from samplers.samplers import Sampler
 
 from gpytorch.mlls import SumMarginalLogLikelihood
+
+from utils.types import *
 
 
 class Mobo:
@@ -306,7 +309,8 @@ class Mobo:
 
     @num_mc_samples.setter
     def num_mc_samples(self, mc_samples: int):
-        validate_mc_samples(mc_samples)
+        if not isinstance(mc_samples, int):
+            raise ValueError("num_mc_samples must be of type int")
         self._num_mc_samples = mc_samples
 
     @property
@@ -315,7 +319,8 @@ class Mobo:
 
     @num_raw_samples.setter
     def num_raw_samples(self, raw_samples: int):
-        validate_raw_samples(raw_samples)
+        if not isinstance(raw_samples, int):
+            raise ValueError("num_raw_samples must be of type int")
         self._num_raw_samples = raw_samples
 
     # === STATE properties ===
@@ -566,7 +571,8 @@ class Mobo:
                 pred = self._model.posterior(self._X).mean
             self._acquisition_function_list = []
             for _ in range(self._batch_size):
-                weights = sample_simplex(self.objective.num_objectives, device=self._device, dtype=self._dtype).squeeze()
+                weights = sample_simplex(self.objective.num_objectives, device=self._device,
+                                         dtype=self._dtype).squeeze()
                 objective = GenericMCObjective(get_chebyshev_scalarization(weights=weights, Y=pred))
                 acq_func = qNoisyExpectedImprovement(
                     model=self._model,
@@ -695,7 +701,7 @@ class Mobo:
         # dimension, then compute the feasibility mask: a point is feasible
         # only if all constraints are ≤ 0
         if self._objective.output_constraints is None:
-            #TODO: check -2 is scorrect
+            # TODO: check -2 is scorrect
             feasible_mask = torch.ones(self._Y_obj.shape[-2], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
@@ -756,7 +762,7 @@ class Mobo:
             print(f"Calculation Time = {t1 - t0:>4.2f} s")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None,
-            new_Y_con: torch.Tensor or None = None, new_Y_con_var=None) -> None:
+                  new_Y_con: torch.Tensor or None = None, new_Y_con_var=None) -> None:
         if new_X is not None:
             new_X = new_X.to(self._device, self._dtype)
             self._X = torch.cat([self._X, new_X], dim=0)
@@ -798,7 +804,6 @@ class Mobo:
 
         with open(filepath, "rb") as f:
             return pickle.load(f)
-
 
     # def save_dataset_to_csv(self, output_path: Path = None):
     #
@@ -924,4 +929,3 @@ class Mobo:
     #     else:
     #         self._Y_con = None
     #         self._Y_con_var = None
-

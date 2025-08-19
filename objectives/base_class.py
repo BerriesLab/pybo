@@ -1,16 +1,11 @@
 from collections.abc import Callable
-
-import torch
-import math
-
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from torch import Tensor
-from abc import ABC, abstractmethod
+from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputDataError
 from botorch.utils.transforms import normalize_indices
 from constraints.output_constraints import *
-from constraints.input_constraints import *
 
 
 class MCMultiOutputBase(MCMultiOutputObjective, ABC):
@@ -37,7 +32,12 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
             output_constraints: list[Callable] | None,
+            add_noise_to_gt: bool = False,
             estimate_max_hv: bool = False,
+            parameter_names: list[str] | None = None,
+            objective_names: list[str] | None = None,
+            constraint_names: list[str] | None = None,
+
     ):
 
         super().__init__()
@@ -55,9 +55,13 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.outcomes = outcomes
         self.num_outcomes = num_outcomes
         self.gt_noise_std = gt_noise_std
+        self.add_noise_to_gt = add_noise_to_gt
         self.max_hv = max_hv
         if estimate_max_hv is True:
             self.estimate_max_hv()
+        self.parameter_names = parameter_names
+        self.objective_names = objective_names
+        self.constraint_names = constraint_names
 
         # === Constraints ===
         self.linear_equality_input_constraints = linear_equality_input_constraints
@@ -118,7 +122,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self._num_constraints = num_constraints
 
     @property
-    def obj_to_minimize(self) -> list[bool] | None:
+    def obj_to_minimize(self) -> Tensor:
         return self._obj_to_minimize
 
     @obj_to_minimize.setter
@@ -320,7 +324,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self._output_constraints = value
 
     # === GROUND TRUTH METHODS ===
-    def evaluate_true(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor) -> Tensor:
         """
         Evaluate the true, unnegated objective function at the given input
         locations X. This method serves as the ground-truth evaluation of the
@@ -329,19 +333,32 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         optimization algorithms.
         """
         # X = f(X)...
-        if self.gt_noise_std is not None:
+        if self.add_noise_to_gt and self.gt_noise_std is not None:
             X = self.add_noise(X)
         return X
 
-    def evaluate_slack_true(self, X: Tensor) -> Tensor:
+    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
-        Evaluate the constraints on a set of points X. Negative
-        values imply feasibility in botorch.
+        Evaluate the true, unnegated constraint at the given input
+        locations X. This method serves as the ground-truth evaluation of the
+        problem and is typically used for benchmarking, visualization (e.g.,
+        plotting the true Pareto front), or performance assessment of
+        optimization algorithms.
         """
-        # X = f(X)
-        if self.gt_noise_std is not None:
+        # X = f(X)...
+        if self.add_noise_to_gt and self.gt_noise_std is not None:
             X = self.add_noise(X)
         return X
+
+    def evaluate_true_slack(self, X: Tensor, slack: float = 0) -> Tensor:
+        """
+        Evaluate the relaxed constraint at X, where "slack >= 0" allows
+        "c(X) <= slack" instead of the strict "c(X) <= 0".
+        Returns "c(X) - slack", which is <= 0 when feasible.
+        """
+        if slack < 0:
+            raise ValueError("slack must be positive")
+        return self.evaluate_true_constraint(X=X) - slack
 
     def add_noise(self, Y: Tensor) -> Tensor:
         """
@@ -369,9 +386,9 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         X = (ub - lb) * torch.rand(n_samples, self.dim, device=self.device, dtype=self.dtype) + lb
 
         # 2. Evaluate and filter feasible points only if constraints exist
-        Y = self.evaluate_true(X)
+        Y = self.evaluate_true_objective(X)
         if self.num_constraints > 0:
-            constraint_slack = self.evaluate_slack_true(X)  # shape: (n_samples, num_constraints)
+            constraint_slack = self.evaluate_true_constraint(X)  # shape: (n_samples, num_constraints)
             feasible_mask = constraint_slack <= 0  # all constraints satisfied
             feasible_mask = feasible_mask.all(dim=-1)
             feasible_Y = Y[feasible_mask]
