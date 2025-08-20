@@ -70,6 +70,8 @@ class Mobo:
             Y_obj_var: torch.Tensor | None = None,
             Y_con: torch.Tensor | None = None,
             Y_con_var: torch.Tensor | None = None,
+            Y_track: torch.Tensor | None = None,
+            Y_track_var: torch.Tensor | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qNEHVI,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
@@ -93,6 +95,8 @@ class Mobo:
         self.Y_obj_var: torch.Tensor = Y_obj_var
         self.Y_con: torch.Tensor = Y_con
         self.Y_con_var: torch.Tensor = Y_con_var
+        self.Y_track: torch.Tensor = Y_track
+        self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
         self.acquisition_function_type = acquisition_function_type
@@ -242,6 +246,26 @@ class Mobo:
         if Y_con_var is not None and Y_con_var.shape[-1] != self.objective.num_constraints:
             raise ValueError("Y_con_var must have the same number of constraints as objective.")
         self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
+
+    @property
+    def Y_track(self) -> torch.Tensor | None:
+        return self._Y_track
+
+    @Y_track.setter
+    def Y_track(self, Y_track: torch.Tensor | None):
+        if not isinstance(Y_track, torch.Tensor | None):
+            raise ValueError("Y_track must be of type torch.Tensor or None.")
+        self._Y_track = Y_track
+
+    @property
+    def Y_track_var(self) -> torch.Tensor | None:
+        return self._Y_track_var
+
+    @Y_track_var.setter
+    def Y_track_var(self, Y_track_var: torch.Tensor | None):
+        if not isinstance(Y_track_var, torch.Tensor | None):
+            raise ValueError("Y_track_var must be of type torch.Tensor or None.")
+        self._Y_track_var = Y_track_var
 
     @property
     def acquisition_function_type(self) -> AcquisitionFunctionType:
@@ -701,7 +725,6 @@ class Mobo:
         # dimension, then compute the feasibility mask: a point is feasible
         # only if all constraints are ≤ 0
         if self._objective.output_constraints is None:
-            # TODO: check -2 is scorrect
             feasible_mask = torch.ones(self._Y_obj.shape[-2], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
@@ -761,23 +784,43 @@ class Mobo:
         if verbose:
             print(f"Calculation Time = {t1 - t0:>4.2f} s")
 
-    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None,
-                  new_Y_con: torch.Tensor or None = None, new_Y_con_var=None) -> None:
+    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor,
+                  new_Y_obj_var: torch.Tensor | None = None,
+                  new_Y_con: torch.Tensor | None = None, new_Y_con_var=None,
+                  new_Y_track_var: torch.Tensor | None = None) -> None:
+        self.update_X(new_X)
+        self.update_Y_obj(new_Y_obj, new_Y_obj_var)
+        self.update_Y_con(new_Y_con, new_Y_con_var)
+        self.update_Y_track(new_Y_track, new_Y_track_var)
+
+    def update_X(self, new_X: torch.Tensor):
         if new_X is not None:
             new_X = new_X.to(self._device, self._dtype)
             self._X = torch.cat([self._X, new_X], dim=0)
+
+    def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None):
         if new_Y_obj is not None:
             new_Y_obj = new_Y_obj.to(self._device, self._dtype)
             self._Y_obj = torch.cat([self._Y_obj, new_Y_obj], dim=0)
         if new_Y_obj_var is not None:
             new_Y_obj_var = new_Y_obj_var.to(self._device, self._dtype)
             self._Y_obj_var = torch.cat([self._Y_obj_var, new_Y_obj_var], dim=0)
+
+    def update_Y_con(self, new_Y_con: torch.Tensor, new_Y_con_var: torch.Tensor or None = None):
         if new_Y_con is not None:
             new_Y_con = new_Y_con.to(self._device, self._dtype)
             self._Y_con = torch.cat([self._Y_con, new_Y_con], dim=0)
         if new_Y_con_var is not None:
             new_Y_con_var = new_Y_con_var.to(self._device, self._dtype)
             self._Y_con_var = torch.cat([self._Y_con_var, new_Y_con_var], dim=0)
+
+    def update_Y_track(self, new_Y_track: torch.Tensor, new_Y_track_var: torch.Tensor or None = None):
+        if new_Y_track is not None:
+            new_Y_track = new_Y_track.to(self._device, self._dtype)
+            self._Y_track = torch.cat([self._Y_track, new_Y_track], dim=0)
+        if new_Y_track_var is not None:
+            new_Y_track_var = new_Y_track_var.to(self._device, self._dtype)
+            self._Y_track_var = torch.cat([self._Y_track_var, new_Y_track_var], dim=0)
 
     """ I/O """
 

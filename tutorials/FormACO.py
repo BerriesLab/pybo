@@ -35,7 +35,8 @@ def main(n_samples=64, q: int = 1, ):
         normalize=False,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true_objective(X)
+    Y_obj = objective.evaluate_true_objective(X=X)
+    Y_track = objective.evaluate_trackers(X=X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
@@ -60,6 +61,8 @@ def main(n_samples=64, q: int = 1, ):
         Y_obj_var=None,
         Y_con=None,
         Y_con_var=None,
+        Y_track=Y_track,
+        Y_track_var=None,
     )
 
     """ Main optimization loop """
@@ -78,8 +81,9 @@ def main(n_samples=64, q: int = 1, ):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_track = objective.evaluate_trackers(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_track=new_Y_track)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
@@ -91,16 +95,20 @@ def main(n_samples=64, q: int = 1, ):
         """ Plots """
         plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
             mobo=mobo,
+            f1=mobo.Y_obj[..., -3],
+            f2=mobo.Y_obj[..., -2],
+            f3=mobo.Y_track[..., -1],
+            # fc=[mobo.Y_obj[..., -1]],
             title="FormACO Test Problem",
             f1_label="Machining Down Time (min)",
             f2_label=r"Electrode Wear $(\mu m)$",
-            f3_label="Orbiting Time Penalty (min)",
+            f3_label="Orbiting Time (min)",
             # f3_lims=(-30, 0),
-            f1_idx=0,
-            f2_idx=1,
-            f3_idx=2,
-            show_ref_point=True,
-            show_ground_truth=True,
+            # f1_idx=0,
+            # f2_idx=1,
+            # f3_idx=2,
+            # show_ref_point=True,
+            # show_ground_truth=True,
             show_observations=True,
             display_figure=False,
             X=gnd_truth_X,
@@ -125,6 +133,7 @@ def main(n_samples=64, q: int = 1, ):
         plot_parameters_evolution(mobo=mobo)
         plot_objectives_evolution(mobo=mobo)
         plot_constraints_evolution(mobo=mobo)
+        # TODO: plot_tracker_evolution(mobo=mobo)
 
     print("Optimization Finished.")
 

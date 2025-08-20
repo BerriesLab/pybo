@@ -1,4 +1,5 @@
 from enum import Enum
+import torch
 
 
 class AcquisitionFunctionType(Enum):
@@ -17,6 +18,7 @@ class AcquisitionFunctionType(Enum):
             values.append(item.value)
         return values
 
+
 class Kernel(Enum):
     RBF = "RBF"
     Matern = "Matern"
@@ -28,13 +30,24 @@ class SamplerType(Enum):
     LatinHypercube = "Latin Hypercube"
 
 
-class OptimizationProblemType(Enum):
-    """ Maximization is set to True as BoTorch uses maximization by default."""
-    Minimization = False
-    Maximization = True
-
-
 class TorchDeviceType(Enum):
     CPU = "cpu"
     GPU = "cuda"
     MPS = "mps"
+
+# class ParameterType(Enum):
+#     objective = 0
+#     constraint = 1
+#     tracker = 2
+#
+#
+# class Parameter:
+#     def __init__(
+#             self,
+#             name: str,
+#             value: torch.Tensor,
+#             type: ParameterType,
+#     ):
+#         self.name = name
+#         self.value = value
+#         self.type = type

@@ -168,7 +168,11 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     "evaluate_true_objective" can be defined to return the "orbiting_time" or the "orbiting_time_penalty". If it
     returns the "orbiting_time", then the penalty must be included in the forward method, and it is subject to
     rescale. If it returns the "orbiting_time_penalty", then the forward method should pass the unaltered values
-    without adding any penalty. Both strategies are legit. The reference point must reflect the choice of objective.
+    without adding any penalty. Both strategies are legit. However, when evaluate_true_objective returns the
+    orbiting_time_penalty, the actual orbiting time is lost forever, and there is no way for the user to recover
+    the experimental value without any workarounds. A third option would be to add the penalty as a fourth optimization
+    objective, and leave the 3rd objective as free to explore: not to optimize.
+    The reference point must reflect the choice of objective.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
@@ -185,7 +189,10 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
             objective_names=[
                 "Machining Time",
                 "Electrode Wear",
-                "Orbiting Time Penalty",  # "Orbiting Time" #
+                "Orbiting Time Penalty",
+            ],
+            tracker_names=[
+                "Orbiting time"
             ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True, False],
@@ -287,36 +294,24 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         violation = torch.clamp(40.0 - orbiting_time, min=0.0)
         return - torch.exp(violation / k)
 
-    # def evaluate_true_objective(self, X: Tensor) -> Tensor:
-    #     machining_time = self._machining_time(X=X)
-    #     electrode_wear = self._electrode_wear(X=X)
-    #     orbiting_time = self._orbiting_time(X=X)
-    #     return super().evaluate_true_objective(torch.stack([machining_time, electrode_wear, orbiting_time], dim=-1))
-
-    # def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-    #     selected = samples.clone()
-    #     if self.outcomes is not None:
-    #         selected = selected.index_select(-1, self.outcomes)
-    #     orbiting_time = selected[..., 2]
-    #
-    #     # === Exponential penalty ===
-    #     # violation = torch.clamp(40.0 - orbiting_time, min=0.0)
-    #     # satisfaction = - torch.exp(violation / 1)  # k=5.0
-    #
-    #     # === Linear penalty ===
-    #     satisfaction = torch.clamp(orbiting_time - 40.0, max=0.0)
-    #
-    #     selected[..., 2] = satisfaction
-    #     selected[..., self.obj_to_minimize] *= -1
-    #     return selected
+    def _quadratic_orbiting_penalty(self, X: Tensor) -> Tensor:
+        """
+        Define a quadratic orbiting penalty for X < 40.
+        """
+        orbiting_time = self._orbiting_time(X)
+        return -torch.square(input=torch.clamp(input=orbiting_time - 40.0, max=0.0))
 
     def evaluate_true_objective(self, X: Tensor) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        orbiting_time_penalty = self._linear_orbiting_penalty(X)
+        orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
+        # orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
         # orbiting_time_penalty = self._exponential_orbiting_penalty(X)
         return super().evaluate_true_objective(
             torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1))
+
+    def evaluate_trackers(self, X: Tensor) -> Tensor:
+        return self._orbiting_time(X=X).unsqueeze(dim=-1)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

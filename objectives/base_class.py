@@ -37,6 +37,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             parameter_names: list[str] | None = None,
             objective_names: list[str] | None = None,
             constraint_names: list[str] | None = None,
+            tracker_names: list[str] | None = None,
 
     ):
 
@@ -62,6 +63,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.parameter_names = parameter_names
         self.objective_names = objective_names
         self.constraint_names = constraint_names
+        self.tracker_names = tracker_names
 
         # === Constraints ===
         self.linear_equality_input_constraints = linear_equality_input_constraints
@@ -142,8 +144,12 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
     @ref_point.setter
     def ref_point(self, value: list[float] | torch.Tensor):
         if isinstance(value, list):
+            if len(value) != self.num_objectives:
+                raise ValueError("The number of objectives must match the dimensions of the reference point.")
             value = torch.tensor(value, dtype=self.dtype, device=self.device)
         elif isinstance(value, torch.Tensor):
+            if value.shape[0] != self.num_objectives:
+                raise ValueError("The number of objectives must match the dimensions of the reference point.")
             value = value.to(self.device, dtype=self.dtype)
         else:
             raise TypeError("ref_point must be a list of floats or a torch.Tensor")
@@ -350,6 +356,12 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             X = self.add_noise(X)
         return X
 
+    def evaluate_trackers(self, X: Tensor) -> Tensor:
+        """
+        Evaluate values to monitor but not to optimize.
+        """
+        pass
+
     def evaluate_true_slack(self, X: Tensor, slack: float = 0) -> Tensor:
         """
         Evaluate the relaxed constraint at X, where "slack >= 0" allows
@@ -369,7 +381,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
 
-    def estimate_max_hv(self, n_samples: int = 1_000, verbose=True):
+    def estimate_max_hv(self, n_samples: int = 100, verbose=True):
         """ Estimates the maximum theoretical hypervolume using Sobol-based Monte Carlo sampling.
             Parameters:
                 - n_samples (int): Number of MC samples for objective space.

@@ -9,6 +9,8 @@ from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 
+from objectives.base_class import MCMultiOutputBase
+
 ms = 7
 
 feasible_pareto_observations_kwargs = {
@@ -259,7 +261,7 @@ def plot_multi_objective_from_RN_to_R2(
     plt.close(fig)
 
 
-def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
+def plot_multi_objective_from_RN_to_R3_with_color_coded_R3_bak(
         mobo,
         X: torch.Tensor | None = None,
         title: str | None = None,
@@ -470,6 +472,245 @@ def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
             kwargs = dict(feasible_pareto_observations_kwargs)  # make a local copy
             kwargs.pop("color", None)
             axes.scatter(x=Y_obj_feas_par[:, f1_idx], y=Y_obj_feas_par[:, f2_idx], c=c, **kwargs)
+            legend_elements.append(Line2D(
+                [0], [0], marker=feasible_pareto_observations_kwargs['marker'],
+                label=feasible_pareto_observations_kwargs['label'],
+                color=feasible_pareto_observations_kwargs['edgecolors'],
+                markerfacecolor='none', markersize=ms, linestyle='None'))
+
+    """ Add Colorbar """
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=axes, pad=0.01)
+    cbar.set_label(f3_label)
+
+    """ Add Legend """
+    axes.legend(handles=legend_elements, loc='best')
+
+    axes.autoscale_view(tight=False)  # Compute flags for what was actually plotted
+    fig.savefig(output_path, dpi=300, bbox_inches='tight', format='png')
+
+    if display_figure:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
+        objective: MCMultiOutputBase | None = None,
+        X: torch.Tensor | None = None,
+        f1: torch.Tensor | None = None,
+        f2: torch.Tensor | None = None,
+        f3: torch.Tensor | None = None,
+        fc: list[torch.Tensor] | None = None,
+        title: str | None = None,
+        f1_label: str = "$f_{1}",
+        f2_label: str = "$f_{2}$",
+        f3_label: str = "$f_{3}$",
+        f1_lims: tuple[float, float] = None,
+        f2_lims: tuple[float, float] = None,
+        f3_lims: tuple[float, float] = None,
+        # f1_idx: int = 0,
+        # f2_idx: int = 1,
+        # f3_idx: int = 2,
+        # show_ref_point: bool = True,
+        show_ground_truth: bool = False,
+        show_posterior: bool = False,
+        show_observations: bool = True,
+        display_figure: bool = True,
+        output_path=None,
+):
+    """
+    General-purpose plotter for 3D objectives with optional face-color color coding.
+    f1_idx is the index of the objective plotted on the x-axis.
+    f2_idx is the index of the objective plotted on the y-axis.
+    f3_idx is the index of the objective used for color coding.    """
+
+    # Check indexes consistency
+    # assert f1_idx != f2_idx, "f1_idx and f2_idx must be different"
+    # if f3_idx is not None:
+    #     assert f3_idx not in (f1_idx, f2_idx), "color_idx must be different from f1_idx and f2_idx"
+
+    # Initialize the figure
+    fig, axes = plt.subplots(1, 1, figsize=(7, 6))
+    axes.set_title(title or 'Pareto Front')
+    axes.set_xlabel("$f_{1}$") if not f1_label else axes.set_xlabel(f1_label)
+    axes.set_ylabel("$f_{2}$") if not f2_label else axes.set_ylabel(f2_label)
+    axes.set_xlim(f1_lims[0], f1_lims[1]) if f1_lims is not None else axes.autoscale(enable=True, axis='x')
+    axes.set_ylim(f2_lims[0], f2_lims[1]) if f2_lims is not None else axes.autoscale(enable=True, axis='y')
+    legend_elements = []
+    if output_path is None:
+        output_path = Path.cwd() / "pareto_front.png"
+
+    Y_obj = torch.stack(tensors=(f1, f2, f3), dim=-1)
+    if fc is not None:
+        Y_con = torch.stack(tensors=fc, dim=-1)
+
+    # If the limits for the third observable are given, use them to define the colormap
+    # norm. Otherwise, collect the ground truth and the observations, and find the
+    # overall min and max.
+    if f3_lims is not None:
+        norm = mpl.colors.Normalize(vmin=f3_lims[0], vmax=f3_lims[1])
+    else:
+        Y_colors = None
+        if X is not None:
+            if callable(objective.evaluate_true_objective):
+                Y_colors = objective.evaluate_true_objective(X=X)
+        if Y_obj is not None:
+            if Y_colors is not None:
+                Y_colors = torch.cat([Y_colors, Y_obj], dim=0)
+            else:
+                Y_colors = Y_obj
+        if Y_colors is not None:
+            Y_colors = Y_colors.detach().cpu().numpy()[:, 2]
+            norm = mpl.colors.Normalize(vmin=Y_colors.min().item(), vmax=Y_colors.max().item())
+        else:
+            raise ValueError("Cannot compute color coding.")
+    cmap = mpl.cm.coolwarm
+
+    # """ Plot ground truth """
+    # if show_ground_truth:
+    #     Y_gt = objective.evaluate_true_objective(X)
+    #
+    #     # === Compute feasible and infeasible masks ===
+    #     if objective.output_constraints is None:
+    #         feasible_mask = torch.ones(Y_gt.shape[-2], dtype=torch.bool)
+    #         infeasible_mask = torch.zeros_like(Y_gt, dtype=torch.bool)
+    #     else:
+    #         ground_truth_con = objective.evaluate_true_slack(X)
+    #         feasible_mask = (ground_truth_con <= 0).all(dim=-1)
+    #         infeasible_mask = torch.logical_not(feasible_mask)
+    #
+    #     # === Compute pareto masks ===
+    #     pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
+    #     if feasible_mask.any():
+    #         Y_par = Y_gt.clone()
+    #         Y_par[..., objective.obj_to_minimize] *= -1
+    #         Y_par = Y_par[feasible_mask]
+    #         pareto_mask[feasible_mask] = is_non_dominated(Y_par)
+    #     feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
+    #     feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
+    #
+    #     # === Plot infeasible ground truth ===
+    #     if objective.output_constraints is not None:
+    #         if torch.any(infeasible_mask):
+    #             Y_gt_inf = Y_gt[infeasible_mask].detach().cpu().numpy()
+    #             color_values = Y_gt_inf[:, f3_idx]
+    #             kwargs = dict(infeasible_ground_truth_kwargs)  # make a local copy
+    #             kwargs.pop("color", None)
+    #             c = cmap(norm(color_values))
+    #             axes.scatter(x=Y_gt_inf[:, f1_idx], y=Y_gt_inf[:, f2_idx], c=c, **kwargs)
+    #             legend_elements.append(Line2D(
+    #                 [0], [0], marker=infeasible_ground_truth_kwargs['marker'],
+    #                 label=infeasible_ground_truth_kwargs['label'],
+    #                 color=infeasible_ground_truth_kwargs['color'],
+    #                 markerfacecolor='none', markersize=ms * 0.45, linestyle='None'))
+    #
+    #     # === Plot feasible non-pareto-front ground truth ===
+    #     if torch.any(feasible_non_pareto_mask):
+    #         Y_gt_feas_non_par = Y_gt[feasible_non_pareto_mask].detach().cpu().numpy()
+    #         color_values = Y_gt_feas_non_par[:, f3_idx]
+    #         kwargs = dict(feasible_non_pareto_ground_truth_kwargs)  # make a local copy
+    #         kwargs.pop("color", None)
+    #         c = cmap(norm(color_values))
+    #         axes.scatter(x=Y_gt_feas_non_par[:, 0], y=Y_gt_feas_non_par[:, 1], c=c, **kwargs)
+    #         legend_elements.append(Line2D(
+    #             [0], [0], marker=feasible_non_pareto_ground_truth_kwargs['marker'],
+    #             label=feasible_non_pareto_ground_truth_kwargs['label'],
+    #             color=feasible_non_pareto_ground_truth_kwargs['color'],
+    #             markerfacecolor='none', markersize=ms * 0.45, linestyle='None'))
+    #
+    #     # === Plot feasible pareto-front ground truth ===
+    #     if torch.any(feasible_pareto_mask):
+    #         Y_gt_feas_par = Y_gt[feasible_pareto_mask].detach().cpu().numpy()
+    #         color_values = Y_gt_feas_par[:, f3_idx]
+    #         kwargs = dict(feasible_non_pareto_ground_truth_kwargs)  # make a local copy
+    #         kwargs.pop("color", None)
+    #         c = cmap(norm(color_values))
+    #         axes.scatter(x=Y_gt_feas_par[:, 0], y=Y_gt_feas_par[:, 1], c=c, **kwargs)
+    #         legend_elements.append(Line2D(
+    #             [0], [0], marker=feasible_pareto_ground_truth_kwargs['marker'],
+    #             label=feasible_pareto_ground_truth_kwargs['label'],
+    #             color=feasible_pareto_ground_truth_kwargs['color'],
+    #             markerfacecolor='none', markersize=ms * 0.45, linestyle='None'))
+
+    """ Plot posterior (not implemented) """
+    if show_posterior:
+        raise NotImplementedError("Posterior plotting is not yet implemented.")
+
+    # """ Plot reference point """
+    # if show_ref_point:
+    #     # Plot the reference point, color-coded.
+    #     ref_point = objective.ref_point.detach().cpu().numpy()
+    #     color = ref_point[f3_idx]
+    #     kwargs = ref_point_kwargs
+    #     kwargs.pop("color", None)
+    #     c = cmap(norm(color))
+    #     axes.scatter(x=ref_point[f1_idx], y=ref_point[f2_idx], color=c, **ref_point_kwargs)
+    #     legend_elements.append(Line2D(
+    #         [0], [0], marker=ref_point_kwargs['marker'],
+    #         label=ref_point_kwargs['label'],
+    #         color=ref_point_kwargs['edgecolors'],
+    #         markerfacecolor='none', markersize=ms, linestyle='None'))
+
+    """ Plot observations """
+    if show_observations:
+
+        # === Compute feasible and infeasible masks ===
+        if objective.output_constraints is None:
+            feasible_mask = torch.ones(Y_obj.shape[-2], dtype=torch.bool)
+            infeasible_mask = torch.zeros_like(Y_obj, dtype=torch.bool)
+        else:
+            Y_full = torch.cat(tensors=(Y_obj, Y_con), dim=-1)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in objective.output_constraints]).all(dim=-2)
+            infeasible_mask = torch.logical_not(feasible_mask)
+
+        # === Compute pareto masks ===
+        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
+        if feasible_mask.any():
+            Y_par = Y_obj.clone()
+            Y_par[..., objective.obj_to_minimize] *= -1
+            Y_par = Y_par[feasible_mask]
+            pareto_mask[feasible_mask] = is_non_dominated(Y_par)
+        feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
+        feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
+
+        # === Plot infeasible observations ===
+        if objective.output_constraints is not None:
+            if torch.any(infeasible_mask):
+                Y_obj_inf = Y_obj[infeasible_mask].detach().cpu().numpy()
+                color_values = Y_obj_inf[:, 2]
+                c = cmap(norm(color_values))
+                kwargs = dict(infeasible_observations_kwargs)  # make a local copy
+                kwargs.pop("color", None)
+                axes.scatter(x=Y_obj_inf[:, 0], y=Y_obj_inf[:, 1], c=c, **kwargs)
+                legend_elements.append(Line2D(
+                    [0], [0], marker=infeasible_observations_kwargs['marker'],
+                    label=infeasible_observations_kwargs['label'],
+                    color=infeasible_observations_kwargs['edgecolors'],
+                    markerfacecolor='none', markersize=ms, linestyle='None'))
+
+        # === Plot feasible non-pareto-front observations ===
+        if torch.any(feasible_non_pareto_mask):
+            Y_obj_feas_non_par = Y_obj[feasible_non_pareto_mask].detach().cpu().numpy()
+            color_values = Y_obj_feas_non_par[:, 2]
+            c = cmap(norm(color_values))
+            kwargs = dict(feasible_non_pareto_observations_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            axes.scatter(x=Y_obj_feas_non_par[:, 0], y=Y_obj_feas_non_par[:, 1], c=c, **kwargs)
+            legend_elements.append(Line2D(
+                [0], [0], marker=feasible_non_pareto_observations_kwargs['marker'],
+                label=feasible_non_pareto_observations_kwargs['label'],
+                color=feasible_non_pareto_observations_kwargs['edgecolors'],
+                markerfacecolor='none', markersize=ms, linestyle='None'))
+
+        # === Plot feasible pareto-front observations ===
+        if torch.any(feasible_pareto_mask):
+            Y_obj_feas_par = Y_obj[feasible_pareto_mask].detach().cpu().numpy()
+            color_values = Y_obj_feas_par[:, 2]
+            c = cmap(norm(color_values))
+            kwargs = dict(feasible_pareto_observations_kwargs)  # make a local copy
+            kwargs.pop("color", None)
+            axes.scatter(x=Y_obj_feas_par[:, 0], y=Y_obj_feas_par[:, 1], c=c, **kwargs)
             legend_elements.append(Line2D(
                 [0], [0], marker=feasible_pareto_observations_kwargs['marker'],
                 label=feasible_pareto_observations_kwargs['label'],
