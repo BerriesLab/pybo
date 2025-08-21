@@ -191,15 +191,17 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
                 "Electrode Wear",
                 "Orbiting Time Penalty",
             ],
-            tracker_names=[
-                "Orbiting time"
-            ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True, False],
             ref_point=[300, 150, -50],
-            num_constraints=0,
             num_outcomes=3,
             outcomes=[0, 1, 2],
+            num_trackers=1,
+            tracker_names=[
+                "Orbiting time"
+            ],
+            num_constraints=0,
+            constraint_names=None,
             gt_noise_std=None,
             max_hv=None,
             linear_equality_input_constraints=None,
@@ -291,8 +293,8 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         Define an exponential orbiting penalty for X < 40.
         """
         orbiting_time = self._orbiting_time(X)
-        violation = torch.clamp(40.0 - orbiting_time, min=0.0)
-        return - torch.exp(violation / k)
+        violation = 40.0 - orbiting_time
+        return - torch.clamp(input=torch.exp(violation / k), max=1000)
 
     def _quadratic_orbiting_penalty(self, X: Tensor) -> Tensor:
         """
@@ -306,9 +308,8 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         electrode_wear = self._electrode_wear(X=X)
         orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
         # orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
-        # orbiting_time_penalty = self._exponential_orbiting_penalty(X)
-        return super().evaluate_true_objective(
-            torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1))
+        # orbiting_time_penalty = self._exponential_orbiting_penalty(X=X)
+        return torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1)
 
     def evaluate_trackers(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)

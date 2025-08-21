@@ -6,9 +6,7 @@ from objectives.formaco import FormACOMCMultiOutputObjective
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
-from utils.plotters import plot_multi_objective_from_RN_to_R3, plot_log_hypervolume_improvement, \
-    plot_elapsed_time, make_grid, plot_multi_objective_from_RN_to_R3_with_color_coded_R3, plot_parameters_evolution, \
-    plot_objectives_evolution, plot_constraints_evolution
+from utils.plotters import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -42,7 +40,7 @@ def main(n_samples=64, q: int = 1, ):
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
     gnd_truth_X = make_grid(
-        size=10,
+        size=20,
         bounds=objective.bounds,
         device=DEVICE,
         dtype=DTYPE
@@ -93,27 +91,42 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        plot_multi_objective_from_RN_to_R3_with_color_coded_R3(
+        plotter = ObjectivesPlotter(
+            title="Pareto Front",
             mobo=mobo,
-            f1=mobo.Y_obj[..., -3],
-            f2=mobo.Y_obj[..., -2],
-            f3=mobo.Y_track[..., -1],
-            # fc=[mobo.Y_obj[..., -1]],
-            title="FormACO Test Problem",
-            f1_label="Machining Down Time (min)",
-            f2_label=r"Electrode Wear $(\mu m)$",
-            f3_label="Orbiting Time (min)",
-            # f3_lims=(-30, 0),
-            # f1_idx=0,
-            # f2_idx=1,
-            # f3_idx=2,
-            # show_ref_point=True,
-            # show_ground_truth=True,
-            show_observations=True,
-            display_figure=False,
-            X=gnd_truth_X,
-            output_path=Path.cwd() / f"pareto_front_2d.png"
+            X_gt=gnd_truth_X,
+            f1_idx=0,
+            f2_idx=1,
+            f3_idx=2,
+            pareto_idxs=[0, 1],
         )
+        plotter.plot_ground_truth()
+        plotter.plot_observations()
+        plotter.save_figure()
+
+        # plot_fs_from_RN_to_R2(
+        #     title="FormACO Test Problem",
+        #     f1_label="Machining Down Time (min)",
+        #     f2_label=r"Electrode Wear $(\mu m)$",
+        #     f3_label="Orbiting Time (min)",
+        #     mobo=mobo,
+        #     f1=mobo.Y_obj[..., -3],
+        #     f2=mobo.Y_obj[..., -2],
+        #     f3=mobo.Y_track[..., -1],
+        #     # f1_gt=mobo.objective.evaluate_true_objective(X=X)[..., 0],
+        #     # f2_gt=mobo.objective.evaluate_true_objective(X=X)[..., 1],
+        #     # f3_gt=mobo.objective.evaluate_trackers(X=X)[..., 0],
+        #     # f3_lims=(-30, 0),
+        #     # f1_idx=0,
+        #     # f2_idx=1,
+        #     # f3_idx=2,
+        #     # show_ref_point=True,
+        #     # show_ground_truth=True,
+        #     show_observations=True,
+        #     display_figure=False,
+        #     X=gnd_truth_X,
+        #     output_path=Path.cwd() / f"pareto_front_2d.png"
+        # )
         # The following plot is commented as the displayed result is easily interpreted in interactive mode.
         # plot_multi_objective_from_RN_to_R3(
         #     mobo=mobo,
@@ -133,7 +146,7 @@ def main(n_samples=64, q: int = 1, ):
         plot_parameters_evolution(mobo=mobo)
         plot_objectives_evolution(mobo=mobo)
         plot_constraints_evolution(mobo=mobo)
-        # TODO: plot_tracker_evolution(mobo=mobo)
+        plot_trackers_evolution(mobo=mobo)
 
     print("Optimization Finished.")
 

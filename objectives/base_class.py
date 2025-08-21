@@ -21,6 +21,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             dim: int,
             num_objectives: int,
             num_constraints: int,
+            num_trackers: int,
             obj_to_minimize: list[bool],
             bounds: list[float],
             ref_point: list[float],
@@ -50,6 +51,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.dim = dim
         self.num_objectives = num_objectives
         self.num_constraints = num_constraints
+        self.num_trackers = num_trackers
         self.obj_to_minimize = obj_to_minimize
         self.ref_point = ref_point
         self.bounds = bounds
@@ -338,10 +340,12 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         plotting the true Pareto front), or performance assessment of
         optimization algorithms.
         """
-        # X = f(X)...
-        if self.add_noise_to_gt and self.gt_noise_std is not None:
-            X = self.add_noise(X)
-        return X
+        pass
+
+    def evaluate_true_objective_with_noise(self, X: Tensor) -> Tensor:
+        Y = self.evaluate_true_objective(X)
+        Y = self.add_noise(Y)
+        return Y
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
@@ -351,10 +355,12 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         plotting the true Pareto front), or performance assessment of
         optimization algorithms.
         """
-        # X = f(X)...
-        if self.add_noise_to_gt and self.gt_noise_std is not None:
-            X = self.add_noise(X)
-        return X
+        pass
+
+    def evaluate_true_constraint_with_noise(self, X: Tensor) -> Tensor:
+        Y = self.evaluate_true_constraint(X)
+        Y = self.add_noise(Y)
+        return Y
 
     def evaluate_trackers(self, X: Tensor) -> Tensor:
         """
@@ -389,7 +395,6 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             Sets:
                 - self._max_hv: Estimated maximum hypervolume value.
             """
-
         if verbose:
             print("Estimating maximum theoretical hypervolume... ", end="")
 
@@ -400,8 +405,8 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         # 2. Evaluate and filter feasible points only if constraints exist
         Y = self.evaluate_true_objective(X)
         if self.num_constraints > 0:
-            constraint_slack = self.evaluate_true_constraint(X)  # shape: (n_samples, num_constraints)
-            feasible_mask = constraint_slack <= 0  # all constraints satisfied
+            constraint = self.evaluate_true_constraint(X)  # shape: (n_samples, num_constraints)
+            feasible_mask = constraint <= 0  # all constraints satisfied
             feasible_mask = feasible_mask.all(dim=-1)
             feasible_Y = Y[feasible_mask]
         else:
