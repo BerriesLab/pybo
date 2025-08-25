@@ -307,28 +307,42 @@ class Plotter:
         return fig, ax
 
 
-class ObjectivesPlotter(Plotter):
+# TODO: add possibility to replace third objective (color-coded) with a tracker
+class ObjectivePlotter(Plotter):
+    """
+    A class to plot the objective functions. It works directly on a Mobo
+    object, requiring only minimum user input.
+    """
+
     def __init__(
             self,
             title: str,
             mobo: Mobo,
-            f1_idx: int,
-            f2_idx: int,
-            f3_idx: int,
+            idx_x=0,
+            idx_y=1,
+            idx_color=2,
             pareto_idxs: list[int] | None = None,
+            use_tracker: bool = False,
             X_gt: torch.Tensor | None = None,
     ):
+        """
+        - obj_idxs: list of int, in the order [index of the x-axis objective
+        function, index of the y-axis objective, index of the color-coded objective].
+        - pareto_idxs: indexes of the objective functions used to compute the
+        pareto front. Not all objectives may be used for calculcating the pareto
+        front, e.g. when one objective is a penalty used to guide the optimizer
+        in a certain regione of the hyperparameter space.
+        """
         super().__init__(
             title=title,
             labels=mobo.objective.objective_names
         )
         self.mobo = mobo
-        # TODO: indexes can be a list
-        self.f1_idx = f1_idx
-        self.f2_idx = f2_idx
-        self.f3_idx = f3_idx
-        # TODO: the pareto indexes defines the objectives that must be used for the calculation of the pareto
+        self.idx_x = idx_x
+        self.idx_y = idx_y
+        self.idx_color = idx_color
         self.pareto_idxs = pareto_idxs
+        self.use_tracker = use_tracker
         self.X_gt = X_gt
         self.Y_obj_gt: torch.Tensor | None = None
         self.Y_con_gt: torch.Tensor | None = None
@@ -358,7 +372,7 @@ class ObjectivesPlotter(Plotter):
             pad=0.04
         )
         # Set label if available
-        self.cbar.set_label(self.labels[self.f3_idx])
+        self.cbar.set_label(self.labels[self.idx_color])
         # Refresh the figure
         self.fig.canvas.draw_idle()
 
@@ -367,11 +381,11 @@ class ObjectivesPlotter(Plotter):
         vmin, vmax = 0.0, 1.0  # defaults
 
         if self.mobo.Y_obj is not None:
-            Y_colors = self.mobo.Y_obj[..., self.f3_idx].detach().cpu().numpy()
+            Y_colors = self.mobo.Y_obj[..., self.idx_color]
             vmin, vmax = Y_colors.min(), Y_colors.max()
 
         if self.Y_obj_gt is not None:
-            Y_colors_gt = self.Y_obj_gt[..., self.f3_idx].detach().cpu().numpy()
+            Y_colors_gt = self.Y_obj_gt[..., self.idx_color]
             vmin = min(vmin, Y_colors_gt.min())
             vmax = max(vmax, Y_colors_gt.max())
 
@@ -386,9 +400,21 @@ class ObjectivesPlotter(Plotter):
             if self.fig is not None:
                 self.fig.canvas.draw_idle()
 
-    def plot_observations(self):
+    # TODO: add tracker
+    def plot_objectives(self, idx_x=0, idx_y=1, idx_color=2, use_tracker: bool = False):
+        """
+        Plot a 2D scatter of objectives with optional color dimension.
+
+        Args:
+            idx_x: index for x-axis objective
+            idx_y: index for y-axis objective
+            idx_color: index for color coding (objective or tracker)
+            use_tracker: if True, idx_color refers to tracker index (mobo.Y_track)
+            cmap: colormap name
+        """
         # TODO: since at the end of the method the colorbar is updated, the colormap
         #  may be limited by default between 0 and 1
+
         self._compute_objectives_colormap()
 
         # === Compute feasible and infeasible masks ===
@@ -437,11 +463,11 @@ class ObjectivesPlotter(Plotter):
     def _compute_objectives_colormap(self):
         if self.lims is not None and self.lims[2] is not None:
             self.norm = mpl.colors.Normalize(
-                vmin=lims[self.f3_idx][0],
-                vmax=lims[self.f3_idx][1]
+                vmin=lims[self.idx_color][0],
+                vmax=lims[self.idx_color][1]
             )
         else:
-            Y_colors = self.mobo.Y_obj[..., self.f3_idx]
+            Y_colors = self.mobo.Y_obj[..., self.idx_color]
             self.norm = mpl.colors.Normalize(
                 vmin=Y_colors.min().item(),
                 vmax=Y_colors.max().item()
@@ -451,13 +477,13 @@ class ObjectivesPlotter(Plotter):
     def _compute_ground_truth_colormap(self):
         if self.lims is not None and self.lims[2] is not None:
             self.norm = mpl.colors.Normalize(
-                vmin=lims[self.f3_idx][0],
-                vmax=lims[self.f3_idx][1]
+                vmin=lims[self.idx_color][0],
+                vmax=lims[self.idx_color][1]
             )
         else:
             self.norm = mpl.colors.Normalize(
-                vmin=self.Y_obj_gt[..., self.f3_idx].min().item(),
-                vmax=self.Y_obj_gt[..., self.f3_idx].max().item()
+                vmin=self.Y_obj_gt[..., self.idx_color].min().item(),
+                vmax=self.Y_obj_gt[..., self.idx_color].max().item()
             )
         self.cmap = mpl.cm.coolwarm
 
@@ -536,11 +562,11 @@ class ObjectivesPlotter(Plotter):
         """
         if torch.any(self.infeasible_obj_mask):
             Y = self.mobo.Y_obj[mask].detach().cpu().numpy()
-            color_values = Y[:, self.f3_idx]
+            color_values = Y[:, self.idx_color]
             c = self.cmap(self.norm(color_values))
             kwargs = dict(infeasible_objectives_kwargs)  # make a local copy
             kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.f1_idx], y=Y[:, self.f2_idx], c=c, **kwargs)
+            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
             self.legend_elements.append(Line2D(
                 [0], [0], marker=infeasible_objectives_kwargs['marker'],
                 label=infeasible_objectives_kwargs['label'],
@@ -554,11 +580,11 @@ class ObjectivesPlotter(Plotter):
         """
         if torch.any(self.infeasible_gt_mask):
             Y = self.mobo.Y_obj_gt[mask].detach().cpu().numpy()
-            color_values = Y[:, self.f3_idx]
+            color_values = Y[:, self.idx_color]
             c = self.cmap(self.norm(color_values))
             kwargs = dict(infeasible_ground_truth_kwargs)  # make a local copy
             kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.f1_idx], y=Y[:, self.f2_idx], c=c, **kwargs)
+            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
             self.legend_elements.append(Line2D(
                 [0], [0], marker=infeasible_ground_truth_kwargs['marker'],
                 label=infeasible_ground_truth_kwargs['label'],
@@ -572,11 +598,11 @@ class ObjectivesPlotter(Plotter):
         """
         if torch.any(self.feasible_non_pareto_obj_mask):
             Y = self.mobo.Y_obj[self.feasible_non_pareto_obj_mask].detach().cpu().numpy()
-            color_values = Y[:, self.f3_idx]
+            color_values = Y[:, self.idx_color]
             kwargs = dict(feasible_non_pareto_objectives_kwargs)  # make a local copy
             kwargs.pop("color", None)
             c = self.cmap(self.norm(color_values))
-            self.ax.scatter(x=Y[:, self.f1_idx], y=Y[:, self.f2_idx], c=c, **kwargs)
+            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_non_pareto_objectives_kwargs['marker'],
                 label=feasible_non_pareto_objectives_kwargs['label'],
@@ -586,7 +612,7 @@ class ObjectivesPlotter(Plotter):
     def _plot_feasible_non_pareto_ground_truth(self):
         if torch.any(self.feasible_non_pareto_gt_mask):
             Y = self.Y_obj_gt[self.feasible_non_pareto_gt_mask].detach().cpu().numpy()
-            color_values = Y[:, self.f3_idx]
+            color_values = Y[:, self.idx_color]
             kwargs = dict(feasible_non_pareto_ground_truth_kwargs)  # make a local copy
             kwargs.pop("color", None)
             c = self.cmap(self.norm(color_values))
@@ -607,7 +633,7 @@ class ObjectivesPlotter(Plotter):
             c = self.cmap(self.norm(color_values))
             kwargs = dict(feasible_pareto_objectives_kwargs)  # make a local copy
             kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.f1_idx], y=Y[:, self.f2_idx], c=c, **kwargs)
+            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_pareto_objectives_kwargs['marker'],
                 label=feasible_pareto_objectives_kwargs['label'],
@@ -622,7 +648,7 @@ class ObjectivesPlotter(Plotter):
             c = self.cmap(self.norm(color_values))
             kwargs = dict(feasible_pareto_ground_truth_kwargs)  # make a local copy
             kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.f1_idx], y=Y[:, self.f2_idx], c=c, **kwargs)
+            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_pareto_ground_truth_kwargs['marker'],
                 label=feasible_pareto_ground_truth_kwargs['label'],
@@ -638,13 +664,6 @@ class ObjectivesPlotter(Plotter):
         if fname is None:
             fname = self.title.replace(" ", "_").lower() + ".png"
         self.fig.savefig(fname=Path.cwd() / fname)
-
-
-class TrackersPlotter(Plotter):
-    def __init__(
-            self,
-    ):
-        super().__init__(title, labels, lims)
 
 
 def plot_multi_objective_from_RN_to_R3(

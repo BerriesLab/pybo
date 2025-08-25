@@ -91,17 +91,19 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        plotter = ObjectivesPlotter(
+        # TODO: fix using the following arguments
+        plotter = ObjectivePlotter(
             title="Pareto Front",
             mobo=mobo,
             X_gt=gnd_truth_X,
-            f1_idx=0,
-            f2_idx=1,
-            f3_idx=2,
+            idx_x=0,
+            idx_y=1,
+            idx_z=2,
+            use_tracker=False,
             pareto_idxs=[0, 1],
         )
         plotter.plot_ground_truth()
-        plotter.plot_observations()
+        plotter.plot_objectives()
         plotter.save_figure()
 
         # plot_fs_from_RN_to_R2(
