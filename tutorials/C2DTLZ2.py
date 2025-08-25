@@ -7,8 +7,8 @@ from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType
-from utils.plotters import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, plot_elapsed_time, \
-    make_grid
+from plotters.multi_objective import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, \
+    plot_elapsed_time
 
 """ Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
 refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results

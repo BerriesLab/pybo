@@ -34,11 +34,11 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
             output_constraints: list[Callable] | None,
             add_noise_to_gt: bool = False,
-            estimate_max_hv: bool = False,
             parameter_names: list[str] | None = None,
             objective_names: list[str] | None = None,
             constraint_names: list[str] | None = None,
             tracker_names: list[str] | None = None,
+            estimate_max_hv: bool = False,
 
     ):
 
@@ -60,7 +60,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
         self.max_hv = max_hv
-        if estimate_max_hv is True:
+        if estimate_max_hv:
             self.estimate_max_hv()
         self.parameter_names = parameter_names
         self.objective_names = objective_names

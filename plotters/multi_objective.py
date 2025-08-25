@@ -1,337 +1,56 @@
-from collections.abc import Callable
-from typing import List, Tuple
-
 import numpy as np
-import torch
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from fontTools.merge import cmap
 from sklearn.decomposition import PCA
 from matplotlib.tri import Triangulation
 import matplotlib as mpl
-from torch import Tensor
-from torch.utils.data.datapipes.iter.routeddecoder import RoutedDecoderIterDataPipe
 
-from constraints import output_constraints
 from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 
-from objectives.base_class import MCMultiOutputBase
-
-ms = 7
-
-feasible_pareto_objectives_kwargs = {
-    'marker': 'D',
-    's': ms ** 2,
-    'color': 'tab:orange',
-    'edgecolors': 'black',
-    'alpha': 0.7,
-    'label': 'Pareto Obs.'
-}
-
-feasible_non_pareto_objectives_kwargs = {
-    'color': "tab:green",
-    'marker': "o",
-    's': ms ** 2,
-    "alpha": 0.7,
-    "edgecolors": "black",
-    'label': 'Non-Pareto Obs.'
-}
-
-infeasible_objectives_kwargs = {
-    'color': "tab:red",
-    'marker': "x",
-    's': ms ** 2,
-    "alpha": 0.7,
-    "edgecolors": "black",
-    'label': 'Inf. Obs.'
-}
-
-ref_point_kwargs = {
-    'color': 'tab:red',
-    "edgecolors": "black",
-    'marker': 's',
-    's': ms ** 2,
-    'alpha': 0.7,
-    'label': 'Ref. Point'
-}
-
-feasible_pareto_ground_truth_kwargs = {
-    'color': "black",
-    'marker': "D",
-    's': ms ** 2 / 5,
-    "alpha": 1,
-    'label': 'Pareto GT'
-}
-
-feasible_non_pareto_ground_truth_kwargs = {
-    'color': "black",
-    'marker': "o",
-    's': ms ** 2 / 5,
-    "alpha": 0.1,
-    'label': 'Non-Pareto GT'
-}
-
-infeasible_ground_truth_kwargs = {
-    'color': "red",
-    'marker': "x",
-    's': ms ** 2 / 5,
-    "alpha": 0.1,
-    'label': 'Inf. GT'
-}
-
-posterior_pareto_kwargs = {
-    'fmt': 'o',
-    'edgecolors': 'tab:blue',
-    'alpha': 0.3,
-    'label': r'Post. $\mu \pm 3 \sigma$',
-    'capsize': 3,
-}
-
-xy_plot_kwargs = {
-    'marker': 'o',
-    's': ms ** 2,
-    'color': 'tab:orange',
-    'edgecolors': 'black',
-    'alpha': 1,
-}
+from plotters.base_class import PlotterBase
+from plotters.utils import *
 
 
-def make_grid(size: int, bounds: torch.Tensor, dtype=torch.float64, device='cpu'):
+class MultiObjectivePlotter(PlotterBase):
     """
-    Creates a grid of points within the given bounds.
+    A class for visualizing multi-objective functions from a Mobo object in 2D.
+    The class includes methods requiring only Minimal user input; most settings
+    are automatically inferred from the `Mobo` object.
 
-    Args:
-        size (int): Number of points per dimension.
-        bounds (torch.Tensor): Tensor of shape (2, d) containing min and max for each dimension.
-        dtype: Torch dtype.
-        device: Torch device.
-
-    Returns:
-        torch.Tensor: Grid of shape (size**d, d).
-    """
-    if bounds.ndim != 2 or bounds.shape[0] != 2:
-        raise ValueError(f"Bounds must be of shape (2, d), but got {bounds.shape}")
-
-    bounds = bounds.transpose(0, 1)  # Convert to (d, 2)
-    dim = bounds.shape[0]
-
-    axes = [
-        torch.linspace(bounds[i, 0], bounds[i, 1], size, dtype=dtype, device=device)
-        for i in range(dim)
-    ]
-    mesh = torch.meshgrid(*axes, indexing='ij')
-    grid = torch.stack(mesh, dim=-1).reshape(-1, dim)
-    return grid
-
-
-def plot_objective_from_RN_to_R1():
-    raise NotImplementedError("Function not yet implemented.")
-
-
-def plot_multi_objective_from_RN_to_R2(
-        mobo: Mobo,
-        X: torch.Tensor or None = None,
-        title: str or None = None,
-        f1_label: str or None = None,
-        f2_label: str or None = None,
-        f1_lims=None,
-        f2_lims=None,
-        show_ref_point=True,
-        show_ground_truth=False,
-        show_posterior=False,
-        show_observations=True,
-        display_figure=True,
-        output_path=None,
-):
-    # Initialize the figure
-    fig, axes = plt.subplots(1, 1, figsize=(6, 6))
-    axes.set_title(title or "Pareto Front")
-    axes.set_xlabel("$f_{1}$") if not f1_label else axes.set_xlabel(f1_label)
-    axes.set_ylabel("$f_{2}$") if not f2_label else axes.set_ylabel(f2_label)
-    axes.set_xlim(f1_lims[0], f1_lims[1]) if f1_lims is not None else axes.autoscale(enable=True, axis='x')
-    axes.set_ylim(f2_lims[0], f2_lims[1]) if f2_lims is not None else axes.autoscale(enable=True, axis='y')
-    if output_path is None:
-        output_path = Path.cwd() / "pareto_front.png"
-
-    """ Plot ground truth """
-    if show_ground_truth:
-
-        if mobo.objective.evaluate_true_objective(X) is None:
-            raise ValueError("Cannot plot ground truth: ground truth is not available.")
-        Y_gt = mobo.objective.evaluate_true_objective(X)
-
-        # === Compute feasible and infeasible masks ===
-        if mobo.objective.output_constraints is None:
-            feasible_mask = torch.ones(Y_gt.shape[-2], dtype=torch.bool)
-            infeasible_mask = torch.zeros_like(Y_gt, dtype=torch.bool)
-        else:
-            ground_truth_con = mobo.objective.evaluate_true_slack(X)
-            feasible_mask = (ground_truth_con <= 0).all(dim=-1)
-            infeasible_mask = torch.logical_not(feasible_mask)
-
-        # === Compute pareto masks ===
-        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
-        if feasible_mask.any():
-            Y_par = Y_gt.clone()
-            Y_par[..., mobo.objective.obj_to_minimize] *= -1
-            Y_par = Y_par[feasible_mask]
-            pareto_mask[feasible_mask] = is_non_dominated(Y_par)
-        feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
-        feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
-
-        # === Plot infeasible ground truth ===
-        if mobo.objective.output_constraints is not None:
-            if torch.any(infeasible_mask):
-                Y_gt_inf = Y_gt[infeasible_mask].detach().cpu().numpy()
-                axes.scatter(Y_gt_inf[:, 0], Y_gt_inf[:, 1], **infeasible_ground_truth_kwargs)
-
-        # === Plot feasible non-pareto-front ground truth ===
-        if torch.any(feasible_non_pareto_mask):
-            Y_gt_feas_non_par = Y_gt[feasible_non_pareto_mask].detach().cpu().numpy()
-            axes.scatter(Y_gt_feas_non_par[:, 0], Y_gt_feas_non_par[:, 1], **feasible_non_pareto_ground_truth_kwargs)
-
-        # === Plot feasible pareto-front ground truth ===
-        if torch.any(feasible_mask):
-            Y_gt_feas_par = Y_gt[feasible_pareto_mask].detach().cpu().numpy()
-            axes.scatter(Y_gt_feas_par[:, 0], Y_gt_feas_par[:, 1], **feasible_pareto_ground_truth_kwargs)
-
-    """ Plot posterior pareto """
-    if show_posterior:
-        raise NotImplementedError("Function not yet implemented.")
-        # # Predict over test grid
-        # X = X.to(mobo.get_device(), mobo.get_dtype())
-        # posterior = mobo.get_model().posterior(X)
-        # mean = posterior.mean.detach().cpu().numpy()
-        # std = posterior.variance.sqrt().detach().cpu().numpy()
-        #
-        # # Plot mean with error bars
-        # axes.errorbar(
-        #     mean[:, 0],
-        #     mean[:, 1],
-        #     xerr=3 * std[:, 0],
-        #     yerr=3 * std[:, 1],
-        #     **posterior_pareto_kwargs,
-        # )
-
-    """ Plot reference point """
-    if show_ref_point is True:
-        ref_point = mobo.objective.ref_point.detach().cpu().numpy()
-        axes.scatter(ref_point[0], ref_point[1], **ref_point_kwargs)
-
-    """ Plot observations """
-    if show_observations is True:
-
-        Y_obj = mobo.Y_obj.clone()
-
-        # === Compute feasible and infeasible masks ===
-        if mobo.objective.output_constraints is None:
-            feasible_mask = torch.ones(mobo.Y_obj.shape[-2], dtype=torch.bool)
-            infeasible_mask = torch.zeros_like(mobo.Y_obj, dtype=torch.bool)
-        else:
-            Y_full = torch.cat([mobo.Y_obj, mobo.Y_con], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in mobo.objective.output_constraints]).all(dim=-2)
-            infeasible_mask = torch.logical_not(feasible_mask)
-
-        # === Compute pareto masks ===
-        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
-        if feasible_mask.any():
-            Y_par = Y_obj.clone()
-            Y_par[..., mobo.objective.obj_to_minimize] *= -1
-            Y_par = Y_par[feasible_mask]
-            pareto_mask[feasible_mask] = is_non_dominated(Y_par)
-        feasible_pareto_mask = torch.logical_and(feasible_mask, pareto_mask)
-        feasible_non_pareto_mask = torch.logical_and(feasible_mask, torch.logical_not(pareto_mask))
-
-        # === Plot infeasible observations ===
-        if mobo.objective.output_constraints is not None:
-            if torch.any(infeasible_mask):
-                Y_obj_inf = Y_obj[infeasible_mask].detach().cpu().numpy()
-                axes.scatter(Y_obj_inf[:, 0], Y_obj_inf[:, 1], **infeasible_objectives_kwargs)
-
-        # === Plot feasible non-pareto-front observations ===
-        if torch.any(feasible_non_pareto_mask):
-            Y_obj_feas_non_par = Y_obj[feasible_non_pareto_mask].detach().cpu().numpy()
-            axes.scatter(Y_obj_feas_non_par[:, 0], Y_obj_feas_non_par[:, 1], **feasible_non_pareto_objectives_kwargs)
-
-        # === Plot feasible pareto-front observations ===
-        if torch.any(feasible_mask):
-            Y_obj_feas_par = Y_obj[feasible_pareto_mask].detach().cpu().numpy()
-            axes.scatter(Y_obj_feas_par[:, 0], Y_obj_feas_par[:, 1], **feasible_pareto_objectives_kwargs)
-
-    axes.autoscale_view(tight=False)  # Update the view limits if limits are not set
-    plt.legend()
-    fig.savefig(output_path, dpi=300, bbox_inches='tight', format='png')
-
-    if display_figure:
-        plt.show()
-    plt.close(fig)
-
-
-class Plotter:
-    def __init__(
-            self,
-            title: str,
-            labels: List[str],
-            lims: List[Tuple[float, float]] | None = None,
-            figsize: Tuple[int, int] = (8, 7),
-    ):
-        self.title = title
-        self.labels = labels
-        self.lims = lims
-        self.figsize = figsize
-        self.fig, self.ax = self._initialize_figure()
-        self.legend_elements = []
-        self.cbar: plt.Colorbar | None = None
-
-    def _initialize_figure(self):
-        fig, ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        ax.set_title(self.title)
-        ax.set_xlabel(self.labels[0])
-        ax.set_ylabel(self.labels[1])
-
-        # X limits
-        if self.lims is not None and self.lims[0] is not None:
-            ax.set_xlim(self.lims[0][0], self.lims[0][1])
-        else:
-            ax.autoscale(enable=True, axis='x')
-
-        # Y limits
-        if self.lims is not None and self.lims[1] is not None:
-            ax.set_ylim(self.lims[1][0], self.lims[1][1])
-        else:
-            ax.autoscale(enable=True, axis='y')
-
-        return fig, ax
-
-
-# TODO: add possibility to replace third objective (color-coded) with a tracker
-class ObjectivePlotter(Plotter):
-    """
-    A class to plot the objective functions. It works directly on a Mobo
-    object, requiring only minimum user input.
+    Key features:
+    - Maps N-dimensional objective data to a 2D scatter plot.
+    - Supports color-coding based on a selected objective or tracker.
+    - Can highlight Pareto fronts for selected objectives.
+    - Can include ground-truth evaluations if provided.
     """
 
     def __init__(
             self,
-            title: str,
             mobo: Mobo,
+            title: str = "Pareto front",
             idx_x=0,
             idx_y=1,
-            idx_color=2,
+            idx_color: int | None = None,
             pareto_idxs: list[int] | None = None,
             use_tracker: bool = False,
             X_gt: torch.Tensor | None = None,
     ):
         """
-        - obj_idxs: list of int, in the order [index of the x-axis objective
-        function, index of the y-axis objective, index of the color-coded objective].
-        - pareto_idxs: indexes of the objective functions used to compute the
-        pareto front. Not all objectives may be used for calculcating the pareto
-        front, e.g. when one objective is a penalty used to guide the optimizer
-        in a certain regione of the hyperparameter space.
+
+        Args:
+            - title (str): The title for the plot.
+            - mobo (Mobo): The `Mobo` object containing objective data to plot.
+            - idx_x (int, optional): Index of the objective to plot on the x-axis. Default is 0.
+            - idx_y (int, optional): Index of the objective to plot on the y-axis. Default is 1.
+            - idx_color (int, optional): Index of the objective used for color-coding. Default is 2.
+            - pareto_idxs (list[int] | None, optional): Indices of objectives used to determine the Pareto front.
+            - use_tracker (bool, optional): Whether to use tracker data for color-coding. If True,
+                `idx_color` is applied to tracker values. Default is False.
+            - X_gt (torch.Tensor | None, optional): Input parameters used to compute ground-truth objectives.
+                Default is None.
         """
         super().__init__(
             title=title,
@@ -355,67 +74,9 @@ class ObjectivePlotter(Plotter):
         self.feasible_pareto_gt_mask: torch.Tensor | None = None
         self.feasible_non_pareto_gt_mask: torch.Tensor | None = None
 
-    def _add_colorbar(self):
-        """
-        Add a colorbar to the current figure using the existing colormap and normalization.
-        Uses self.labels[2] as the label if available.
-        """
-        # Remove existing colorbar if present
-        if self.cbar is not None:
-            self.cbar.remove()
-        # Create new colorbar
-        self.cbar = self.fig.colorbar(
-            mpl.cm.ScalarMappable(norm=self.norm, cmap=self.cmap),
-            ax=self.ax,
-            orientation="vertical",
-            fraction=0.046,
-            pad=0.04
-        )
-        # Set label if available
-        self.cbar.set_label(self.labels[self.idx_color])
-        # Refresh the figure
-        self.fig.canvas.draw_idle()
-
-    def _update_colormap(self):
-        """Automatically recompute normalization after data changes."""
-        vmin, vmax = 0.0, 1.0  # defaults
-
-        if self.mobo.Y_obj is not None:
-            Y_colors = self.mobo.Y_obj[..., self.idx_color]
-            vmin, vmax = Y_colors.min(), Y_colors.max()
-
-        if self.Y_obj_gt is not None:
-            Y_colors_gt = self.Y_obj_gt[..., self.idx_color]
-            vmin = min(vmin, Y_colors_gt.min())
-            vmax = max(vmax, Y_colors_gt.max())
-
-        # Update normalization and colormap
-        self.norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-        self.cmap = mpl.cm.coolwarm
-
-        # Update colorbar if it exists
-        if self.cbar is not None:
-            self.cbar.mappable.set_norm(self.norm)  # <-- update the mappable's norm
-            self.cbar._draw_all()  # redraw the colorbar
-            if self.fig is not None:
-                self.fig.canvas.draw_idle()
-
-    # TODO: add tracker
-    def plot_objectives(self, idx_x=0, idx_y=1, idx_color=2, use_tracker: bool = False):
-        """
-        Plot a 2D scatter of objectives with optional color dimension.
-
-        Args:
-            idx_x: index for x-axis objective
-            idx_y: index for y-axis objective
-            idx_color: index for color coding (objective or tracker)
-            use_tracker: if True, idx_color refers to tracker index (mobo.Y_track)
-            cmap: colormap name
-        """
-        # TODO: since at the end of the method the colorbar is updated, the colormap
-        #  may be limited by default between 0 and 1
-
-        self._compute_objectives_colormap()
+    def plot_objectives(self):
+        self._initialize_norm()
+        self._initialize_colormap()
 
         # === Compute feasible and infeasible masks ===
         self._compute_feasible_objectives_mask()
@@ -429,20 +90,26 @@ class ObjectivePlotter(Plotter):
         self._plot_infeasible_objectives()
         self._plot_feasible_non_pareto_objectives()
         self._plot_feasible_pareto_objectives()
-        if self.cbar is None:
-            self._add_colorbar()
-        self._update_colormap()
+
+        # === Update colormaps ===
+        if self.idx_color is not None:
+            if self.cbar is None:
+                self._add_colorbar()
+            self._update_cmap_and_norm()
+
+        # === Update legend ===
+        self.ax.legend()
 
     def plot_ground_truth(self):
         if self.X_gt is None:
             raise ValueError("Must provide X for ground truth.")
 
+        self._initialize_norm()
+        self._initialize_colormap()
+
         # === Compute ground truth ===
         self.Y_obj_gt = self.mobo.objective.evaluate_true_objective(self.X_gt)
         self.Y_con_gt = self.mobo.objective.evaluate_true_constraint(self.X_gt)
-        # TODO: since at the end of the method the colorbar is updated, the colormap
-        #  may be limited by default to between 0 and 1
-        self._compute_ground_truth_colormap()
 
         # === Compute feasible and infeasible masks ===
         self._compute_feasible_ground_truth_mask()
@@ -456,52 +123,17 @@ class ObjectivePlotter(Plotter):
         self._plot_infeasible_ground_truth()
         self._plot_feasible_non_pareto_ground_truth()
         self._plot_feasible_pareto_ground_truth()
-        if self.cbar is None:
-            self._add_colorbar()
-        self._update_colormap()
 
-    def _compute_objectives_colormap(self):
-        if self.lims is not None and self.lims[2] is not None:
-            self.norm = mpl.colors.Normalize(
-                vmin=lims[self.idx_color][0],
-                vmax=lims[self.idx_color][1]
-            )
-        else:
-            Y_colors = self.mobo.Y_obj[..., self.idx_color]
-            self.norm = mpl.colors.Normalize(
-                vmin=Y_colors.min().item(),
-                vmax=Y_colors.max().item()
-            )
-        self.cmap = mpl.cm.coolwarm
+        # === Update colormaps ===
+        if self.idx_color is not None:
+            if self.cbar is None:
+                self._add_colorbar()
+            self._update_cmap_and_norm()
 
-    def _compute_ground_truth_colormap(self):
-        if self.lims is not None and self.lims[2] is not None:
-            self.norm = mpl.colors.Normalize(
-                vmin=lims[self.idx_color][0],
-                vmax=lims[self.idx_color][1]
-            )
-        else:
-            self.norm = mpl.colors.Normalize(
-                vmin=self.Y_obj_gt[..., self.idx_color].min().item(),
-                vmax=self.Y_obj_gt[..., self.idx_color].max().item()
-            )
-        self.cmap = mpl.cm.coolwarm
-
-    def update_colorbar_limits(self):
-        """Update the color limits of the plot and the colorbar."""
-        vmin = np.min(self.data)
-        vmax = np.max(self.data)
-        self.im.set_clim(vmin, vmax)
-        self.cbar.set_clim(vmin, vmax)
-        self.cbar.draw_all()  # Ensure the colorbar is redrawn
-        self.fig.canvas.draw_idle()  # Refresh the figure
+        # === Update legend ===
+        self.ax.legend()
 
     def _compute_feasible_objectives_mask(self):
-        """
-        A function to compute a mask for the feasible observations. The mask is
-        calculated for the objectives and constraints used in the optimization
-        problem.
-        """
         if self.mobo.Y_con is None:
             self.feasible_obj_mask = torch.ones(self.mobo.Y_obj.shape[-2], dtype=torch.bool)
         else:
@@ -518,18 +150,12 @@ class ObjectivePlotter(Plotter):
                 dim=-2)
 
     def _compute_infeasible_objectives_mask(self):
-        """
-        A function to compute a mask for the infeasible observations.
-        """
         self.infeasible_obj_mask = torch.logical_not(self.feasible_obj_mask)
 
     def _compute_infeasible_ground_truth_mask(self):
         self.infeasible_gt_mask = torch.logical_not(self.feasible_gt_mask)
 
     def _compute_feasible_pareto_objectives_mask(self):
-        """
-        Compute the mask for feasible pareto points in the maximization space.
-        """
         pareto_mask = torch.zeros_like(self.feasible_obj_mask, dtype=torch.bool)
         if self.feasible_obj_mask.any():
             Y_par = self.mobo.Y_obj.clone()
@@ -548,43 +174,58 @@ class ObjectivePlotter(Plotter):
         self.feasible_pareto_gt_mask = torch.logical_and(self.feasible_gt_mask, pareto_mask)
 
     def _compute_feasible_non_pareto_objectives_mask(self):
-        """
-        Compute the mask for feasible non-pareto points.
-        """
-        self.feasible_non_pareto_obj_mask = torch.logical_not(self.feasible_pareto_obj_mask)
+        self.feasible_non_pareto_obj_mask = torch.logical_and(
+            self.feasible_obj_mask, torch.logical_not(
+                self.feasible_pareto_obj_mask
+            )
+        )
 
     def _compute_feasible_non_pareto_ground_truth_mask(self):
-        self.feasible_non_pareto_gt_mask = torch.logical_not(self.feasible_pareto_gt_mask)
+        self.feasible_non_pareto_gt_mask = torch.logical_and(
+            self.feasible_gt_mask, torch.logical_not(
+                self.feasible_pareto_gt_mask
+            )
+        )
 
     def _plot_infeasible_objectives(self):
-        """
-        Plot the infeasible observations. Y is a torch.Tensor with the objective values.
-        """
         if torch.any(self.infeasible_obj_mask):
-            Y = self.mobo.Y_obj[mask].detach().cpu().numpy()
-            color_values = Y[:, self.idx_color]
-            c = self.cmap(self.norm(color_values))
-            kwargs = dict(infeasible_objectives_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
+            Y = self.mobo.Y_obj[self.infeasible_obj_mask].detach().cpu().numpy()
+            kwargs = dict(infeasible_objectives_kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.mobo.X)[..., self.idx_color]
+                    color_values = color_values[self.infeasible_obj_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=infeasible_objectives_kwargs['marker'],
                 label=infeasible_objectives_kwargs['label'],
-                color=infeasible_objectives_kwargs['edgecolors'],
+                color=infeasible_objectives_kwargs['color'],
                 markerfacecolor='none', markersize=ms, linestyle='None')
             )
 
     def _plot_infeasible_ground_truth(self):
-        """
-        Plot the infeasible observations. Y is a torch.Tensor with the objective values.
-        """
         if torch.any(self.infeasible_gt_mask):
-            Y = self.mobo.Y_obj_gt[mask].detach().cpu().numpy()
-            color_values = Y[:, self.idx_color]
-            c = self.cmap(self.norm(color_values))
-            kwargs = dict(infeasible_ground_truth_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
+            Y = self.Y_obj_gt[self.infeasible_gt_mask].detach().cpu().numpy()
+            kwargs = dict(infeasible_ground_truth_kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.X_gt)[..., self.idx_color]
+                    color_values = color_values[self.infeasible_gt_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=infeasible_ground_truth_kwargs['marker'],
                 label=infeasible_ground_truth_kwargs['label'],
@@ -593,16 +234,21 @@ class ObjectivePlotter(Plotter):
             )
 
     def _plot_feasible_non_pareto_objectives(self):
-        """
-        Plot the feasible non-pareto observations. Y_obj is a torch.Tensor with the objective values.
-        """
         if torch.any(self.feasible_non_pareto_obj_mask):
             Y = self.mobo.Y_obj[self.feasible_non_pareto_obj_mask].detach().cpu().numpy()
-            color_values = Y[:, self.idx_color]
             kwargs = dict(feasible_non_pareto_objectives_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            c = self.cmap(self.norm(color_values))
-            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.mobo.X)[..., self.idx_color]
+                    color_values = color_values[self.feasible_non_pareto_obj_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_non_pareto_objectives_kwargs['marker'],
                 label=feasible_non_pareto_objectives_kwargs['label'],
@@ -612,11 +258,19 @@ class ObjectivePlotter(Plotter):
     def _plot_feasible_non_pareto_ground_truth(self):
         if torch.any(self.feasible_non_pareto_gt_mask):
             Y = self.Y_obj_gt[self.feasible_non_pareto_gt_mask].detach().cpu().numpy()
-            color_values = Y[:, self.idx_color]
-            kwargs = dict(feasible_non_pareto_ground_truth_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            c = self.cmap(self.norm(color_values))
-            self.ax.scatter(x=Y[:, 0], y=Y[:, 1], c=c, **kwargs)
+            kwargs = dict(feasible_non_pareto_ground_truth_kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.X_gt)[..., self.idx_color]
+                    color_values = color_values[self.feasible_non_pareto_gt_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_non_pareto_ground_truth_kwargs['marker'],
                 label=feasible_non_pareto_ground_truth_kwargs['label'],
@@ -624,16 +278,21 @@ class ObjectivePlotter(Plotter):
                 markerfacecolor='none', markersize=ms * 0.45, linestyle='None'))
 
     def _plot_feasible_pareto_objectives(self):
-        """
-        Plot the feasible pareto observations. Y_obj is a torch.Tensor with the objective values.
-        """
         if torch.any(self.feasible_pareto_obj_mask):
             Y = self.mobo.Y_obj[self.feasible_pareto_obj_mask].detach().cpu().numpy()
-            color_values = Y[:, 2]
-            c = self.cmap(self.norm(color_values))
             kwargs = dict(feasible_pareto_objectives_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.mobo.X)[..., self.idx_color]
+                    color_values = color_values[self.feasible_pareto_obj_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_pareto_objectives_kwargs['marker'],
                 label=feasible_pareto_objectives_kwargs['label'],
@@ -644,11 +303,19 @@ class ObjectivePlotter(Plotter):
     def _plot_feasible_pareto_ground_truth(self):
         if torch.any(self.feasible_pareto_gt_mask):
             Y = self.Y_obj_gt[self.feasible_pareto_gt_mask].detach().cpu().numpy()
-            color_values = Y[:, 2]
-            c = self.cmap(self.norm(color_values))
-            kwargs = dict(feasible_pareto_ground_truth_kwargs)  # make a local copy
-            kwargs.pop("color", None)
-            self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=c, **kwargs)
+            kwargs = dict(feasible_pareto_ground_truth_kwargs)
+
+            if self.idx_color is None:
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], **kwargs)
+            else:
+                if self.use_tracker:
+                    color_values = self.mobo.objective.evaluate_trackers(X=self.X_gt)[..., self.idx_color]
+                    color_values = color_values[self.feasible_pareto_gt_mask].detach().cpu().numpy()
+                else:
+                    color_values = Y[:, self.idx_color]
+                kwargs.pop("color", None)
+                self.ax.scatter(x=Y[:, self.idx_x], y=Y[:, self.idx_y], c=color_values, **kwargs)
+
             self.legend_elements.append(Line2D(
                 [0], [0], marker=feasible_pareto_ground_truth_kwargs['marker'],
                 label=feasible_pareto_ground_truth_kwargs['label'],
@@ -656,14 +323,68 @@ class ObjectivePlotter(Plotter):
                 markerfacecolor='none', markersize=ms * 0.45, linestyle='None')
             )
 
-    @staticmethod
-    def show():
-        plt.show()
+    def _initialize_colormap(self):
+        self.cmap = mpl.cm.get_cmap("coolwarm")
 
-    def save_figure(self, fname: str | Path | None = None):
-        if fname is None:
-            fname = self.title.replace(" ", "_").lower() + ".png"
-        self.fig.savefig(fname=Path.cwd() / fname)
+    def _initialize_norm(self):
+        if self.lims is not None and self.lims[2] is not None:
+            self.norm = mpl.colors.Normalize(
+                vmin=self.lims[self.idx_color][0],
+                vmax=self.lims[self.idx_color][1],
+            )
+        else:
+            self.norm = mpl.colors.Normalize(
+                vmin=0,
+                vmax=1,
+            )
+
+    def _add_colorbar(self):
+        # Remove existing colorbar if present
+        if self.cbar is not None:
+            self.cbar.remove()
+        # Create new colorbar
+        self.cbar = self.fig.colorbar(
+            mpl.cm.ScalarMappable(norm=self.norm, cmap=self.cmap),
+            ax=self.ax,
+            orientation="vertical",
+            fraction=0.046,
+            pad=0.04
+        )
+        # Set label if available
+        self.cbar.set_label(self.labels[self.idx_color])
+
+    def _update_cmap_and_norm(self):
+        if self.lims is not None and self.lims[2] is not None:
+            return
+
+        vmin, vmax = 0.0, 1.0  # defaults
+
+        if self.use_tracker and self.mobo.Y_track is not None:
+            Y_colors = self.mobo.Y_track[..., self.idx_color]
+            vmin, vmax = Y_colors.min(), Y_colors.max()
+        else:
+            if self.mobo.Y_obj is not None:
+                Y_colors = self.mobo.Y_obj[..., self.idx_color]
+                vmin, vmax = Y_colors.min(), Y_colors.max()
+
+            if self.Y_obj_gt is not None:
+                Y_colors_gt = self.Y_obj_gt[..., self.idx_color]
+                vmin = min(vmin, Y_colors_gt.min())
+                vmax = max(vmax, Y_colors_gt.max())
+
+        self.norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+
+        for ax in self.fig.axes:
+            for coll in ax.collections:
+                coll.set_norm(self.norm)
+                coll.set_cmap(self.cmap)
+                coll.changed()
+
+        if self.cbar is not None:
+            self.cbar.mappable.set_norm(self.norm)  # Explicitly update the mappable's norm
+            self.cbar.update_ticks()  # Update the ticks
+
+        self.fig.canvas.draw()
 
 
 def plot_multi_objective_from_RN_to_R3(
@@ -865,7 +586,7 @@ def plot_log_hypervolume_improvement(
     fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
     # --- Subplot 1: Cumulative HV ---
-    axs[0].scatter(x, hv, **xy_plot_kwargs)
+    axs[0].plot(x, hv, **xy_plot_kwargs)
     axs[0].set_title("Hypervolume")
     axs[0].set_ylabel("HV")
     axs[0].grid(True)
@@ -875,7 +596,7 @@ def plot_log_hypervolume_improvement(
 
     # --- Subplot 2: log10(HVI) ---
     mask = ~np.isnan(hvi_log)
-    axs[1].scatter(x[mask], hvi_log[mask], **xy_plot_kwargs)
+    axs[1].plot(x[mask], hvi_log[mask], **xy_plot_kwargs)
     axs[1].set_title("Hypervolume Improvement")
     axs[1].set_xlabel("Number of observations")
     axs[1].set_ylabel(r"$\log_{10}(\mathrm{HVI})$")
@@ -907,7 +628,7 @@ def plot_elapsed_time(
     ax.set_ylabel("Elapsed Time (s)")
     x = np.array(range(len(elapsed_time))) * batch_size
     y = elapsed_time
-    ax.scatter(x, y, **xy_plot_kwargs)
+    ax.plot(x, y, **xy_plot_kwargs)
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches='tight', format='png')
 
@@ -933,7 +654,7 @@ def plot_parameters_evolution(
 
     for i in range(n):
         fig = plt.figure(figsize=(10, 6))
-        plt.plot(range(X.shape[0]), X[:, i], marker="o", label=parameter_names[i])
+        plt.plot(range(X.shape[0]), X[:, i], **xy_plot_kwargs, label=parameter_names[i])
         plt.axhline(y=bounds[0][i], linestyle='--', color='black')
         plt.axhline(y=bounds[1][i], linestyle='--', color='black')
         plt.xlabel("Iteration")
@@ -967,7 +688,7 @@ def plot_objectives_evolution(
 
     for i in range(n):
         fig = plt.figure(figsize=(10, 6))
-        plt.plot(range(Y_obj.shape[0]), Y_obj[:, i], marker="o", label=objective_names[i])
+        plt.plot(range(Y_obj.shape[0]), Y_obj[:, i], **xy_plot_kwargs, label=objective_names[i])
         plt.xlabel("Iteration")
         plt.ylabel(objective_names[i])
         plt.title(f"Evolution of {objective_names[i]}")
@@ -1001,7 +722,7 @@ def plot_constraints_evolution(
 
     for i in range(n):
         fig = plt.figure(figsize=(10, 6))
-        plt.plot(range(Y_con.shape[0]), Y_con[:, i], marker="o", label=constraint_names[i])
+        plt.plot(range(Y_con.shape[0]), Y_con[:, i], **xy_plot_kwargs, label=constraint_names[i])
         plt.xlabel("Iteration")
         plt.ylabel(constraint_names[i])
         plt.title(f"Evolution of {constraint_names[i]}")
@@ -1035,7 +756,7 @@ def plot_trackers_evolution(
 
     for i in range(n):
         fig = plt.figure(figsize=(10, 6))
-        plt.plot(range(Y_track.shape[0]), Y_track[:, i], marker="o", label=tracker_names[i])
+        plt.plot(range(Y_track.shape[0]), Y_track[:, i], **xy_plot_kwargs, label=tracker_names[i])
         plt.xlabel("Iteration")
         plt.ylabel(tracker_names[i])
         plt.title(f"Evolution of {tracker_names[i]}")

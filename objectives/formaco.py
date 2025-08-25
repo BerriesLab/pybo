@@ -42,6 +42,10 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             constraint_names=[
                 "Orbiting Time"
             ],
+            num_trackers=1,
+            tracker_names=[
+                "Orbiting time"
+            ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True],
             ref_point=[300, 150],
@@ -129,14 +133,17 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        return super().evaluate_true_objective(torch.stack([machining_time, electrode_wear], dim=-1))
+        return torch.stack([machining_time, electrode_wear], dim=-1)
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
         orbiting_time >= 40 min -> 40 - orbiting_time <= 0
         """
         c = 40 - self._orbiting_time(X=X)
-        return super().evaluate_true_constraint(c.unsqueeze(dim=-1))
+        return c.unsqueeze(dim=-1)
+
+    def evaluate_trackers(self, X: Tensor) -> Tensor:
+        return self._orbiting_time(X=X).unsqueeze(dim=-1)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

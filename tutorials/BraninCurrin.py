@@ -5,8 +5,9 @@ from mobo.mobo import Mobo
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
-from utils.plotters import plot_log_hypervolume_improvement, plot_elapsed_time, make_grid, \
+from plotters.multi_objective import plot_log_hypervolume_improvement, plot_elapsed_time, \
     plot_multi_objective_from_RN_to_R2
+from plotters.utils import make_grid
 from objectives.branin_currin import BraninCurrinMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
