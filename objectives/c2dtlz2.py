@@ -13,9 +13,9 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
 
         f_0(x) = (1 + g(x)) * cos(x_0 * pi / 2)
         f_1(x) = (1 + g(x)) * sin(x_0 * pi / 2)
-        g(x) = \sum_{i=m}^{d-1} (x_i - 0.5)^2
+        g(x) = \sum_{idx=m}^{d-1} (x_i - 0.5)^2
 
-    The pareto front is given by the unit hypersphere \sum{i} f_i^2 = 1.
+    The pareto front is given by the unit hypersphere \sum{idx} f_i^2 = 1.
     Note: the pareto front is completely concave. The goal is to minimize
     both objectives.
 

@@ -34,20 +34,3 @@ class TorchDeviceType(Enum):
     CPU = "cpu"
     GPU = "cuda"
     MPS = "mps"
-
-# class ParameterType(Enum):
-#     objective = 0
-#     constraint = 1
-#     tracker = 2
-#
-#
-# class Parameter:
-#     def __init__(
-#             self,
-#             name: str,
-#             value: torch.Tensor,
-#             type: ParameterType,
-#     ):
-#         self.name = name
-#         self.value = value
-#         self.type = type

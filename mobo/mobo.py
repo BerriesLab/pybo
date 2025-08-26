@@ -939,19 +939,19 @@ class Mobo:
     #
     #     xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
     #
-    #     i = skipcols + 0
+    #     idx = skipcols + 0
     #     j = skipcols + input_space_dim
-    #     self._X = torch.tensor(xy[..., i:j])
+    #     self._X = torch.tensor(xy[..., idx:j])
     #
     #     if objective_space_dim > 0:
-    #         i = j
+    #         idx = j
     #         j += objective_space_dim
-    #         self._Y_obj = torch.tensor(xy[..., i:j])
+    #         self._Y_obj = torch.tensor(xy[..., idx:j])
     #
     #         if objective_variance:
-    #             i = j
+    #             idx = j
     #             j += objective_space_dim
-    #             self._Y_obj_var = torch.tensor(xy[..., i:j])
+    #             self._Y_obj_var = torch.tensor(xy[..., idx:j])
     #         else:
     #             self._Y_obj_var = None
     #     else:
@@ -959,14 +959,14 @@ class Mobo:
     #         self._Y_obj_var = None
     #
     #     if constraint_space_dim > 0:
-    #         i = j
+    #         idx = j
     #         j += constraint_space_dim
-    #         self._Y_con = torch.tensor(xy[..., i:j])
+    #         self._Y_con = torch.tensor(xy[..., idx:j])
     #
     #         if constraint_variance:
-    #             i = j
+    #             idx = j
     #             j += constraint_space_dim
-    #             self._Y_con_var = torch.tensor(xy[..., i:j])
+    #             self._Y_con_var = torch.tensor(xy[..., idx:j])
     #         else:
     #             self._Y_con_var = None
     #     else:

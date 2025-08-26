@@ -100,6 +100,8 @@ class MultiObjectivePlotter(PlotterBase):
         # === Update legend ===
         self.ax.legend()
 
+        return self
+
     def plot_ground_truth(self):
         if self.X_gt is None:
             raise ValueError("Must provide X for ground truth.")
@@ -132,6 +134,8 @@ class MultiObjectivePlotter(PlotterBase):
 
         # === Update legend ===
         self.ax.legend()
+
+        return self
 
     def _compute_feasible_objectives_mask(self):
         if self.mobo.Y_con is None:

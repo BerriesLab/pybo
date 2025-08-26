@@ -241,7 +241,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         Linear constraints are passed as a list of tuples. Each tuple corresponds
         to a constraint, and includes 3 elements (indices, coefficients, rhs),
         Each tuple encodes an inequality constraint of the form:
-        \sum_i (X[indices[i]] * coefficients[i]) = rh
+        \sum_i (X[indices[idx]] * coefficients[idx]) = rh
         """
         if value is not None:
             if not isinstance(value, list):
@@ -266,7 +266,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         Linear constraints are passed as a list of tuples. Each tuple corresponds
         to a constraint, and includes 3 elements (indices, coefficients, rhs).
         Each tuple encodes an inequality constraint of the form:
-        \sum_i (X[indices[i]] * coefficients[i]) >= rh
+        \sum_i (X[indices[idx]] * coefficients[idx]) >= rh
         """
         if value is not None:
             if not isinstance(value, list):

@@ -24,24 +24,24 @@ class qExplorationWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
     """
 
     def __init__(
-        self,
-        model: Model,
-        ref_point: list[float] | Tensor,
-        X_baseline: Tensor,
-        sampler: MCSampler | None = None,
-        objective: MCMultiOutputObjective | None = None,
-        constraints: list[Callable[[Tensor], Tensor]] | None = None,
-        X_pending: Tensor | None = None,
-        eta: Tensor | float = 1e-3,
-        fat: bool = False,
-        prune_baseline: bool = False,
-        alpha: float = 0.0,
-        cache_pending: bool = True,
-        max_iep: int = 0,
-        incremental_nehvi: bool = True,
-        cache_root: bool = True,
-        marginalize_dim: int | None = None,
-        exploration_weight: float = 0.1,  # New parameter: controls exploration emphasis
+            self,
+            model: Model,
+            ref_point: list[float] | Tensor,
+            X_baseline: Tensor,
+            sampler: MCSampler | None = None,
+            objective: MCMultiOutputObjective | None = None,
+            constraints: list[Callable[[Tensor], Tensor]] | None = None,
+            X_pending: Tensor | None = None,
+            eta: Tensor | float = 1e-3,
+            fat: bool = False,
+            prune_baseline: bool = False,
+            alpha: float = 0.0,
+            cache_pending: bool = True,
+            max_iep: int = 0,
+            incremental_nehvi: bool = True,
+            cache_root: bool = True,
+            marginalize_dim: int | None = None,
+            exploration_weight: float = 0.1,  # New parameter: controls exploration emphasis
     ) -> None:
         """
         Initializes the qExplorationWeightedNEHVI acquisition function.
@@ -50,7 +50,7 @@ class qExplorationWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
             model: A fitted model (e.g., a Gaussian Process model).
             ref_point: A list or tensor with `m` elements representing the reference
                 point (in the outcome space) w.r.t. to which compute the hypervolume.
-                This is a reference point for the objective values (i.e. after
+                This is a reference point for the objective values (idx.e. after
                 applying `objective` to the samples).
             X_baseline: A `r x d`-dim Tensor of `r` design points that have already
                 been observed. These points are considered as potential approximate
@@ -81,7 +81,7 @@ class qExplorationWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
             max_iep: The maximum number of pending points before the box
                 decompositions will be recomputed.
             incremental_nehvi: A boolean indicating whether to compute the
-                incremental NEHVI from the `i`th point where `i=1, ..., q`
+                incremental NEHVI from the `idx`th point where `idx=1, ..., q`
                 under sequential greedy optimization, or the full qNEHVI over
                 `q` points.
             cache_root: A boolean indicating whether to cache the root
@@ -170,25 +170,25 @@ class qDiversityWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
     """
 
     def __init__(
-        self,
-        model: Model,
-        ref_point: List[float] | Tensor,
-        X_baseline: Tensor,
-        sampler: MCSampler | None = None,
-        objective: MCMultiOutputObjective | None = None,
-        constraints: List[Callable[[Tensor], Tensor]] | None = None,
-        X_pending: Tensor | None = None,
-        eta: Tensor | float = 1e-3,
-        fat: bool = False,
-        prune_baseline: bool = False,
-        alpha: float = 0.0,
-        cache_pending: bool = True,
-        max_iep: int = 0,
-        incremental_nehvi: bool = True,
-        cache_root: bool = True,
-        marginalize_dim: int | None = None,
-        min_dist_radius: float = 0.05,  # New parameter: minimum allowed distance
-        distance_penalty_weight: float = 1.0, # New parameter: strength of the penalty
+            self,
+            model: Model,
+            ref_point: List[float] | Tensor,
+            X_baseline: Tensor,
+            sampler: MCSampler | None = None,
+            objective: MCMultiOutputObjective | None = None,
+            constraints: List[Callable[[Tensor], Tensor]] | None = None,
+            X_pending: Tensor | None = None,
+            eta: Tensor | float = 1e-3,
+            fat: bool = False,
+            prune_baseline: bool = False,
+            alpha: float = 0.0,
+            cache_pending: bool = True,
+            max_iep: int = 0,
+            incremental_nehvi: bool = True,
+            cache_root: bool = True,
+            marginalize_dim: int | None = None,
+            min_dist_radius: float = 0.05,  # New parameter: minimum allowed distance
+            distance_penalty_weight: float = 1.0,  # New parameter: strength of the penalty
     ) -> None:
         """
         Initializes the qDiversityWeightedNEHVI acquisition function.

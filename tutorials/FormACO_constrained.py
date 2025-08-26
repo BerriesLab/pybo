@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from mobo.mobo import Mobo
 from objectives.formaco import FormACOMCMultiOutputConstrainedObjective
-from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter
+from plotters.evolution import *
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -96,7 +96,6 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        # TODO: allow concatenation of methods
         multi_objective_plotter = MultiObjectivePlotter(
             mobo=mobo,
             X_gt=gnd_truth_X,
@@ -107,16 +106,17 @@ def main(n_samples=64, q: int = 1, ):
         multi_objective_plotter.plot_ground_truth()
         multi_objective_plotter.plot_objectives()
         multi_objective_plotter.save_figure()
-
         ElapsedTimePlotter(mobo=mobo).plot().save_figure().close_figure()
         HypervolumePlotter(mobo=mobo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
-
-        plot_log_hypervolume_improvement(mobo=mobo)
-        plot_elapsed_time(mobo=mobo)
-        plot_parameters_evolution(mobo=mobo)
-        plot_objectives_evolution(mobo=mobo)
-        plot_constraints_evolution(mobo=mobo)
+        for idx in range(mobo.objective.dim):
+            ParameterPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_objectives):
+            ObjectivePlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_constraints):
+            ConstraintPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_trackers):
+            TrackerPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 
