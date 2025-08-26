@@ -4,6 +4,7 @@ from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective import *
+from plotters.evolution import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -85,26 +86,30 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        plotter = MultiObjectivePlotter(
+        multi_objective_plotter = MultiObjectivePlotter(
             title="Pareto Front",
             mobo=mobo,
             X_gt=gnd_truth_X,
             idx_x=0,
             idx_y=1,
-            idx_color=None,
+            idx_color=0,
             use_tracker=True,
             pareto_idxs=[0, 1],
         )
-        plotter.plot_ground_truth()
-        plotter.plot_objectives()
-        plotter.save_figure()
-
-        plot_log_hypervolume_improvement(mobo=mobo)
-        plot_elapsed_time(mobo=mobo)
-        plot_parameters_evolution(mobo=mobo)
-        plot_objectives_evolution(mobo=mobo)
-        plot_constraints_evolution(mobo=mobo)
-        plot_trackers_evolution(mobo=mobo)
+        multi_objective_plotter.plot_ground_truth()
+        multi_objective_plotter.plot_objectives()
+        multi_objective_plotter.save_figure()
+        ElapsedTimePlotter(mobo=mobo).plot().save_figure().close_figure()
+        HypervolumePlotter(mobo=mobo).plot().save_figure().close_figure()
+        HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.dim):
+            ParameterPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_objectives):
+            ObjectivePlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_constraints):
+            ConstraintPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_trackers):
+            TrackerPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 

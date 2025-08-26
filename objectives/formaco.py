@@ -29,22 +29,22 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             dtype=dtype,
             dim=3,
             parameter_names=[
-                "Maximum Current",
-                "Pedestal Current",
-                "Maximum Ramp Time"
+                "Maximum Current (A)",
+                "Pedestal Current (A)",
+                "Maximum Ramp Time (μs)"
             ],
             num_objectives=2,
             objective_names=[
-                "Machining Time",
-                "Electrode Wear",
+                "Machining Time (min)",
+                "Electrode Wear (μm)",
             ],
             num_constraints=1,
             constraint_names=[
-                "Orbiting Time"
+                "Orbiting Time (min)"
             ],
             num_trackers=1,
             tracker_names=[
-                "Orbiting time"
+                "Orbiting Time (min)"
             ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True],
@@ -188,15 +188,15 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
             dtype=dtype,
             dim=3,
             parameter_names=[
-                "Maximum Current",
-                "Pedestal Current",
-                "Maximum Ramp Time"
+                "Maximum Current (A)",
+                "Pedestal Current (A)",
+                "Maximum Ramp Time (μs)"
             ],
             num_objectives=3,
             objective_names=[
-                "Machining Time",
-                "Electrode Wear",
-                "Orbiting Time Penalty",
+                "Machining Time (min)",
+                "Electrode Wear (μm)",
+                "Orbiting Time Penalty (min)",
             ],
             bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True, False],
@@ -205,7 +205,7 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
             outcomes=[0, 1, 2],
             num_trackers=1,
             tracker_names=[
-                "Orbiting time"
+                "Orbiting Time (min)"
             ],
             num_constraints=0,
             constraint_names=None,
