@@ -11,8 +11,8 @@ class HypervolumePlotter(PlotterBase):
         super().__init__(
             title="Hypervolume",
             labels=[
+                "Number of observations (beyond initial points)",
                 "Hypervolume",
-                "Number of observations (beyond initial points)"
             ]
         )
         self.mobo = mobo
@@ -31,7 +31,7 @@ class HypervolumePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"metric_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -62,7 +62,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"metric_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -70,7 +70,10 @@ class ElapsedTimePlotter(PlotterBase):
     def __init__(self, mobo: Mobo):
         super().__init__(
             title="Elapsed Time",
-            labels=["Number of observations (beyond initial points)", "Elapsed Time (s)"]
+            labels=[
+                "Number of observations (beyond initial points)",
+                "Elapsed Time (s)"
+            ]
         )
         self.mobo = mobo
 
@@ -82,7 +85,7 @@ class ElapsedTimePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"metric_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -114,7 +117,7 @@ class ParameterPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"parameter_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_parameter_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -144,7 +147,7 @@ class ObjectivePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"objective_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_objective_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -174,7 +177,7 @@ class ConstraintPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"constraint_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_constraint_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)
 
 
@@ -204,5 +207,5 @@ class TrackerPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"tracker_trajectory_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"trajectory_tracker_{self.title.replace(" ", "_").lower()}.png"
         return super().save_figure(filename=filename)

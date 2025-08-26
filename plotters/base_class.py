@@ -44,6 +44,12 @@ class PlotterBase:
 
         return fig, ax
 
+    def _set_labels(self):
+        self.ax.set_xlabel(self.labels[0])
+        self.ax.set_ylabel(self.labels[1])
+        if self.cbar is not None:
+            self.cbar.set_label(self.labels[2])
+
     def save_figure(self, filename: str | Path | None = None):
         if filename is None:
             filename = self.title.replace(" ", "_").lower() + ".png"

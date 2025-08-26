@@ -57,7 +57,6 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
             output_constraints=[Identity(index=-1)],
-            estimate_max_hv=True,
         )
 
     @staticmethod
@@ -170,16 +169,6 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
         - Electrode Wear: 150 um
         - Orbiting Time: 10 min
         - Orbiting Penalty Time: -50 min (see Note below)
-
-    Note: this objective exhibits the typical user flexibility in defining objective penalties. Specifically,
-    "evaluate_true_objective" can be defined to return the "orbiting_time" or the "orbiting_time_penalty". If it
-    returns the "orbiting_time", then the penalty must be included in the forward method, and it is subject to
-    rescale. If it returns the "orbiting_time_penalty", then the forward method should pass the unaltered values
-    without adding any penalty. Both strategies are legit. However, when evaluate_true_objective returns the
-    orbiting_time_penalty, the actual orbiting time is lost forever, and there is no way for the user to recover
-    the experimental value without any workarounds. A third option would be to add the penalty as a fourth optimization
-    objective, and leave the 3rd objective as free to explore: not to optimize.
-    The reference point must reflect the choice of objective.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
@@ -215,7 +204,6 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
             output_constraints=None,
-            estimate_max_hv=True,
         )
 
     @staticmethod
@@ -313,8 +301,8 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     def evaluate_true_objective(self, X: Tensor) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
-        # orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
+        # orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
+        orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
         # orbiting_time_penalty = self._exponential_orbiting_penalty(X=X)
         return torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1)
 
