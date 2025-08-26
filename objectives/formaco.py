@@ -301,8 +301,8 @@ class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     def evaluate_true_objective(self, X: Tensor) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        # orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
-        orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
+        orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
+        # orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
         # orbiting_time_penalty = self._exponential_orbiting_penalty(X=X)
         return torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1)
 
