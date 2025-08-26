@@ -20,11 +20,8 @@ class HypervolumePlotter(PlotterBase):
     def plot(self):
         hv = self.mobo.hypervolume
 
-        # if len(hv) <= 1:
-        #     print("Not enough data to plot.")
-        #     return
-
         hv = np.array(hv)
+
         # X-axis: number of observations beyond initial front
         x = np.arange(len(hv)) * self.mobo.batch_size
 
@@ -47,10 +44,6 @@ class HypervolumeImprovementPlotter(PlotterBase):
 
     def plot(self, epsilon: float = 1e-6):
         hv = self.mobo.hypervolume
-
-        # if len(hv) <= 1:
-        #     print("Not enough data to plot.")
-        #     return None
 
         hv = np.array(hv)
         hvi = np.diff(hv, prepend=np.nan)  # first element has no diff
@@ -88,6 +81,8 @@ class ParameterPlotter(PlotterBase):
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.parameter_names[idx]
+                if mobo.objective.parameter_names
+                else f"parameter {idx}"
             ]
         )
         self.mobo = mobo
@@ -99,6 +94,8 @@ class ParameterPlotter(PlotterBase):
             self.mobo.X[:, self.idx],
             **xy_plot_kwargs,
             label=self.mobo.objective.parameter_names[self.idx]
+            if self.mobo.objective.parameter_names
+            else f"parameter {self.idx}"
         )
         return self
 
@@ -110,6 +107,8 @@ class ObjectivePlotter(PlotterBase):
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.objective_names[idx]
+                if mobo.objective.objective_names
+                else f"objective {idx}"
             ]
         )
         self.mobo = mobo
@@ -121,6 +120,8 @@ class ObjectivePlotter(PlotterBase):
             self.mobo.Y_obj[:, self.idx],
             **xy_plot_kwargs,
             label=self.mobo.objective.objective_names[self.idx]
+            if self.mobo.objective.objective_names
+            else f"objective {self.idx}"
         )
         return self
 
@@ -132,6 +133,8 @@ class ConstraintPlotter(PlotterBase):
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.constraint_names[idx]
+                if mobo.objective.constraint_names
+                else f"constraint {idx}"
             ]
         )
         self.mobo = mobo
@@ -143,6 +146,8 @@ class ConstraintPlotter(PlotterBase):
             self.mobo.Y_con[:, self.idx],
             **xy_plot_kwargs,
             label=self.mobo.objective.constraint_names[self.idx]
+            if self.mobo.objective.constraint_names
+            else f"constraint {self.idx}"
         )
         return self
 
@@ -154,6 +159,8 @@ class TrackerPlotter(PlotterBase):
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.tracker_names[idx]
+                if mobo.objective.tracker_names
+                else f"tracker {idx}"
             ]
         )
         self.mobo = mobo
@@ -165,5 +172,7 @@ class TrackerPlotter(PlotterBase):
             self.mobo.Y_track[:, self.idx],
             **xy_plot_kwargs,
             label=self.mobo.objective.tracker_names[self.idx]
+            if self.mobo.objective.tracker_names
+            else f"tracker {self.idx}"
         )
         return self

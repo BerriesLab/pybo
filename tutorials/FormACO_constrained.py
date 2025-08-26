@@ -7,9 +7,7 @@ from plotters.evolution import *
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective import plot_log_hypervolume_improvement, plot_elapsed_time, \
-    plot_parameters_evolution, plot_objectives_evolution, \
-    plot_constraints_evolution, MultiObjectivePlotter
+from plotters.multi_objective import *
 from plotters.utils import make_grid
 
 DEVICE = torch.device("cpu")
