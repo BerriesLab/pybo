@@ -19,7 +19,7 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
 
     For testing purposes, and following BoTorch authors implementation,
     both test functions are intended for minimization, against their original
-    nature. Therefore, here it is important to negate both.
+    nature.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -28,7 +28,12 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
             dtype=dtype,
             dim=2,
             num_objectives=2,
+            objective_names=[
+                "Branin",
+                "Currin"
+            ],
             num_constraints=0,
+            num_trackers=0,
             obj_to_minimize=[True, True],
             bounds=[(0.0, 1.0), (0.0, 1.0)],
             ref_point=[18.0, 6.0],
@@ -40,7 +45,6 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
             output_constraints=None,
-            estimate_max_hv=False,
         )
 
     @staticmethod
@@ -75,7 +79,7 @@ class BraninCurrinMCMultiOutputObjective(MCMultiOutputBase):
         branin = self._rescaled_branin(X=X)
         currin = self._currin(X=X)
         f = torch.stack([branin, currin], dim=-1)
-        return super().evaluate_true_objective(f)
+        return f
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()

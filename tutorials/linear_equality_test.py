@@ -2,6 +2,7 @@ import os
 import torch
 from pathlib import Path
 from mobo.mobo import Mobo
+from objectives.linear_equality_test import LinearEqualityTestProblem
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -9,7 +10,6 @@ from plotters.multi_objective import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
     ObjectivePlotter, TrackerPlotter, ConstraintPlotter
 from plotters.utils import make_grid
-from objectives.branin_currin import BraninCurrinMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -18,22 +18,26 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"branincurrin"
+    experiment_name = f"linear_equality_test"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = BraninCurrinMCMultiOutputObjective(
+    objective = LinearEqualityTestProblem(
         device=DEVICE,
         dtype=DTYPE,
     )
 
+    # TODO: the sampler must samples from the allowed region only
     """ Instantiate a random generator """
     sampler = Sampler(
+        device=DEVICE,
+        dtype=DTYPE,
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.dim,
-        normalize=False
+        normalize=False,
+        linear_equality_constraints=objective.linear_equality_input_constraints,
     )
 
     """ Generate initial dataset """

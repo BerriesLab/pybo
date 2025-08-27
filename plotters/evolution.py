@@ -92,7 +92,9 @@ class ElapsedTimePlotter(PlotterBase):
 class ParameterPlotter(PlotterBase):
     def __init__(self, mobo: Mobo, idx: int):
         super().__init__(
-            title=f"{mobo.objective.parameter_names[idx]}",
+            title=f"{mobo.objective.parameter_names[idx]}"
+            if mobo.objective.parameter_names
+            else f"parameter {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.parameter_names[idx]
@@ -124,7 +126,9 @@ class ParameterPlotter(PlotterBase):
 class ObjectivePlotter(PlotterBase):
     def __init__(self, mobo: Mobo, idx: int):
         super().__init__(
-            title=mobo.objective.objective_names[idx],
+            title=mobo.objective.objective_names[idx]
+            if mobo.objective.objective_names is not None
+            else f"objective {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.objective_names[idx]
@@ -154,7 +158,9 @@ class ObjectivePlotter(PlotterBase):
 class ConstraintPlotter(PlotterBase):
     def __init__(self, mobo: Mobo, idx: int):
         super().__init__(
-            title=mobo.objective.constraint_names[idx],
+            title=mobo.objective.constraint_names[idx]
+            if mobo.objective.constraint_names
+            else f"constraint {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.constraint_names[idx]
@@ -184,7 +190,9 @@ class ConstraintPlotter(PlotterBase):
 class TrackerPlotter(PlotterBase):
     def __init__(self, mobo: Mobo, idx: int):
         super().__init__(
-            title=mobo.objective.tracker_names[idx],
+            title=mobo.objective.tracker_names[idx]
+            if mobo.objective.tracker_names
+            else f"tracker {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
                 mobo.objective.tracker_names[idx]

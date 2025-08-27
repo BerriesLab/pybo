@@ -21,9 +21,9 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             num_objectives: int,
             num_constraints: int,
             num_trackers: int,
-            obj_to_minimize: list[bool],
-            bounds: list[float],
-            ref_point: list[float],
+            obj_to_minimize: torch.Tensor | list[bool],
+            bounds: torch.Tensor | list[float],
+            ref_point: torch.Tensor | list[float],
             outcomes: list[int],
             num_outcomes: int,
             gt_noise_std: float | list[float],
@@ -37,8 +37,6 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
             objective_names: list[str] | None = None,
             constraint_names: list[str] | None = None,
             tracker_names: list[str] | None = None,
-            # estimate_max_hv: bool = False,
-
     ):
 
         super().__init__()
@@ -59,8 +57,6 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
         self.max_hv = max_hv
-        # if estimate_max_hv:
-        #     self.estimate_max_hv()
         self.parameter_names = parameter_names
         self.objective_names = objective_names
         self.constraint_names = constraint_names
@@ -162,18 +158,21 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
 
     @bounds.setter
     def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
-        # value can either be a list of tuples of floats, where the 1st and the
-        # 2nd floats of the n-th tuple are the lower and upper bounds, respectively,
-        # of the input n-th dimension; or a tensor of shape 2 x n, where the 1st
-        # row includes the lower bounds and the 2nd row the upper bounds.
-        if len(value) != self.dim:
-            raise InputDataError(
-                f"Expected bounds to match dimensionality of the domain. "
-                f"Got dim={self.dim}, bounds_len={len(value)}"
-            )
+        # Convert list of tuples to tensor
         if not torch.is_tensor(value):
             value = torch.tensor(value, dtype=self.dtype)
-        self._bounds = value.transpose(-1, -2)
+            if value.shape != (self.dim, 2):
+                raise InputDataError(
+                    f"Expected list of {self.dim} (lb, ub) tuples, got shape {value.shape}"
+                )
+            self._bounds = value.transpose(0, 1)  # shape -> (2, dim)
+        else:
+            # Tensor input: expect shape (2, dim)
+            if value.shape != (2, self.dim):
+                raise InputDataError(
+                    f"Expected tensor of shape (2, {self.dim}), got {value.shape}"
+                )
+            self._bounds = value.to(device=self.device, dtype=self.dtype)
 
     @property
     def outcomes(self) -> torch.Tensor:
@@ -235,50 +234,72 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
         return self._linear_equality_input_constraints
 
     @linear_equality_input_constraints.setter
-    def linear_equality_input_constraints(self, value):
+    def linear_equality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
         r"""
         Linear constraints are passed as a list of tuples. Each tuple corresponds
         to a constraint, and includes 3 elements (indices, coefficients, rhs),
-        Each tuple encodes an inequality constraint of the form:
+        Each tuple encodes an equality constraint of the form:
         \sum_i (X[indices[idx]] * coefficients[idx]) = rh
         """
-        if value is not None:
-            if not isinstance(value, list):
+        if values is not None:
+            if not isinstance(values, list):
                 raise TypeError("linear_equality_input_constraints must be a list of tuples")
-            for item in value:
-                if not (isinstance(item, tuple) and len(item) == 3 and
-                        isinstance(item[0], torch.Tensor) and
-                        isinstance(item[1], torch.Tensor) and
-                        isinstance(item[2], float)):
-                    raise TypeError(
-                        "Each linear_equality_input_constraints item must be a tuple of (Tensor, Tensor, float)"
-                    )
-        self._linear_equality_input_constraints = value
+
+            new_values = []
+            for c in values:
+                # Type checks
+                if not (isinstance(c, tuple) and len(c) == 3):
+                    raise TypeError("Each linear_equality_input_constraints item must be a tuple of 3 elements")
+                if not isinstance(c[0], torch.Tensor):
+                    raise TypeError("The 1st element must be a torch.Tensor")
+                if not isinstance(c[1], torch.Tensor):
+                    raise TypeError("The 2nd element must be a torch.Tensor")
+                if not isinstance(c[2], (float, int)):
+                    raise TypeError("The 3rd element must be a float or an integer.")
+
+                indices_tensor = c[0].to(device=self.device, dtype=torch.long)
+                coefficients_tensor = c[1].to(device=self.device, dtype=self.dtype)
+                new_values.append((indices_tensor, coefficients_tensor, c[2]))
+
+            self._linear_equality_input_constraints = new_values
+        else:
+            self._linear_equality_input_constraints = None
 
     @property
     def linear_inequality_input_constraints(self):
         return self._linear_inequality_input_constraints
 
     @linear_inequality_input_constraints.setter
-    def linear_inequality_input_constraints(self, value):
+    def linear_inequality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
         r"""
         Linear constraints are passed as a list of tuples. Each tuple corresponds
         to a constraint, and includes 3 elements (indices, coefficients, rhs).
         Each tuple encodes an inequality constraint of the form:
         \sum_i (X[indices[idx]] * coefficients[idx]) >= rh
         """
-        if value is not None:
-            if not isinstance(value, list):
-                raise TypeError("linear_inequality_input_constraints must be a list of tuples")
-            for item in value:
-                if not (isinstance(item, tuple) and len(item) == 3 and
-                        isinstance(item[0], torch.Tensor) and
-                        isinstance(item[1], torch.Tensor) and
-                        isinstance(item[2], float)):
-                    raise TypeError(
-                        "Each linear_inequality_input_constraints item must be a tuple of (Tensor, Tensor, float)"
-                    )
-        self._linear_inequality_input_constraints = value
+        if values is not None:
+            if not isinstance(values, list):
+                raise TypeError("linear_equality_input_constraints must be a list of tuples")
+
+            new_values = []
+            for c in values:
+                # Type checks
+                if not (isinstance(c, tuple) and len(c) == 3):
+                    raise TypeError("Each linear_equality_input_constraints item must be a tuple of 3 elements")
+                if not isinstance(c[0], torch.Tensor):
+                    raise TypeError("The 1st element must be a torch.Tensor")
+                if not isinstance(c[1], torch.Tensor):
+                    raise TypeError("The 2nd element must be a torch.Tensor")
+                if not isinstance(c[2], (float, int)):
+                    raise TypeError("The 3rd element must be a float or an integer.")
+
+                indices_tensor = c[0].to(device=self.device, dtype=torch.long)
+                coefficients_tensor = c[1].to(device=self.device, dtype=self.dtype)
+                new_values.append((indices_tensor, coefficients_tensor, c[2]))
+
+            self._linear_inequality_input_constraints = new_values
+        else:
+            self._linear_inequality_input_constraints = None
 
     @property
     def nonlinear_inequality_input_constraints(self):

@@ -30,9 +30,9 @@ class MultiObjectivePlotter(PlotterBase):
     def __init__(
             self,
             mobo: Mobo,
-            title: str = "Pareto front",
-            idx_x=0,
-            idx_y=1,
+            title: str | None = None,
+            idx_x: int = 0,
+            idx_y: int = 1,
             idx_color: int | None = None,
             pareto_idxs: list[int] | None = None,
             use_tracker: bool = False,
@@ -52,16 +52,8 @@ class MultiObjectivePlotter(PlotterBase):
             - X_gt (torch.Tensor | None, optional): Input parameters used to compute ground-truth objectives.
                 Default is None.
         """
-        super().__init__(
-            title=title,
-            labels=[
-                mobo.objective.objective_names[idx_x],
-                mobo.objective.objective_names[idx_y],
-                mobo.objective.tracker_names[idx_color]
-                if use_tracker
-                else mobo.objective.objective_names[idx_color]
-            ]
-        )
+        # TODO: set labels to default if not provided
+        super().__init__(title="Pareto Front")
         self.mobo = mobo
         self.idx_x = idx_x
         self.idx_y = idx_y
@@ -83,7 +75,7 @@ class MultiObjectivePlotter(PlotterBase):
     def plot_objectives(self):
         self._initialize_norm()
         self._initialize_colormap()
-        self._set_labels()
+        self.update_labels()
 
         # === Compute feasible and infeasible masks ===
         self._compute_feasible_objectives_mask()
@@ -115,7 +107,7 @@ class MultiObjectivePlotter(PlotterBase):
 
         self._initialize_norm()
         self._initialize_colormap()
-        self._set_labels()
+        self.update_labels()
 
         # === Compute ground truth ===
         self.Y_obj_gt = self.mobo.objective.evaluate_true_objective(self.X_gt)
@@ -410,3 +402,27 @@ class MultiObjectivePlotter(PlotterBase):
             self.cbar.update_ticks()
 
         self.fig.canvas.draw()
+
+    def update_labels(self, labels: list[str] | None = None):
+        """ Use a list of strings if provided, otherwise infer the labels from the objective.
+        If it cannot infer, use default labels: f_1, f_2, and optionally f_3 if idx_color is set. """
+        if labels is None:
+            if self.mobo.objective.objective_names is not None:
+                self.labels = [
+                    self.mobo.objective.objective_names[self.idx_x],
+                    self.mobo.objective.objective_names[self.idx_y],
+                ]
+                if self.idx_color is not None:
+                    self.labels.append(
+                        self.mobo.objective.tracker_names[self.idx_color]
+                        if self.use_tracker
+                        else self.mobo.objective.objective_names[self.idx_color]
+                    )
+            else:
+                self.labels = ["$f_1$", "$f_2$"]
+                if self.idx_color is not None:
+                    self.labels.append("$f_3$")
+        else:
+            self.labels = labels
+
+        self._set_labels()

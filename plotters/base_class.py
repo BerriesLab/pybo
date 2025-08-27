@@ -53,7 +53,7 @@ class PlotterBase:
     def save_figure(self, filename: str | Path | None = None):
         if filename is None:
             filename = self.title.replace(" ", "_").lower() + ".png"
-        self.fig.savefig(fname=Path.cwd() / filename)
+        self.fig.savefig(fname=Path.cwd() / filename, dpi=600)
         return self
 
     def close_figure(self):

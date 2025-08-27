@@ -672,8 +672,8 @@ class Mobo:
                 equality_constraints=self._objective.linear_equality_input_constraints,
                 inequality_constraints=self._objective.linear_inequality_input_constraints,
                 nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
-                ic_generator=self.ic_generator_for_non_linear_inout_constraints if
-                self.objective.nonlinear_inequality_input_constraints else None,
+                # ic_generator=self.ic_generator_for_non_linear_inout_constraints if
+                # self.objective.nonlinear_inequality_input_constraints else None,
             )
 
         if verbose:
@@ -784,7 +784,7 @@ class Mobo:
         if verbose:
             print(f"Calculation Time = {t1 - t0:>4.2f} s")
 
-    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor,
+    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
                   new_Y_con: torch.Tensor | None = None, new_Y_con_var=None,
                   new_Y_track_var: torch.Tensor | None = None) -> None:

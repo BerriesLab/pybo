@@ -5,8 +5,9 @@ from mobo.mobo import Mobo
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, \
-    plot_elapsed_time
+from plotters.multi_objective import MultiObjectivePlotter
+from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
+    ConstraintPlotter, TrackerPlotter, ParameterPlotter
 from plotters.utils import make_grid
 from objectives.binh_and_korn import BinhAndKornMCMultiOutputObjective
 

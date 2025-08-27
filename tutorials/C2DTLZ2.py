@@ -5,10 +5,10 @@ from mobo.mobo import Mobo
 from samplers.samplers import Sampler
 from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
-from utils.make_video import create_video_from_images
 from utils.types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective import plot_multi_objective_from_RN_to_R2, plot_log_hypervolume_improvement, \
-    plot_elapsed_time
+from plotters.multi_objective import MultiObjectivePlotter
+from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
+    ConstraintPlotter, TrackerPlotter, ObjectivePlotter
 
 """ Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
 refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results
@@ -47,7 +47,7 @@ def main(n_samples=64, q: int = 1, ):
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    gnd_truth_X = sampler.draw_samples(n=10000)
+    X_gt = sampler.draw_samples(n=10000)
 
     """ Instantiate a Mobo object """
     mobo = Mobo(
@@ -93,26 +93,30 @@ def main(n_samples=64, q: int = 1, ):
         mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
 
         """ Plots """
-        plot_multi_objective_from_RN_to_R2(
+        multi_objective_plotter = MultiObjectivePlotter(
+            title="Pareto Front",
             mobo=mobo,
-            title="C2DTLZ2 Test Problem",
-            show_ref_point=True,
-            show_ground_truth=True,
-            show_observations=True,
-            f1_lims=(0, 1.5),
-            f2_lims=(0, 1.5),
-            display_figure=False,
-            X=gnd_truth_X,
-            output_path=Path.cwd() / f"pareto_front.png"
+            X_gt=X_gt,
+            idx_x=0,
+            idx_y=1,
+            idx_color=None,
+            use_tracker=True,
+            pareto_idxs=[0, 1],
         )
-        plot_log_hypervolume_improvement(
-            mobo=mobo,
-            output_path=Path.cwd() / f"hvi.png"
-        )
-        plot_elapsed_time(
-            mobo=mobo,
-            output_path=Path.cwd() / f"elapsed_time.png"
-        )
+        multi_objective_plotter.plot_ground_truth()
+        multi_objective_plotter.plot_objectives()
+        multi_objective_plotter.save_figure()
+        ElapsedTimePlotter(mobo=mobo).plot().save_figure().close_figure()
+        HypervolumePlotter(mobo=mobo).plot().save_figure().close_figure()
+        HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.dim):
+            ParameterPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_objectives):
+            ObjectivePlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_constraints):
+            ConstraintPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(mobo.objective.num_trackers):
+            TrackerPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 

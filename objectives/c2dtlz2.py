@@ -7,20 +7,25 @@ from constraints.output_constraints import Identity
 
 class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
     r"""
-    DLTZ2 test problem.
+    C2-DLTZ2 test problem.
 
-    d-dimensional problem evaluated on `[0, 1]^d`:
+    2-dimensional constrained problem evaluated on [0, 1]^d:
 
         f_0(x) = (1 + g(x)) * cos(x_0 * pi / 2)
         f_1(x) = (1 + g(x)) * sin(x_0 * pi / 2)
         g(x) = \sum_{idx=m}^{d-1} (x_i - 0.5)^2
 
-    The pareto front is given by the unit hypersphere \sum{idx} f_i^2 = 1.
-    Note: the pareto front is completely concave. The goal is to minimize
-    both objectives.
+    The constraints are imposed in the objective space as spherical exclusion regions:
 
-    The constraint computes the minimum distance to two types of structures in objective space:
-    Notes: negative constraint values imply feasibility in botorch.
+        c(f) = min {(Σ_i (f_i - 1)^2 - r^2), (Σ_i (f_i - 1/√M)^2 - r^2)} ≤ 0
+
+    where:
+        - f = (f_1, ..., f_M) are the objectives,
+        - M is the number of objectives,
+        - r is the exclusion radius (here r = 0.2).
+
+    Note: Feasibility (in BoTorch convention): c(f) ≤ 0 ⇒ feasible, c(f) > 0 ⇒ infeasible
+    Note: the pareto front is completely concave. The goal is to minimize both objectives.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -30,6 +35,7 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
             dim=4,
             num_objectives=2,
             num_constraints=1,
+            num_trackers=0,
             obj_to_minimize=[True, True],
             bounds=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
             ref_point=[1.1, 1.1],
@@ -41,7 +47,6 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,
             output_constraints=[Identity(index=-1)],
-            estimate_max_hv=False
         )
 
         self.k = self.dim - self.num_objectives + 1
@@ -60,12 +65,9 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
             if i > 0:
                 f_i *= torch.sin(X[..., idx] * pi_over_2)
             fs.append(f_i)
-        f = torch.stack(fs, dim=-1)
-        return super().evaluate_true_objective(f)
+        return torch.stack(fs, dim=-1)
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
-        if X.ndim > 2:
-            raise NotImplementedError("Batch X is not supported.")
         f_X = self.evaluate_true_objective(X)
         term1 = (f_X - 1).pow(2)
         mask = ~(torch.eye(f_X.shape[-1], device=f_X.device).bool())
@@ -79,8 +81,7 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
         term2 = (term2_inner.pow(2) - self._r ** 2).sum(dim=-1)
         min1 = (term1 + term2).min(dim=-1).values
         min2 = ((f_X - 1 / math.sqrt(f_X.shape[-1])).pow(2) - self._r ** 2).sum(dim=-1)
-        slack_true = torch.min(min1, min2).unsqueeze(-1)
-        return super().evaluate_true_slack(slack_true)
+        return torch.min(min1, min2).unsqueeze(-1)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         selected = samples.clone()
