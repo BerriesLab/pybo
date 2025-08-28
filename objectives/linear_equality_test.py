@@ -1,11 +1,6 @@
 import torch
-import math
 from objectives.base_class import MCMultiOutputBase
 from torch import Tensor
-from abc import ABC
-from botorch.acquisition.multi_objective import MCMultiOutputObjective
-from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputDataError
-from botorch.utils.transforms import normalize_indices
 
 
 class LinearEqualityTestProblem(MCMultiOutputBase):

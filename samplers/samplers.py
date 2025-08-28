@@ -7,7 +7,6 @@ from botorch.utils.transforms import unnormalize
 from collections.abc import Callable
 
 
-# TODO: fix constraints
 class Sampler:
     def __init__(
             self,
@@ -19,7 +18,7 @@ class Sampler:
             normalize: bool = True,
             linear_equality_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
             linear_inequality_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            non_linear_inequality_constraints: list[Callable] | None = None
+            nonlinear_inequality_constraints: list[tuple[Callable, bool]] | None = None
     ):
 
         self.device = device
@@ -30,7 +29,7 @@ class Sampler:
         self.normalize = normalize
         self.linear_equality_constraints = linear_equality_constraints
         self.linear_inequality_constraints = linear_inequality_constraints
-        self.non_linear_inequality_constraints = non_linear_inequality_constraints
+        self.nonlinear_inequality_constraints = nonlinear_inequality_constraints
 
     def _parse_linear_equality_constraints(self):
         r""""
@@ -88,11 +87,11 @@ class Sampler:
         X_proj = X - correction
         return X_proj
 
-    def draw_samples(self, n) -> torch.Tensor:
+    def draw_samples(self, n: int) -> torch.Tensor:
         valid_x = []
         num_attempts = 0
         max_attempts = 1000
-        tol = 1e-6
+        n = int(n)
 
         while len(valid_x) < n and num_attempts < max_attempts:
             num_attempts += 1
@@ -133,12 +132,13 @@ class Sampler:
                 constraint_mask &= linear_in_mask
 
             # Apply non-linear constraints
-            if self.non_linear_inequality_constraints:
-                for constraint_fn in self.non_linear_inequality_constraints:
-                    constraint_mask &= (constraint_fn(X) <= 0)
+            if self.nonlinear_inequality_constraints:
+                for (constraint_fn, inter_flag) in self.nonlinear_inequality_constraints:
+                    constraint_mask &= (constraint_fn(X) >= 0)
 
             X = X[constraint_mask]
-            valid_x.append(X)
+            if X.shape[0] > 0:
+                valid_x.append(X)
 
         valid_samples = torch.cat(valid_x, dim=0)
         if valid_samples.shape[0] < n:

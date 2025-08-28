@@ -97,7 +97,7 @@ class MultiObjectivePlotter(PlotterBase):
             self._update_cmap_and_norm()
 
         # === Update legend ===
-        self.ax.legend(handles=self.legend_elements)
+        self.ax.legend(handles=self.legend_elements, loc="best")
 
         return self
 
@@ -133,7 +133,7 @@ class MultiObjectivePlotter(PlotterBase):
             self._update_cmap_and_norm()
 
         # === Update legend ===
-        self.ax.legend(handles=self.legend_elements)
+        self.ax.legend(handles=self.legend_elements, loc="best")
 
         return self
 

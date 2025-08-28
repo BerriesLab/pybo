@@ -404,6 +404,7 @@ class Mobo:
             print("An acquisition function has not been initialized yet.")
         return self._acquisition_function_instance
 
+    @property
     def sampler_instance(self) -> MCSampler | None:
         if self._sampler_instance is None:
             print("A sampler has not been initialized yet.")
@@ -667,22 +668,107 @@ class Mobo:
                 q=self._batch_size,
                 num_restarts=self._n_acqf_opt_restarts,
                 raw_samples=self._num_raw_samples,
-                options={"maxiter": self._n_acqf_opt_max_iter, "disp": True},
+                options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
                 sequential=True,
                 equality_constraints=self._objective.linear_equality_input_constraints,
                 inequality_constraints=self._objective.linear_inequality_input_constraints,
-                # nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
-                # ic_generator=self.ic_generator_for_non_linear_inout_constraints if
-                # self.objective.nonlinear_inequality_input_constraints else None,
+                nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
+                ic_generator=self.ic_generator
+                if self._objective.nonlinear_inequality_input_constraints is not None
+                else None,
+                **{
+                    "fraction_of_previous_X": 0.5,
+                    "noise_scale": 0,
+                }
             )
 
         if verbose:
             print("✓")
 
-    # TODO: implement function
-    def ic_generator_for_non_linear_inout_constraints(self):
-        batch_initial_candidates = None
-        return batch_initial_candidates
+    # TODO: polish
+    def ic_generator(
+            self,
+            acq_function,
+            bounds: torch.Tensor,
+            q: int,
+            num_restarts: int,
+            raw_samples: int,
+            fixed_features: dict[int, float] | None = None,
+            inequality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,
+            equality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,
+            **kwargs: dict
+    ) -> torch.Tensor:
+        """
+        Generates initial conditions for constrained acquisition optimization.
+        Mixes previous points and new samples from a constraint-aware sampler.
+
+        Args:
+            acq_function: Acquisition function to optimize (not used directly here).
+            bounds: Tensor of shape (2, d) representing lower and upper bounds.
+            q: Number of candidates per batch (usually 1 for sequential optimization).
+            num_restarts: Total number of initial points to generate.
+            raw_samples: Number of raw samples to draw from the sampler for coarse exploration.
+            fixed_features: Optional dictionary of fixed feature indices/values.
+            inequality_constraints, equality_constraints: Optional linear constraints.
+            kwargs: Additional arguments:
+                - fraction_of_previous_X: fraction of previous points to reuse.
+        Returns:
+            Tensor of shape (num_restarts, q, d) for initial conditions.
+        """
+
+        frac_prev = kwargs.get("fraction_of_previous_X", 0.5)
+        noise_scale = kwargs.get("noise_scale", 1e-3)
+
+        # Instantiate a constraint-aware sampler
+        sampler = Sampler(
+            device=self._device,
+            dtype=self.dtype,
+            sampler_type=SamplerType.Sobol,
+            bounds=bounds,
+            n_dimensions=self.objective.dim,
+            normalize=False,
+            linear_equality_constraints=self.objective.linear_equality_input_constraints,
+            linear_inequality_constraints=self.objective.linear_inequality_input_constraints,
+            nonlinear_inequality_constraints=self.objective.nonlinear_inequality_input_constraints,
+        )
+
+        # Determine number of points from previous Pareto front
+        if self._X is not None and self._Y_obj is not None:
+            Y_obj_for_pareto = self._Y_obj.clone()
+            Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
+            pareto_mask = is_non_dominated(Y_obj_for_pareto)
+            X_pareto = self._X[pareto_mask]
+            n_pareto = int(frac_prev * num_restarts)
+            if X_pareto.shape[0] > 0:
+                # Randomly select n_pareto points
+                indices = torch.randperm(X_pareto.shape[0])[:n_pareto]
+                prev_points = X_pareto[indices]
+            else:
+                prev_points = torch.empty(0, bounds.shape[1], device=self._device)
+                n_pareto = 0
+        else:
+            prev_points = torch.empty(0, bounds.shape[1], device=self._device)
+            n_pareto = 0
+
+        # Determine number of previous and new points
+        n_new = num_restarts - n_pareto
+
+        # Draw raw samples for new points
+        raw_X = sampler.draw_samples(n=raw_samples)
+        if n_new > raw_X.shape[0]:
+            raise RuntimeError(
+                f"Requested {n_new} new points, but only {raw_X.shape[0]} feasible raw samples available.")
+        new_points = raw_X[:n_new]
+
+        # Add small noise for exploration
+        if noise_scale > 0:
+            new_points += noise_scale * torch.randn_like(new_points)
+
+        # Combine previous points and new points
+        combined = torch.cat([prev_points, new_points], dim=0)
+
+        # Ensure proper shape for BoTorch: (num_restarts, q, d)
+        return combined.unsqueeze(1)  # q=1 for sequential optimization
 
     def compute_acquisition_function_value_at_X(self, X: torch.Tensor, verbose=True):
         if not isinstance(X, torch.Tensor):
@@ -847,128 +933,3 @@ class Mobo:
 
         with open(filepath, "rb") as f:
             return pickle.load(f)
-
-    # def save_dataset_to_csv(self, output_path: Path = None):
-    #
-    #     if output_path is None:
-    #         output_path = Path.cwd() / "dataset.csv"
-    #
-    #     XY = torch.cat([self._X, self._Y_obj], dim=-1)
-    #     if self._Y_obj_var is not None:
-    #         XY = torch.cat([XY, self._Y_obj_var], dim=-1)
-    #     if self._Y_con is not None:
-    #         XY = torch.cat([XY, self._Y_con], dim=-1)
-    #         if self._Y_con_var is not None:
-    #             XY = torch.cat([XY, self._Y_con_var], dim=-1)
-    #
-    #     XY = XY.detach().cpu().numpy()
-    #     np.savetxt(output_path, XY, delimiter=",", comments="")
-
-    # def to_json(self, output_path: Path = None):
-    #
-    #     if output_path is None:
-    #         output_path = Path.cwd() / "model.json"
-    #
-    #     serializable_data = {}
-    #     for key, value in self.__dict__.items():
-    #         json_key = key.lstrip('_')
-    #         serialized_value = serialize_value(value)
-    #         if serialized_value is not None:
-    #             serializable_data[json_key] = serialized_value
-    #
-    #     # Save to disk
-    #     with open(output_path, "w") as file:
-    #         json.dump(serializable_data, file, indent=4)
-
-    # def load_dataset_from_csv(
-    #         self,
-    #         input_space_dim: int | None = None,
-    #         objective_space_dim: int | None = None,
-    #         constraint_space_dim: int | None = None,
-    #         objective_variance: bool = False,
-    #         constraint_variance: bool = False,
-    #         filepath: str or None = None,
-    #         skiprows: int = 0,
-    #         skipcols: int = 0,
-    # ):
-    #     """Assumes that the dataset is saved in the CSV format and columns are ordered as follows:
-    #     X ¦ Y_obj ¦ Y_obj_var ¦ Y_con ¦ Y_con_var."""
-    #
-    #     if input_space_dim is None:
-    #         try:
-    #             # Get input dimensions from existing X tensor if available
-    #             input_space_dim = self._X.shape[-1]
-    #         except (AttributeError, RuntimeError, TypeError):
-    #             # X tensor isn't properly initialized or doesn't exist
-    #             raise ValueError(
-    #                 "Input space dimension must be provided explicitly as a parameter "
-    #                 "when X tensor is not initialized. Could not infer dimension from self._X."
-    #             )
-    #
-    #     if objective_space_dim is None:
-    #         try:
-    #             # Get objective dimensions from existing Y_obj tensor if available
-    #             objective_space_dim = self._Y_obj.shape[-1]
-    #         except (AttributeError, RuntimeError, TypeError):
-    #             # Y_obj tensor not properly initialized or doesn't exist
-    #             raise ValueError(
-    #                 "Objective space dimension must be provided explicitly as a parameter "
-    #                 "when Y_obj tensor is not initialized. Could not infer dimension from self._Y_obj."
-    #             )
-    #
-    #     if constraint_space_dim is None:
-    #         try:
-    #             constraints = self.get_output_constraints()
-    #             if constraints is not None and self._Y_con is not None:
-    #                 # The Problem is constrained and Y_con tensor exists
-    #                 constraint_space_dim = self._Y_con.shape[-1]
-    #             else:
-    #                 # The Problem is unconstrained or Y_con tensor doesn't exist
-    #                 constraint_space_dim = 0
-    #         except (AttributeError, RuntimeError, TypeError):
-    #             raise ValueError(
-    #                 "Constraint space dimension must be provided explicitly as a parameter "
-    #                 "since constraint tensor (Y_con) could not be determined automatically."
-    #             )
-    #
-    #     if filepath is None:
-    #         csv_files = list(Path("..").glob("*.csv"))
-    #         if not csv_files:
-    #             raise FileNotFoundError("No CSV files found in the current directory")
-    #         filepath = max(csv_files, key=lambda x: x.stat().st_mtime)
-    #
-    #     xy = np.loadtxt(filepath, delimiter=",", skiprows=skiprows)
-    #
-    #     idx = skipcols + 0
-    #     j = skipcols + input_space_dim
-    #     self._X = torch.tensor(xy[..., idx:j])
-    #
-    #     if objective_space_dim > 0:
-    #         idx = j
-    #         j += objective_space_dim
-    #         self._Y_obj = torch.tensor(xy[..., idx:j])
-    #
-    #         if objective_variance:
-    #             idx = j
-    #             j += objective_space_dim
-    #             self._Y_obj_var = torch.tensor(xy[..., idx:j])
-    #         else:
-    #             self._Y_obj_var = None
-    #     else:
-    #         self._Y_obj = None
-    #         self._Y_obj_var = None
-    #
-    #     if constraint_space_dim > 0:
-    #         idx = j
-    #         j += constraint_space_dim
-    #         self._Y_con = torch.tensor(xy[..., idx:j])
-    #
-    #         if constraint_variance:
-    #             idx = j
-    #             j += constraint_space_dim
-    #             self._Y_con_var = torch.tensor(xy[..., idx:j])
-    #         else:
-    #             self._Y_con_var = None
-    #     else:
-    #         self._Y_con = None
-    #         self._Y_con_var = None

@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
 from objectives.base_class import MCMultiOutputBase
-from constraints.output_constraints import Identity
 
 
 class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
@@ -9,7 +8,13 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
 
     Notes:
         - Both functions are originally intended for minimization.
-        - The constraints are on the input.
+        - The non-linear constraints must be cast in the form tuple[callable(x) >= 0, bool].
+        The first element in the tuple is a callable representing a constraint of the form `callable(x) >= 0`.
+        In case of an intra-point constraint, "callable()" takes in a one-dimensional tensor of
+        shape "d" and returns a scalar. In case of an inter-point constraint, "callable()"
+        takes a two-dimensional tensor of shape "q x d" and again returns a scalar. The second
+        element is a boolean, indicating if it is an intra-point or inter-point constraint
+        ("True" for intra-point. "False" for inter-point).
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -19,18 +24,26 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
             dim=2,
             num_objectives=2,
             num_constraints=0,
+            num_trackers=0,
             obj_to_minimize=[True, True],
-            bounds=[(0.0, 5.0), (0.0, 3.0)],
-            ref_point=[80.0, 30.0],
+            bounds=torch.tensor(
+                [[0.0, 0.0],
+                 [5.0, 3.0]],
+            ),
+            ref_point=torch.tensor(
+                [130.0, 50.0]
+            ),
             num_outcomes=2,
             outcomes=[0, 1],
             gt_noise_std=None,
             max_hv=None,
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=[(self.c1, True), (self.c2, True)],
-            output_constraints=[Identity(index=-1)],
-            estimate_max_hv=False,
+            nonlinear_inequality_input_constraints=[
+                (self._input_c1, True),
+                (self._input_c2, True)
+            ],
+            output_constraints=None,
         )
 
     @staticmethod
@@ -42,21 +55,19 @@ class BinhAndKornMCMultiOutputObjective(MCMultiOutputBase):
         return (X[..., 0] - 5) ** 2 + (X[..., 1] - 5) ** 2
 
     @staticmethod
-    def c1(X: torch.Tensor) -> torch.Tensor:
+    def _input_c1(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 5)^2 + x1^2 <= 25 """
-        return ((X[..., 0] - 5) ** 2 + X[..., 1] ** 2) - 25
+        return 25 - ((X[..., 0] - 5) ** 2 + X[..., 1] ** 2)
 
     @staticmethod
-    def c2(X: torch.Tensor) -> torch.Tensor:
+    def _input_c2(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 """
-        return 7.7 - ((X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2)
+        return (X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2 - 7.7
 
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         f1 = self._f1(X=X)
         f2 = self._f2(X=X)
-        f = torch.stack([f1, f2], dim=-1)
-        f = super().evaluate_true_objective(f)
-        return f
+        return torch.stack([f1, f2], dim=-1)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """ Transform Monte Carlo samples from the model's posterior according to the specified

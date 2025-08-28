@@ -6,7 +6,7 @@ from constraints.output_constraints import Identity
 
 
 class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
-    r"""
+    """
     C2-DLTZ2 test problem.
 
     2-dimensional constrained problem evaluated on [0, 1]^d:
@@ -24,8 +24,9 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
         - M is the number of objectives,
         - r is the exclusion radius (here r = 0.2).
 
-    Note: Feasibility (in BoTorch convention): c(f) ≤ 0 ⇒ feasible, c(f) > 0 ⇒ infeasible
-    Note: the pareto front is completely concave. The goal is to minimize both objectives.
+    Notes:
+        - Feasibility (in BoTorch convention): c(f) ≤ 0 ⇒ feasible, c(f) > 0 ⇒ infeasible
+        - The pareto front is completely concave. The goal is to minimize both objectives.
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
