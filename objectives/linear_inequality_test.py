@@ -9,7 +9,7 @@ from botorch.utils.transforms import normalize_indices
 
 
 class LinearInequalityTestProblem(MCMultiOutputBase):
-    """
+    r"""
     Multi-objective optimization problem with two objectives and a linear constraint.
 
     Parameters:
@@ -29,6 +29,7 @@ class LinearInequalityTestProblem(MCMultiOutputBase):
     Notes:
         - The feasible region is the triangle defined by the bounds and the linear constraint.
         - The Pareto front arises from the trade-off between the two objectives inside the feasible region.
+        - The inequality must be passed as \sum_i (X[indices[i]] * coefficients[i]) >= rhs
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -55,9 +56,9 @@ class LinearInequalityTestProblem(MCMultiOutputBase):
             max_hv=None,
             linear_equality_input_constraints=None,
             linear_inequality_input_constraints=[(
-                torch.tensor([0, 1], dtype=torch.int),  # The indices of the input dimensions
-                torch.tensor([1.0, 1.0], dtype=torch.float),  # The coefficients for each of those dimensions
-                2.0,
+                torch.tensor([0, 1], dtype=torch.long),  # Indices
+                torch.tensor([-1.0, -1.0], dtype=torch.float),  # Coefficients
+                -2.0,  # RHS
             )],
             nonlinear_inequality_input_constraints=None,
             output_constraints=None,

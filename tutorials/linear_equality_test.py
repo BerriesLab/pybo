@@ -28,7 +28,6 @@ def main(n_samples=64, q: int = 1, ):
         dtype=DTYPE,
     )
 
-    # TODO: the sampler must samples from the allowed region only
     """ Instantiate a random generator """
     sampler = Sampler(
         device=DEVICE,
@@ -45,14 +44,9 @@ def main(n_samples=64, q: int = 1, ):
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
-    # This is done before the optimization loop to show the same ground truth
-    # in each iteration step's figure.
-    X_gt = make_grid(
-        device=DEVICE,
-        dtype=DTYPE,
-        size=100,
-        bounds=objective.bounds,
-    )
+    # When constraints apply to the input X, build the ground truth by using
+    # a random generator subject to constraints
+    X_gt = sampler.draw_samples(n=100)
 
     """ Instantiate a Mobo object """
     mobo = Mobo(

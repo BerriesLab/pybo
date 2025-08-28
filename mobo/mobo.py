@@ -77,7 +77,7 @@ class Mobo:
             batch_size: int = 1,
             mc_samples: int = 256,
             raw_samples: int = 512,
-            n_acqf_opt_iter: int = 250,
+            n_acqf_opt_max_iter: int = 250,
             n_acqf_opt_restarts: int = 1,
             n_model_fit_restarts: int = 10,
     ):
@@ -101,7 +101,7 @@ class Mobo:
         # === Optimization attributes ===
         self.acquisition_function_type = acquisition_function_type
         self.sampler_type = sampler_type
-        self.n_acqf_opt_iter = n_acqf_opt_iter  # Number of iterations for acquisition function optimization
+        self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # Number of acquisition function optimization restarts
         self.n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
         self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
@@ -289,13 +289,13 @@ class Mobo:
 
     @property
     def n_acqf_opt_iter(self) -> int:
-        return self._n_acqf_opt_iter
+        return self._n_acqf_opt_max_iter
 
     @n_acqf_opt_iter.setter
     def n_acqf_opt_iter(self, n_acqf_opt_iter):
         if not isinstance(n_acqf_opt_iter, int):
-            raise ValueError("n_acqf_opt_iter must be of type int")
-        self._n_acqf_opt_iter = n_acqf_opt_iter
+            raise ValueError("n_acqf_opt_max_iter must be of type int")
+        self._n_acqf_opt_max_iter = n_acqf_opt_iter
 
     @property
     def n_acqf_opt_restarts(self) -> int:
@@ -658,7 +658,7 @@ class Mobo:
                 bounds=self._objective.bounds,
                 num_restarts=self._n_acqf_opt_restarts,
                 raw_samples=self._num_raw_samples,
-                options={"batch_limit": 5, "maxiter": self._n_acqf_opt_iter},
+                options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
             )
         else:
             self._new_X, _ = optimize_acqf(
@@ -667,11 +667,11 @@ class Mobo:
                 q=self._batch_size,
                 num_restarts=self._n_acqf_opt_restarts,
                 raw_samples=self._num_raw_samples,
-                options={"maxiter": self._n_acqf_opt_iter, "disp": True},
+                options={"maxiter": self._n_acqf_opt_max_iter, "disp": True},
                 sequential=True,
                 equality_constraints=self._objective.linear_equality_input_constraints,
                 inequality_constraints=self._objective.linear_inequality_input_constraints,
-                nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
+                # nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
                 # ic_generator=self.ic_generator_for_non_linear_inout_constraints if
                 # self.objective.nonlinear_inequality_input_constraints else None,
             )

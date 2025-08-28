@@ -30,6 +30,8 @@ def main(n_samples=64, q: int = 1, ):
 
     """ Generate initial dataset """
     sampler = Sampler(
+        device=DEVICE,
+        dtype=DTYPE,
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.dim,

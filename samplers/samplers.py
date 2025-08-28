@@ -28,75 +28,71 @@ class Sampler:
         self.bounds = bounds
         self.n_dimensions = n_dimensions
         self.normalize = normalize
-        # self.constraint = constraint
         self.linear_equality_constraints = linear_equality_constraints
         self.linear_inequality_constraints = linear_inequality_constraints
         self.non_linear_inequality_constraints = non_linear_inequality_constraints
 
     def _parse_linear_equality_constraints(self):
-        """
-        Parses the list of equality constraints into a single A_eq and b_eq tensor.
-        A_eq (torch.Tensor): The matrix of coefficients for the equality constraints.
-        b_eq (torch.Tensor): The vector of RHS values for the equality constraints.
+        r""""
+        Parses the list of equality constraints into a single A and b tensor.
+        Each constraint is of the form (indices, coefficients, rhs) and encodes:
+
+            sum( X[indices[i]] * coefficients[i] ) >= rhs
+
+        This matches the BoTorch convention.
         """
         num_constraints = len(self.linear_equality_constraints)
-        A_eq = torch.zeros(num_constraints, self.n_dimensions, dtype=torch.float64)
-        b_eq = torch.zeros(num_constraints, dtype=torch.float64)
+        A = torch.zeros(num_constraints, self.n_dimensions, dtype=self.dtype)
+        b = torch.zeros(num_constraints, dtype=self.dtype)
 
         for i, (indices, coefficients, rhs) in enumerate(self.linear_equality_constraints):
-            # `indices` are Tensors, use them directly for indexing
-            A_eq[i, indices.long()] = coefficients
-            b_eq[i] = rhs
+            # The constraint is `Ax <= b`, so we use the given coefficients and rhs
+            A[i, indices.long()] = coefficients
+            b[i] = rhs
 
-        return A_eq, b_eq
+        return A, b
 
     def _parse_linear_inequality_constraints(self):
-        """
-        Parses the list of inequality constraints into a single A_in and b_in tensor.
-        A_in (torch.Tensor): The matrix of coefficients for the inequality constraints.
-        b_in (torch.Tensor): The vector of RHS values for the inequality constraints.
+        r""""
+        Parses the list of inequality constraints into a single A and b tensor.
+        Each constraint is of the form (indices, coefficients, rhs) and encodes:
+
+            sum( X[indices[i]] * coefficients[i] ) >= rhs
+
+        This matches the BoTorch convention.
         """
         num_constraints = len(self.linear_inequality_constraints)
-        A_in = torch.zeros(num_constraints, self.n_dimensions, dtype=torch.float64)
-        b_in = torch.zeros(num_constraints, dtype=torch.float64)
+        A = torch.zeros(num_constraints, self.n_dimensions, dtype=self.dtype)
+        b = torch.zeros(num_constraints, dtype=self.dtype)
 
         for i, (indices, coefficients, rhs) in enumerate(self.linear_inequality_constraints):
             # The constraint is `Ax <= b`, so we use the given coefficients and rhs
-            A_in[i, indices.long()] = coefficients
-            b_in[i] = rhs
+            A[i, indices.long()] = coefficients
+            b[i] = rhs
 
-        return A_in, b_in
+        return A, b
 
-    def _project_to_equality_constraint_manifold(self, x: Tensor, A, b) -> Tensor:
+    @staticmethod
+    def _project_onto_linear_equality_manifold(X: Tensor, A: Tensor, b: Tensor) -> Tensor:
         """
         Projects samples from the full space onto the linear equality hyperplane.
-
-        Args:
-            x: A tensor of samples of shape `(n, d)`.
-        Returns:
-            A tensor of projected samples of shape `(n, d)`.
+                    X_proj = x - A.T * (A * A.T)^-1 * (A * x - b)
         """
-        # The projection formula: x_proj = x - A.T * (A * A.T)^-1 * (A * x - b)
-
         # Calculate the projection matrix using torch.linalg.solve for stability
         ATA_inv = torch.linalg.solve(A @ A.T, torch.eye(A.shape[0], dtype=A.dtype))
-
         # Calculate the error term (A*x - b) for each sample
-        error = x @ A.T - b
-
+        error = X @ A.T - b
         # Calculate the correction term
         correction = error @ ATA_inv @ A
-
         # Project the samples
-        x_proj = x - correction
-
-        return x_proj
+        X_proj = X - correction
+        return X_proj
 
     def draw_samples(self, n) -> torch.Tensor:
         valid_x = []
         num_attempts = 0
         max_attempts = 1000
-        tol = 1e-3
+        tol = 1e-6
 
         while len(valid_x) < n and num_attempts < max_attempts:
             num_attempts += 1
@@ -126,22 +122,14 @@ class Sampler:
             # Project samples to satisfy linear equality constraints
             if self.linear_equality_constraints is not None:
                 A, b = self._parse_linear_equality_constraints()
-                X = self._project_to_equality_constraint_manifold(X, A, b)
-
-            # Apply parsed linear equality constraints (Ax = b)
-            # if self.linear_equality_constraints is not None:
-            #     A, b = self._parse_linear_equality_constraints()
-            #     linear_eq_constraint_values = X @ A.T
-            #     # Check for equality with a tolerance
-            #     linear_eq_mask = torch.isclose(linear_eq_constraint_values, b, atol=tol).all(dim=-1)
-            #     constraint_mask &= linear_eq_mask
+                X = self._project_onto_linear_equality_manifold(X, A, b)
 
             # Apply parsed linear inequality constraints (Ax <= b)
             if self.linear_inequality_constraints is not None:
                 A, b = self._parse_linear_inequality_constraints()
-                linear_in_constraint_values = X @ A.T
+                linear_inequality_constraint_values = X @ A.T
                 # Check if values are less than or equal to the RHS
-                linear_in_mask = (linear_in_constraint_values <= b).all(dim=-1)
+                linear_in_mask = (linear_inequality_constraint_values >= b).all(dim=-1)
                 constraint_mask &= linear_in_mask
 
             # Apply non-linear constraints

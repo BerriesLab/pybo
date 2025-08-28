@@ -9,8 +9,27 @@ from botorch.utils.transforms import normalize_indices
 
 
 class LinearEqualityTestProblem(MCMultiOutputBase):
-    """
-    Two-objective problem with a linear equality input constraint.
+    r"""
+    Two-objective problem with a linear equality constraint.
+
+    Parameters:
+        0 <= x1 <= 1
+        0 <= x2 <= 1
+
+    Objectives:
+        1. Minimize distance from the origin:
+           f1(x) = (x1 - 1)^2 + x2^2
+        2. Minimize distance from the point (2,1):
+           f2(x) = x1^2 + (x2 - 1)^2
+
+    Constraint:
+        Linear inequality constraint:
+            x1 + 2x2 <= 1
+
+    Notes:
+        - The feasible region is the triangle defined by the bounds and the linear constraint.
+        - The Pareto front arises from the trade-off between the two objectives inside the feasible region.
+        - The inequality must be passed as \sum_i (X[indices[i]] * coefficients[i]) >= rhs
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -34,9 +53,9 @@ class LinearEqualityTestProblem(MCMultiOutputBase):
             gt_noise_std=None,
             max_hv=None,
             linear_equality_input_constraints=[(
-                torch.tensor([0, 1], dtype=torch.int),  # The indices of the input dimensions
-                torch.tensor([1.0, 2.0], dtype=torch.float),  # The coefficients for each of those dimensions
-                1.0,
+                torch.tensor([0, 1], dtype=torch.long),  # Indices
+                torch.tensor([-1.0, -2.0], dtype=torch.float),  # Coefficients
+                -1.0,  # RHS
             )],
             linear_inequality_input_constraints=None,
             nonlinear_inequality_input_constraints=None,

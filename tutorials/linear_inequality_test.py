@@ -30,25 +30,23 @@ def main(n_samples=64, q: int = 1, ):
 
     """ Instantiate a random generator """
     sampler = Sampler(
+        device=DEVICE,
+        dtype=DTYPE,
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.dim,
-        normalize=False
+        normalize=False,
+        linear_inequality_constraints=objective.linear_inequality_input_constraints,
     )
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
-    """ Generate samples for ground truth evaluation - random sampler or grid """
-    # This is done before the optimization loop to show the same ground truth
-    # in each iteration step's figure.
-    X_gt = make_grid(
-        device=DEVICE,
-        dtype=DTYPE,
-        size=100,
-        bounds=objective.bounds,
-    )
+    """ Generate samples for ground truth evaluation """
+    # If constraints apply to X, use a random generator for the ground truth,
+    # since make_grid cannot handle constraints.
+    X_gt = sampler.draw_samples(n=1000)
 
     """ Instantiate a Mobo object """
     mobo = Mobo(
