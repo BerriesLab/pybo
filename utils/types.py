@@ -1,5 +1,4 @@
 from enum import Enum
-import torch
 
 
 class AcquisitionFunctionType(Enum):
@@ -19,18 +18,6 @@ class AcquisitionFunctionType(Enum):
         return values
 
 
-class Kernel(Enum):
-    RBF = "RBF"
-    Matern = "Matern"
-    Constant = "Constant"
-
-
 class SamplerType(Enum):
     Sobol = "Sobol"
     LatinHypercube = "Latin Hypercube"
-
-
-class TorchDeviceType(Enum):
-    CPU = "cpu"
-    GPU = "cuda"
-    MPS = "mps"

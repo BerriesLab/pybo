@@ -1,18 +1,14 @@
 import pickle
 from typing import Union
-
 import torch
 import datetime
-
 import warnings
 import time
 import glob
 import os
 from pathlib import Path
-
 import botorch
 import gpytorch
-
 from botorch.exceptions import (
     BadInitialCandidatesWarning,
     InputDataWarning,
@@ -27,28 +23,20 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.acquisition import (
-    qNoisyExpectedImprovement, GenericMCObjective, AcquisitionFunction
-)
+from botorch.acquisition import qNoisyExpectedImprovement, GenericMCObjective, AcquisitionFunction
 from botorch.acquisition.multi_objective import (
     qExpectedHypervolumeImprovement,
     qNoisyExpectedHypervolumeImprovement,
     qLogExpectedHypervolumeImprovement,
     qLogNoisyExpectedHypervolumeImprovement,
 )
-from botorch.utils.transforms import normalize, unnormalize
+from botorch.utils.transforms import normalize
 from botorch.utils.sampling import sample_simplex
-
 from gpytorch.constraints import GreaterThan
-from torch.quasirandom import SobolEngine
-
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
-
 from objectives.base_class import MCMultiOutputBase
 from samplers.samplers import Sampler
-
 from gpytorch.mlls import SumMarginalLogLikelihood
-
 from utils.types import *
 
 
@@ -102,7 +90,7 @@ class Mobo:
         self.acquisition_function_type = acquisition_function_type
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
-        self.n_acqf_opt_restarts = n_acqf_opt_restarts  # Number of acquisition function optimization restarts
+        self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
         self.n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
         self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
@@ -617,11 +605,25 @@ class Mobo:
             print("✓")
 
     def initialize_partitioning(self):
-        with torch.no_grad():
-            warnings.warn("Partitioning is not taking into account output constraints, if any", OptimizationWarning)
-            # TODO: when using qEHVI, use non_dominated_partitioning and pass only feasible Ys
-            prediction = self._model.posterior(normalize(self._X, self._objective.bounds)).mean
-            self._partitioning = NondominatedPartitioning(ref_point=self._ref_point, Y=prediction)
+        # Compute posterior mean of objectives
+        prediction = self._model.posterior(self._X).mean
+
+        # Filter feasible points if constraints exist
+        if self._objective.output_constraints is None:
+            feasible_Y = prediction
+        else:
+            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.output_constraints]).all(dim=0)
+            feasible_Y = prediction[feasible_maks]
+
+        # Cast feasible points in maximization space
+        Y = feasible_Y.clone()
+        Y[..., self.objective.obj_to_minimize] *= -1
+
+        # Build partitioning with feasible objectives only
+        self._partitioning = NondominatedPartitioning(
+            ref_point=self._ref_point,
+            Y=Y,
+        )
 
     def fit_model(self, restart_on_error=True, verbose=True):
         if not isinstance(self._model, ModelListGP):
@@ -679,45 +681,32 @@ class Mobo:
                 **{
                     "fraction_of_previous_X": 0.5,
                     "noise_scale": 0,
-                }
+                } if self.objective.nonlinear_inequality_input_constraints is not None
+                else {}
             )
 
         if verbose:
             print("✓")
 
-    # TODO: polish
     def ic_generator(
             self,
-            acq_function,
+            acq_function,  # noqa
             bounds: torch.Tensor,
-            q: int,
+            q: int,  # noqa
             num_restarts: int,
             raw_samples: int,
-            fixed_features: dict[int, float] | None = None,
-            inequality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,
-            equality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,
+            fixed_features: dict[int, float] | None = None,  # noqa
+            inequality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,  # noqa
+            equality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,  # noqa
             **kwargs: dict
     ) -> torch.Tensor:
         """
         Generates initial conditions for constrained acquisition optimization.
         Mixes previous points and new samples from a constraint-aware sampler.
-
-        Args:
-            acq_function: Acquisition function to optimize (not used directly here).
-            bounds: Tensor of shape (2, d) representing lower and upper bounds.
-            q: Number of candidates per batch (usually 1 for sequential optimization).
-            num_restarts: Total number of initial points to generate.
-            raw_samples: Number of raw samples to draw from the sampler for coarse exploration.
-            fixed_features: Optional dictionary of fixed feature indices/values.
-            inequality_constraints, equality_constraints: Optional linear constraints.
-            kwargs: Additional arguments:
-                - fraction_of_previous_X: fraction of previous points to reuse.
-        Returns:
-            Tensor of shape (num_restarts, q, d) for initial conditions.
         """
 
         frac_prev = kwargs.get("fraction_of_previous_X", 0.5)
-        noise_scale = kwargs.get("noise_scale", 1e-3)
+        noise_scale = kwargs.get("noise_scale", 0.0)
 
         # Instantiate a constraint-aware sampler
         sampler = Sampler(
@@ -758,7 +747,8 @@ class Mobo:
         if n_new > raw_X.shape[0]:
             raise RuntimeError(
                 f"Requested {n_new} new points, but only {raw_X.shape[0]} feasible raw samples available.")
-        new_points = raw_X[:n_new]
+        idx = torch.randperm(raw_X.shape[0])[:n_new]
+        new_points = raw_X[idx]
 
         # Add small noise for exploration
         if noise_scale > 0:

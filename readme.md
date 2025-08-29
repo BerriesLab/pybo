@@ -1,8 +1,11 @@
 # pyBO — A Python Library for Bayesian Optimization
-`pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian Processes, it provides a framework 
-for optimizing multiple competing objectives under experimental constraints and finding Pareto-optimal solutions.
+
+`pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian
+Processes as surrogate models, it provides a user-friendly framework for optimizing multiple competing objectives under
+experimental constraints, and finding pareto-optimal solutions.
 
 ## Table of Contents
+
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Workflow Overview](#workflow-overview)
@@ -12,22 +15,32 @@ for optimizing multiple competing objectives under experimental constraints and 
 - [Tutorials](#tutorials)
 
 ## Key Features
-Version 0.1 includes the following capabilities:
-- Multi-objective and constrained optimization for functions of the form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
-- Batch mode (q-batch) support for parallel evaluations.
-- Linear and non-linear constraints on the input domain (X).
-- Linear and non-linear constraints on the output domain (Y).
-- Integration into iterative experimental workflows.
-- Exporting and visualization of optimization results.
+
+Version 0.1 currently supports:
+
+- Multi-objective optimization problems for functions of the
+  form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2, \mathbb{R}^3$.
+- Batch mode (q-batch) for parallel evaluations.
+- Linear equality constraints on the input domain (X).
+- Linear inequality constraints on the input domain (X).
+- Nonlinear inequality constraints on the input domain (X).
+- Linear and non-linear inequality constraints on the output domain (Y).
+- Observations noise (variance).
+- The following acquisition functions: qEHVI, qLogEHVI, qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI, qNParEGO
+- Plotting of optimization results and metrics.
+- Pythonic integration in experimental workflows.
 
 ## Installation
-The package is currently available only for local distribution. To install, 
+
+The package is currently available only for local distribution. To install,
 locally download the package in the dist/ folder, open the terminal and type:
 
 `pip install pybo-0.1.0-py3-none-any.whl`
 
 ## Workflow Overview
-`pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed experiments and suggests new candidate parameters for the next iteration.
+
+`pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed
+experiments and suggests new candidate parameters for the next iteration.
 
 ```mermaid
 flowchart TD
@@ -45,11 +58,13 @@ flowchart TD
     E -->|Yes| End
     classDef redText color: red;
     class C redText
-    
+
 ```
 
 ## pyBO Internal Workflow
+
 The following flowchart describes in synthesis how pyBO works internally.
+
 ```mermaid
 flowchart TD
     A[Initialize model<br>Compute reference point<br>Initialize sampler]
@@ -57,21 +72,21 @@ flowchart TD
     C[Initialize partitioning<br>Initialize acquisition function]
     D[Find new X]
     E{Does the new X satisfy<br>the input constraints?}
-    
-    Start --> |X, Yobj, Ycon, . . .| A
+    Start -->|X, Yobj, Ycon, . . .| A
     A --> B
     B --> C
     C --> D
     D --> E
-    E --> |Yes| End
-    E --> |No| D
-    
-    
+    E -->|Yes| End
+    E -->|No| D
+
+
 ```
 
 ## Data Format
 
 ### Data Input Format
+
 Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
 
 ```math
@@ -85,17 +100,16 @@ $$\mathbf{Z} =
 \end{bmatrix}$$
 ```
 
-
-where 
+where
 
 - $\mathbf{X} \in \mathbb{R}^{n \times d}$: The input data matrix.
-- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: The objective 
+- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: The objective
   value matrix.
-- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: The Variance 
+- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: The Variance
   of the objective value matrix (optional).
-- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: The constraint 
+- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: The constraint
   value matrix (optional).
-- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: The variance 
+- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: The variance
   of the constraint value matrix (optional).
 
 and where
@@ -108,28 +122,38 @@ and where
 ### Data Output Format
 
 `pyBO` allows exporting:
+
 - The optimizer states as a binary file (pickle) for later reuse or analysis.
 - The full dataset $\mathbf{Z}$ as a CSV file, matching the input format.
 
 ## Visualization
+
 `pyBO` provides built-in tools to visualize:
-- The Pareto front in bi-objective optimization problems, where the objective function is of the form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
+
+- The Pareto front in bi-objective optimization problems, where the objective function is of the
+  form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
 - The hypervolume achieved at each optimization cycle.
 - The memory usage during each optimization cycle.
 - The execution time for each optimization cycle.
 
 ## Tutorials
+
 Explore the following examples to understand how `pyBO` can be applied:
 
 - [Branin-Currin](tutorials/BraninCurrin.py): An unconstrained bi-objective optimization problem.
 - [C2DTLZ2](tutorials/C2DTLZ2.py): A constrained bi-objective optimization problem.
 - [Binh and Korn](tutorials/BinhKorn.py): A constrained bi-objective optimization problem.
 
-
 ## Custom Multi Objective Functions
-A custom multi objective function must inherit from ```BaseTestProblem, ABC```, and must include the following attributes:
+
+A custom multi objective function must inherit from ```BaseTestProblem, ABC```, and must include the following
+attributes:
+
 - ```self.ref_point```
 - ```self.negate```
-- ```evaluate_true```: this is the true objective. It must always be cast in its original form. If the objectives is something to minimize, this must be written in its minimization form, as ```self.negate``` will flip its sign when required in the ```forward``` method.
+- ```evaluate_true```: this is the true objective. It must always be cast in its original form. If the objectives is
+  something to minimize, this must be written in its minimization form, as ```self.negate``` will flip its sign when
+  required in the ```forward``` method.
 - ```evaluate_slack```
-- this affects the sign of ```self.ref_point``` and of the objective function ```f``` in the ```forward``` method. Therefore,
+- this affects the sign of ```self.ref_point``` and of the objective function ```f``` in the ```forward``` method.
+  Therefore,
