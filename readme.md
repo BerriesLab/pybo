@@ -8,8 +8,8 @@ experimental constraints, and finding pareto-optimal solutions.
 
 - [Key Features](#key-features)
 - [Installation](#installation)
-- [Workflow Overview](#workflow-overview)
-- [pyBO](#pybo-internal-workflow)
+- [Experimental workflow](#experimental-workflow)
+- [pyBO workflow](#pybo-internal-workflow)
 - [Data Format](#data-format)
 - [Visualization](#visualization)
 - [Tutorials](#tutorials)
@@ -27,6 +27,7 @@ Version 0.1 currently supports:
 - Linear and non-linear inequality constraints on the output domain (Y).
 - Observations noise (variance).
 - The following acquisition functions: qEHVI, qLogEHVI, qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI, qNParEGO
+- Easy-to-write custom objectives, including trackers and penalization.
 - Plotting of optimization results and metrics.
 - Pythonic integration in experimental workflows.
 
@@ -37,33 +38,44 @@ locally download the package in the dist/ folder, open the terminal and type:
 
 `pip install pybo-0.1.0-py3-none-any.whl`
 
-## Workflow Overview
+## Experimental workflow
 
-`pyBO` is designed to fit seamlessly into experimental optimization loops. It takes as input the results of completed
-experiments and suggests new candidate parameters for the next iteration.
+`pyBO` is designed to integrate seamlessly into any experimental optimization loop. A typical experimental optimization
+problem starts with an initial dataset of (X, Y) pairs, which serve as the prior knowledge for the Bayesian
+optimization. Based on this data, the Bayesian optimization suggests a new set of parameters, `new_X`. The user can then
+run a new experiment using `new_X` to obtain new observables, including new objectives `new_Y_obj`, new constraint
+values `new_Y_con`, and new tracker values `new_Y_track`. The new objective and constraint values, together with the `new
+X`, are subsequently used to update the prior belief, by initializing a new Gaussian Process model. This model is then
+optimized, and the process is repeated iteratively until a convergence criterion is satisfied.
 
 ```mermaid
 flowchart TD
-    A[Define Initial Set of Parameters]
-    B[Execute Initial Experiments]
-    C[pyBO]
+    A[Define initial X]
+    B[Execute initial experiments]
+    C[Bayesian optimization]
     D[Execute Experiment]
     E{Converged?}
     Start --> A
-    A -->|X| B
-    B -->|X, Yobj, Ycon, . . .| C
+    A --> B
+    B -->|X, Y_obj, Y_con, . . .| C
     C -->|New X| D
-    D -->|Yobj, Ycon, . . .| E
+    D -->|new_Y_obj, new_Y_con, . . .| E
     E -->|No: Update Dataset| C
     E -->|Yes| End
-    classDef redText color: red;
-    class C redText
-
 ```
 
 ## pyBO Internal Workflow
 
-The following flowchart describes in synthesis how pyBO works internally.
+pyBO consists of the following packages:
+
+- constraints: Handles constraint definitions for the optimization problem.
+- mobo: A stateful class that manages the Bayesian optimization loop.
+- objectives: Objectives are designed to provide all information required by Mobo, including bounds, constraints, the
+  reference point, and the target objective to minimize. The optimization problem is defined in the original space, as
+  is the reference point. By specifying the objective to minimize, Mobo automatically handles any necessary sign flips.
+- samplers: Provides functionality for constrained sampling.
+- plotters: Classes for visualizing optimization results and tracking parameter evolution.
+- utils: Miscellaneous utility functions used across the package.
 
 ```mermaid
 flowchart TD
@@ -89,7 +101,6 @@ flowchart TD
 
 Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
 
-```math
 $$\mathbf{Z} =
 \begin{bmatrix}
 \mathbf{X} &
@@ -98,7 +109,6 @@ $$\mathbf{Z} =
 \mathbf{Y}_{\mathrm{con}} &
 \mathbf{Y}_{\mathrm{con},\sigma}
 \end{bmatrix}$$
-```
 
 where
 
