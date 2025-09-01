@@ -112,8 +112,8 @@ class ParameterPlotter(PlotterBase):
                         label=self.mobo.objective.parameter_names[self.idx]
                         if self.mobo.objective.parameter_names
                         else f"parameter {self.idx}")
-        self.ax.axhline(y=self.mobo.objective.bounds[0][self.idx], linestyle='--', color='black')
-        self.ax.axhline(y=self.mobo.objective.bounds[1][self.idx], linestyle='--', color='black')
+        self.ax.axhline(y=self.mobo.objective.bounds[0][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
+        self.ax.axhline(y=self.mobo.objective.bounds[1][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
         self.ax.axvline(x=self.mobo.n_initial_samples, linestyle='--', color='black')
         return self
 
@@ -158,7 +158,7 @@ class ParameterPlotter(PlotterBase):
             num=n_iter,
         )
         x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx]
+        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -242,7 +242,7 @@ class ObjectivePlotter(PlotterBase):
             num=n_iter,
         )
         x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx]
+        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -323,7 +323,7 @@ class ConstraintPlotter(PlotterBase):
             num=n_iter,
         )
         x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx]
+        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -402,7 +402,7 @@ class TrackerPlotter(PlotterBase):
             num=n_iter,
         )
         x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx]
+        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))

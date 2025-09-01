@@ -160,7 +160,7 @@ class MCMultiOutputBase(MCMultiOutputObjective, ABC):
     def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
         # Convert list of tuples to tensor
         if not torch.is_tensor(value):
-            value = torch.tensor(value, dtype=self.dtype)
+            value = torch.tensor(value, device=self._device, dtype=self.dtype)
             if value.shape != (self.dim, 2):
                 raise InputDataError(
                     f"Expected list of {self.dim} (lb, ub) tuples, got shape {value.shape}"

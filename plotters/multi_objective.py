@@ -5,6 +5,7 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from matplotlib.tri import Triangulation
 import matplotlib as mpl
+from torch.cuda import device
 
 from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
@@ -139,7 +140,7 @@ class MultiObjectivePlotter(PlotterBase):
 
     def _compute_feasible_objectives_mask(self):
         if self.mobo.Y_con is None:
-            self.feasible_obj_mask = torch.ones(self.mobo.Y_obj.shape[-2], dtype=torch.bool)
+            self.feasible_obj_mask = torch.ones(self.mobo.Y_obj.shape[-2], device=self.mobo.device, dtype=torch.bool)
         else:
             Y_full = torch.cat([self.mobo.Y_obj, self.mobo.Y_con], dim=-1)
             self.feasible_obj_mask = torch.stack([c(Y_full) <= 0 for c in self.mobo.objective.output_constraints]).all(
@@ -147,7 +148,7 @@ class MultiObjectivePlotter(PlotterBase):
 
     def _compute_feasible_ground_truth_mask(self):
         if self.Y_con_gt is None:
-            self.feasible_gt_mask = torch.ones(self.X_gt.shape[-2], dtype=torch.bool)
+            self.feasible_gt_mask = torch.ones(self.X_gt.shape[-2], device=self.mobo.device, dtype=torch.bool)
         else:
             Y_full = torch.cat([self.Y_obj_gt, self.Y_con_gt], dim=-1)
             self.feasible_gt_mask = torch.stack([c(Y_full) <= 0 for c in self.mobo.objective.output_constraints]).all(
@@ -160,7 +161,7 @@ class MultiObjectivePlotter(PlotterBase):
         self.infeasible_gt_mask = torch.logical_not(self.feasible_gt_mask)
 
     def _compute_feasible_pareto_objectives_mask(self):
-        pareto_mask = torch.zeros_like(self.feasible_obj_mask, dtype=torch.bool)
+        pareto_mask = torch.zeros_like(self.feasible_obj_mask, device=self.mobo.device, dtype=torch.bool)
         if self.feasible_obj_mask.any():
             Y_par = self.mobo.Y_obj.clone()
             Y_par[..., self.mobo.objective.obj_to_minimize] *= -1
@@ -169,7 +170,7 @@ class MultiObjectivePlotter(PlotterBase):
         self.feasible_pareto_obj_mask = torch.logical_and(self.feasible_obj_mask, pareto_mask)
 
     def _compute_feasible_pareto_ground_truth_mask(self):
-        pareto_mask = torch.zeros_like(self.feasible_gt_mask, dtype=torch.bool)
+        pareto_mask = torch.zeros_like(self.feasible_gt_mask, device=self.mobo.device, dtype=torch.bool)
         if self.feasible_gt_mask.any():
             Y_par = self.Y_obj_gt.clone()
             Y_par[..., self.mobo.objective.obj_to_minimize] *= -1
