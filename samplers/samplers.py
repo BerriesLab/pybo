@@ -115,7 +115,7 @@ class Sampler:
                 X = unnormalize(X, bounds=self.bounds)
 
             # Initialize a combined constraint mask
-            constraint_mask = torch.ones(X.shape[0], dtype=torch.bool)
+            constraint_mask = torch.ones(X.shape[0], device=self.device, dtype=torch.bool)
 
             # Project samples to satisfy linear equality constraints
             if self.linear_equality_constraints is not None:

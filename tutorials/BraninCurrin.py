@@ -15,7 +15,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples=64, q: int = 1, ):
+def main(n_samples: int = 64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
     experiment_name = f"branincurrin"
@@ -123,4 +123,4 @@ if __name__ == "__main__":
     main_path = Path.cwd().parent
     batch_sizes = [1]  # [1, 2, 4, 8]
     for batch_size in batch_sizes:
-        main(n_samples=64, q=batch_size)
+        main(n_samples=32, q=batch_size)
