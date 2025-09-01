@@ -9,10 +9,10 @@ experimental constraints, and finding pareto-optimal solutions.
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Experimental workflow](#experimental-workflow)
-- [pyBO workflow](#pybo-internal-workflow)
-- [Data Format](#data-format)
-- [Visualization](#visualization)
-- [Tutorials](#tutorials)
+- [pyBO](#pybo-internal-workflow)
+    - [Data Format](#data-format)
+    - [Visualization](#visualization)
+    - [Tutorials](#tutorials)
 
 ## Key Features
 
@@ -30,13 +30,16 @@ Version 0.1 currently supports:
 - Easy-to-write custom objectives, including trackers and penalization.
 - Plotting of optimization results and metrics.
 - Pythonic integration in experimental workflows.
+- CUDA, Apple Metal Framework, and CPU.
 
 ## Installation
 
-The package is currently available only for local distribution. To install,
-locally download the package in the dist/ folder, open the terminal and type:
+Currently, the package is only available for local distribution. To install, download the package
+in the dist/ folder, open the terminal and type:
 
-`pip install pybo-0.1.0-py3-none-any.whl`
+`pip install build`
+`python -m build`
+`pip install dist/my_package-0.1.0-py3-none-any.whl`
 
 ## Experimental workflow
 
@@ -50,21 +53,21 @@ optimized, and the process is repeated iteratively until a convergence criterion
 
 ```mermaid
 flowchart TD
-    A[Define initial X]
-    B[Execute initial experiments]
-    C[Bayesian optimization]
-    D[Execute Experiment]
-    E{Converged?}
-    Start --> A
-    A --> B
-    B -->|X, Y_obj, Y_con, . . .| C
-    C -->|New X| D
-    D -->|new_Y_obj, new_Y_con, . . .| E
-    E -->|No: Update Dataset| C
-    E -->|Yes| End
+    A1[i. Define the problem's objective<br>ii. Collect initial data]
+    A2[Instantiate a Mobo object]
+    A3[OPTIMIZE<br>i. Initialize a GP model<br>ii. Compute reference point<br>iii. Initialize sampler<br>iv. Fit model<br>v. Initialize acquisition function<br>vi. Optimize acquisition function]
+    A4[Execute experiment]
+    A5{Converged?}
+    Start --> A1
+    A1 -->|X, Y_obj, Y_con, . . .| A2
+    A2 --> A3
+    A3 -->|New_X| A4
+    A4 -->|New_Y_obj, New_Y_con, . . .| A5
+    A5 -->|Yes| End
+    A5 -->|No| A3
 ```
 
-## pyBO Internal Workflow
+## pyBO
 
 pyBO consists of the following packages:
 
@@ -77,29 +80,9 @@ pyBO consists of the following packages:
 - plotters: Classes for visualizing optimization results and tracking parameter evolution.
 - utils: Miscellaneous utility functions used across the package.
 
-```mermaid
-flowchart TD
-    A[Initialize model<br>Compute reference point<br>Initialize sampler]
-    B[Fit model]
-    C[Initialize partitioning<br>Initialize acquisition function]
-    D[Find new X]
-    E{Does the new X satisfy<br>the input constraints?}
-    Start -->|X, Yobj, Ycon, . . .| A
-    A --> B
-    B --> C
-    C --> D
-    D --> E
-    E -->|Yes| End
-    E -->|No| D
+### Data Format
 
-
-```
-
-## Data Format
-
-### Data Input Format
-
-Input to the optimizer is provided as a matrix $\mathbf{Z}$ in a CSV file:
+`pyBO`'s optimizer receives as input a matrix $\mathbf{Z}$:
 
 $$\mathbf{Z} =
 \begin{bmatrix}
@@ -112,58 +95,52 @@ $$\mathbf{Z} =
 
 where
 
-- $\mathbf{X} \in \mathbb{R}^{n \times d}$: The input data matrix.
-- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$: The objective
-  value matrix.
-- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$: The Variance
-  of the objective value matrix (optional).
-- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$: The constraint
-  value matrix (optional).
-- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$: The variance
-  of the constraint value matrix (optional).
+- $\mathbf{X} \in \mathbb{R}^{n \times d}$ is The input data matrix.
+- $\mathbf{Y}_{\mathrm{obj}} \in \mathbb{R}^{n \times m}$ is the objective value matrix.
+- $\mathbf{Y}_{\mathrm{obj, \sigma}} \in \mathbb{R}^{n \times m}$ is the objective variance value
+  matrix (optional).
+- $\mathbf{Y}_{\mathrm{con}} \in \mathbb{R}^{n \times c}$ is the constraint value matrix (optional).
+- $\mathbf{Y}_{\mathrm{con, \sigma}} \in \mathbb{R}^{n \times c}$ is the constraint variance value
+  matrix (optional).
 
 and where
 
 - $n$ is the number of observations.
 - $d$ is the number of parameters or input space dimension.
-- $m$ is the number of observable objectives.
-- $c$ is the number of observable constraints.
-
-### Data Output Format
+- $m$ is the number of objectives.
+- $c$ is the number of constraints.
 
 `pyBO` allows exporting:
 
-- The optimizer states as a binary file (pickle) for later reuse or analysis.
-- The full dataset $\mathbf{Z}$ as a CSV file, matching the input format.
+- The Mobo object as a binary file (pickle) for later reuse or analysis.
 
 ## Visualization
 
-`pyBO` provides built-in tools to visualize:
+The current version of `pyBO` provides built-in tools to visualize:
 
-- The Pareto front in bi-objective optimization problems, where the objective function is of the
-  form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2$.
-- The hypervolume achieved at each optimization cycle.
-- The memory usage during each optimization cycle.
-- The execution time for each optimization cycle.
+- The pareto front for bi-objective optimization problems, where the objective function has the
+  form $$\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2 \ \mathrm{or} \ \mathbb{R}^3$$
+- The hypervolume spanned at each optimization cycle.
+- The hypervolume improvement across optimization cycles.
+- The optimization execution time per optimization cycle.
+- The evolution as a function of optimization steps of:
+    - parameters
+    - objectives
+    - constraints
+    - trackers
 
 ## Tutorials
 
-Explore the following examples to understand how `pyBO` can be applied:
+Explore the following examples to learn how to use `pyBO`, and make sure to review the corresponding objective
+definitions.
 
 - [Branin-Currin](tutorials/BraninCurrin.py): An unconstrained bi-objective optimization problem.
-- [C2DTLZ2](tutorials/C2DTLZ2.py): A constrained bi-objective optimization problem.
-- [Binh and Korn](tutorials/BinhKorn.py): A constrained bi-objective optimization problem.
-
-## Custom Multi Objective Functions
-
-A custom multi objective function must inherit from ```BaseTestProblem, ABC```, and must include the following
-attributes:
-
-- ```self.ref_point```
-- ```self.negate```
-- ```evaluate_true```: this is the true objective. It must always be cast in its original form. If the objectives is
-  something to minimize, this must be written in its minimization form, as ```self.negate``` will flip its sign when
-  required in the ```forward``` method.
-- ```evaluate_slack```
-- this affects the sign of ```self.ref_point``` and of the objective function ```f``` in the ```forward``` method.
-  Therefore,
+- [Linear Equality Test](tutorials/linear_equality_test.py): A linear equality input constrained bi-objective
+  optimization problem.
+- [Linear Inequality Test](tutorials/linear_inequality_test.py): A linear inequality input constrained bi-objective
+  optimization problem.
+- [Binh and Korn](tutorials/BinhKorn.py): A nonlinear inequality input constrained bi-objective optimization
+  problem.
+- [Osyczka-Kundu](tutorials/OsyczkaKundu.py): A liner and nonlinear inequality input constrained bi-objective
+  optimization problem.
+- [C2DTLZ2](tutorials/C2DTLZ2.py): An output constrained bi-objective optimization problem.

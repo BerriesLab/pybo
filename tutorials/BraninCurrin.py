@@ -61,6 +61,7 @@ def main(n_samples=64, q: int = 1, ):
         acquisition_function_type=AcquisitionFunctionType.qLogEHVI,
         X=X,
         Y_obj=Y_obj,
+        batch_size=q,
     )
 
     """ Main optimization loop """
@@ -120,6 +121,6 @@ def main(n_samples=64, q: int = 1, ):
 
 if __name__ == "__main__":
     main_path = Path.cwd().parent
-    batch_sizes = [1]  # [1, 2, 4, 8]
+    batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
         main(n_samples=64, q=batch_size)

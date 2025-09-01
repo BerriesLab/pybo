@@ -62,6 +62,14 @@ posterior_pareto_kwargs = {
 }
 xy_plot_kwargs = {
     'marker': 'o',
+    's': ms ** 2,
+    'color': 'tab:orange',
+    'edgecolor': 'black',
+    'alpha': 1,
+    'linestyle': '-',
+}
+line2d_plot_kwargs = {
+    'marker': 'o',
     'markersize': ms,
     'color': 'tab:orange',
     'markeredgecolor': 'black',

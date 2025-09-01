@@ -74,6 +74,19 @@ class Mobo:
         self.device = device
         self.dtype = dtype
 
+        # === State attributes ===
+        self._new_X: torch.Tensor | None = None
+        self._model: ModelListGP | None = None
+        self._mll: SumMarginalLogLikelihood | None = None
+        self._ref_point: torch.Tensor | None = None
+        self._acquisition_function_list: list[AcquisitionFunction] | None = None
+        self._partitioning: torch.Tensor | None = None
+        self._pareto_front: torch.Tensor | None = None
+        self._acquisition_function_instance: AcquisitionFunction | None = None
+        self._sampler_instance: MCSampler | None = None
+        # TODO: add a way to keep track of the initial dataset size for plotting purposes
+        self._n_initial_samples: int | None = None
+
         # === Experiment Attributes ===
         self.experiment_name = experiment_name
         self._datetime = datetime.datetime.now()
@@ -95,17 +108,6 @@ class Mobo:
         self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
         self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
-
-        # === State attributes ===
-        self._new_X: torch.Tensor | None = None
-        self._model: ModelListGP | None = None
-        self._mll: SumMarginalLogLikelihood | None = None
-        self._ref_point: torch.Tensor | None = None
-        self._acquisition_function_list: list[AcquisitionFunction] | None = None
-        self._partitioning: torch.Tensor | None = None
-        self._pareto_front: torch.Tensor | None = None
-        self._acquisition_function_instance: AcquisitionFunction | None = None
-        self._sampler_instance: MCSampler | None = None
 
         # === Metrics ===
         self._hypervolume: list[float] = []
@@ -186,6 +188,7 @@ class Mobo:
         if X.shape[-1] != self.objective.dim:
             raise ValueError("X must have the same number of dimensions as objective.")
         self._X = X.to(self._device, self._dtype)
+        self.n_initial_samples = self._X.shape[0]
 
     @property
     def Y_obj(self) -> torch.Tensor | None:
@@ -397,6 +400,17 @@ class Mobo:
         if self._sampler_instance is None:
             print("A sampler has not been initialized yet.")
         return self._sampler_instance
+
+    @property
+    def n_initial_samples(self) -> int:
+        return self._n_initial_samples
+
+    @n_initial_samples.setter
+    def n_initial_samples(self, n: int):
+        if not isinstance(n, int) or n <= 0:
+            raise ValueError("n_initial_samples must be a positive integer")
+        if self._n_initial_samples is None:
+            self._n_initial_samples = n
 
     """ Optimizer """
 
