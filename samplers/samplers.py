@@ -41,8 +41,8 @@ class Sampler:
         This matches the BoTorch convention.
         """
         num_constraints = len(self.linear_equality_constraints)
-        A = torch.zeros(num_constraints, self.n_dimensions, dtype=self.dtype)
-        b = torch.zeros(num_constraints, dtype=self.dtype)
+        A = torch.zeros(num_constraints, self.n_dimensions, device=self.device, dtype=self.dtype)
+        b = torch.zeros(num_constraints, device=self.device, dtype=self.dtype)
 
         for i, (indices, coefficients, rhs) in enumerate(self.linear_equality_constraints):
             # The constraint is `Ax <= b`, so we use the given coefficients and rhs
@@ -61,8 +61,8 @@ class Sampler:
         This matches the BoTorch convention.
         """
         num_constraints = len(self.linear_inequality_constraints)
-        A = torch.zeros(num_constraints, self.n_dimensions, dtype=self.dtype)
-        b = torch.zeros(num_constraints, dtype=self.dtype)
+        A = torch.zeros(num_constraints, self.n_dimensions, device=self.device, dtype=self.dtype)
+        b = torch.zeros(num_constraints, device=self.device, dtype=self.dtype)
 
         for i, (indices, coefficients, rhs) in enumerate(self.linear_inequality_constraints):
             # The constraint is `Ax <= b`, so we use the given coefficients and rhs
@@ -71,14 +71,13 @@ class Sampler:
 
         return A, b
 
-    @staticmethod
-    def _project_onto_linear_equality_manifold(X: Tensor, A: Tensor, b: Tensor) -> Tensor:
+    def _project_onto_linear_equality_manifold(self, X: Tensor, A: Tensor, b: Tensor) -> Tensor:
         """
         Projects samples from the full space onto the linear equality hyperplane.
                     X_proj = x - A.T * (A * A.T)^-1 * (A * x - b)
         """
         # Calculate the projection matrix using torch.linalg.solve for stability
-        ATA_inv = torch.linalg.solve(A @ A.T, torch.eye(A.shape[0], dtype=A.dtype))
+        ATA_inv = torch.linalg.solve(A @ A.T, torch.eye(A.shape[0], device=self.device, dtype=A.dtype))
         # Calculate the error term (A*x - b) for each sample
         error = X @ A.T - b
         # Calculate the correction term
