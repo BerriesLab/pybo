@@ -62,6 +62,7 @@ def main(n_samples=64, q: int = 1, ):
         X=X,
         Y_obj=Y_obj,
         Y_track=Y_track,
+        batch_size=q,
     )
 
     """ Main optimization loop """
