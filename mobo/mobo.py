@@ -84,7 +84,6 @@ class Mobo:
         self._pareto_front: torch.Tensor | None = None
         self._acquisition_function_instance: AcquisitionFunction | None = None
         self._sampler_instance: MCSampler | None = None
-        # TODO: add a way to keep track of the initial dataset size for plotting purposes
         self._n_initial_samples: int | None = None
 
         # === Experiment Attributes ===
@@ -678,6 +677,9 @@ class Mobo:
                 options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
             )
         else:
+            # If nonlinear inequality input constraints are provided, use a custom initial condition
+            # generator that selects "num_restarts" points. These points are distributed according to
+            # "fraction_of_previous_X" between the current pareto front and randomly generated points.
             self._new_X, _ = optimize_acqf(
                 acq_function=self._acquisition_function_instance,
                 bounds=self._objective.bounds,
@@ -693,7 +695,7 @@ class Mobo:
                 if self._objective.nonlinear_inequality_input_constraints is not None
                 else None,
                 **{
-                    "fraction_of_previous_X": 0.5,
+                    "fraction_of_previous_X": 0.8,
                     "noise_scale": 0,
                 } if self.objective.nonlinear_inequality_input_constraints is not None
                 else {}

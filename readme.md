@@ -13,20 +13,22 @@ experimental constraints, and finding pareto-optimal solutions.
     - [Data Format](#data-format)
     - [Visualization](#visualization)
     - [Tutorials](#tutorials)
+    - [Notes](#notes)
 
 ## Key Features
 
 Version 0.1 currently supports:
 
-- Multi-objective optimization problems for functions of the
-  form $\mathbf{f}_0: \mathbb{R}^N \rightarrow \mathbb{R}^2, \mathbb{R}^3$.
+- Multi-objective optimization problems for vector-valued functions $$\mathbf{f}_0: \mathbb{R}^N \to \mathbb{R}^m$$
+  where $m = 2$ or $m = 3$.
 - Batch mode (q-batch) for parallel evaluations.
 - Linear equality constraints on the input domain (X).
 - Linear inequality constraints on the input domain (X).
 - Nonlinear inequality constraints on the input domain (X).
 - Linear and non-linear inequality constraints on the output domain (Y).
 - Observations noise (variance).
-- The following acquisition functions: qEHVI, qLogEHVI, qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI, qNParEGO
+- The following Monte Carlo based acquisition functions: qEHVI, qLogEHVI, qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI,
+  qNParEGO.
 - Easy-to-write custom objectives, including trackers and penalization.
 - Plotting of optimization results and metrics.
 - Pythonic integration in experimental workflows.
@@ -34,12 +36,12 @@ Version 0.1 currently supports:
 
 ## Installation
 
-Currently, the package is only available for local distribution. To install, download the package
-in the dist/ folder, open the terminal and type:
+Currently, the package is only available for local installation.
 
-`pip install build`
-`python -m build`
-`pip install dist/my_package-0.1.0-py3-none-any.whl`
+1. Install required build tools (if not already installed): <br>`python -m pip install --upgrade build setuptools wheel`
+2. Build the package: <br>`python -m build`
+3. Install the package locally: <br>`pip install dist/pyBO-0.1.0-py3-none-any.whl` <br> (Replace
+   pyBO-0.1.0-py3-none-any.whl with the actual filename in your dist/ folder)
 
 ## Experimental workflow
 
@@ -71,14 +73,15 @@ flowchart TD
 
 pyBO consists of the following packages:
 
-- constraints: Handles constraint definitions for the optimization problem.
-- mobo: A stateful class that manages the Bayesian optimization loop.
-- objectives: Objectives are designed to provide all information required by Mobo, including bounds, constraints, the
-  reference point, and the target objective to minimize. The optimization problem is defined in the original space, as
-  is the reference point. By specifying the objective to minimize, Mobo automatically handles any necessary sign flips.
-- samplers: Provides functionality for constrained sampling.
-- plotters: Classes for visualizing optimization results and tracking parameter evolution.
-- utils: Miscellaneous utility functions used across the package.
+- **constraints**: Handles constraint definitions for the optimization problem.
+- **mobo**: A stateful class that manages the Bayesian optimization loop.
+- **objectives**: classes designed to provide all information required by Mobo, including bounds, constraints,
+  the reference point, and the target objectives to optimize. The optimization problem is defined in the original space,
+  as is the reference point. By specifying the objective to minimize, Mobo automatically handles any necessary sign
+  flips.
+- **samplers**: Provides functionality for constrained sampling.
+- **plotters**: Classes for visualizing optimization results and tracking parameter evolution.
+- **utils**: Miscellaneous utility functions used across the package.
 
 ### Data Format
 
@@ -144,3 +147,11 @@ definitions.
 - [Osyczka-Kundu](tutorials/OsyczkaKundu.py): A liner and nonlinear inequality input constrained bi-objective
   optimization problem.
 - [C2DTLZ2](tutorials/C2DTLZ2.py): An output constrained bi-objective optimization problem.
+
+## Notes
+
+- Sporadically, the following error has been observed: `RuntimeError: main thread is not in main loop Tcl_AsyncDelete:
+  async handler deleted by the wrong thread`. This traceback appears to originate from the TkAgg backend, which depends
+  on Tkinter. To suppress this error, `matplotlib` is imported with the appropriate backend configuration.
+  Unfortunately, this approach prevents figures from being displayed on screen, meaning that `show()` will no longer
+  function.

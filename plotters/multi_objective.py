@@ -1,28 +1,20 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-
-from sklearn.decomposition import PCA
-from matplotlib.tri import Triangulation
 import matplotlib as mpl
-from torch.cuda import device
-
 from mobo.mobo import Mobo
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
-
 from plotters.base_class import PlotterBase
 from plotters.utils import *
 
 
 class MultiObjectivePlotter(PlotterBase):
     """
-    A class for visualizing multi-objective functions from a Mobo object in 2D.
-    The class includes methods requiring only Minimal user input; most settings
-    are automatically inferred from the `Mobo` object.
+    A class for visualizing bi- and three-objective optimization problems.
+    The class includes methods requiring only Minimal user input: most settings
+    are automatically inferred from the passed `Mobo` object.
 
     Key features:
-    - Maps N-dimensional objective data to a 2D scatter plot.
+    - Maps 2 and 3-dimensional objective data to a 2D scatter plot.
     - Supports color-coding based on a selected objective or tracker.
     - Can highlight Pareto fronts for selected objectives.
     - Can include ground-truth evaluations if provided.
@@ -31,7 +23,7 @@ class MultiObjectivePlotter(PlotterBase):
     def __init__(
             self,
             mobo: Mobo,
-            title: str | None = None,
+            title: str | None = "Pareto front",
             idx_x: int = 0,
             idx_y: int = 1,
             idx_color: int | None = None,
@@ -53,8 +45,7 @@ class MultiObjectivePlotter(PlotterBase):
             - X_gt (torch.Tensor | None, optional): Input parameters used to compute ground-truth objectives.
                 Default is None.
         """
-        # TODO: set labels to default if not provided
-        super().__init__(title="Pareto Front")
+        super().__init__(title=title)
         self.mobo = mobo
         self.idx_x = idx_x
         self.idx_y = idx_y

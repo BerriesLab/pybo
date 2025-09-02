@@ -1,6 +1,9 @@
 from pathlib import Path
 from typing import List, Tuple
+import matplotlib
 
+matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show().
+print(f"Matplotlib backend: {matplotlib.get_backend()}")
 from matplotlib import pyplot as plt
 
 
