@@ -38,9 +38,10 @@ Version 0.1 currently supports:
 
 Currently, the package is only available for local installation.
 
-1. Install required build tools (if not already installed): <br>`python -m pip install --upgrade build setuptools wheel`
-2. Build the package: <br>`python -m build`
-3. Install the package locally: <br>`pip install dist/pyBO-0.1.0-py3-none-any.whl` <br> (Replace
+1. Clone the repository: <br>`git clone https://github.com/BerriesLab/pybo`
+2. Install required build tools (if not already installed): <br>`python -m pip install --upgrade build setuptools wheel`
+3. Build the package: <br>`python -m build`
+4. Install the package locally: <br>`pip install dist/pyBO-0.1.0-py3-none-any.whl` <br> (Replace
    pyBO-0.1.0-py3-none-any.whl with the actual filename in your dist/ folder)
 
 ## Experimental workflow
