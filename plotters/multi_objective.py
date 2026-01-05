@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib as mpl
-from mobo.mobo import Mobo
+from mobo.bayesian_optimizer import BayesianOptimizer
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 from plotters.base_class import PlotterBase
@@ -22,7 +22,7 @@ class MultiObjectivePlotter(PlotterBase):
 
     def __init__(
             self,
-            mobo: Mobo,
+            mobo: BayesianOptimizer,
             title: str | None = "Pareto front",
             idx_x: int = 0,
             idx_y: int = 1,

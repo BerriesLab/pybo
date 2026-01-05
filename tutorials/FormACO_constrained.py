@@ -1,8 +1,8 @@
 import os
 import torch
 from pathlib import Path
-from mobo.mobo import Mobo
-from objectives.formaco import FormACOMCMultiOutputConstrainedObjective
+from mobo.bayesian_optimizer import BayesianOptimizer
+from objectives.multi_objective.formaco import FormACOMCMultiOutputConstrainedObjective
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -53,7 +53,7 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Instantiate a Mobo object """
-    mobo = Mobo(
+    mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,

@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 from constraints.output_constraints import Identity
-from objectives.base_class import MCMultiOutputBase
+from objectives.multi_objective.base_class import MCMultiOutputBase
 
 
 class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
@@ -14,9 +14,9 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         - Orbiting Time: Requires values > 40 mins.
 
     3x parameters:
-        - 2 * Voltage Step [0.1, 20] where the max V_oc = U + 2 * (1/2 UHPS)
-        - Delay Time 1 [0, 127] where t1 = 1.28 x [0, 127] us
-        - Delay Time 2 [0, 127] where t2 = 1.28 x [0, 127] us
+        - Maximum Current [7.5, 15]
+        - Pedestal Current [3.0, 7.5]
+        - Maximum Ramp Time [0.1*78, 1*78], where ON time = 78 us
 
     Reference point:
         - Machining Time: 300 min
@@ -29,14 +29,14 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             dtype=dtype,
             dim=3,
             parameter_names=[
-                "Voltage Step (V)",
-                "Delay Time 1 (μs)",
-                "Delay Time 2 (μs)"
+                "Maximum Current (A)",
+                "Pedestal Current (A)",
+                "Maximum Ramp Time (μs)"
             ],
             num_objectives=2,
             objective_names=[
                 "Machining Time (min)",
-                "Tool Wear (μm)",
+                "Electrode Wear (μm)",
             ],
             num_constraints=1,
             constraint_names=[
@@ -152,7 +152,7 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         return selected
 
 
-class SparkAcceleratorMCMultiOutputObjective(MCMultiOutputBase):
+class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     """
     3x objectives:
         - Machining Time: Originally intended for minimization.
@@ -160,13 +160,13 @@ class SparkAcceleratorMCMultiOutputObjective(MCMultiOutputBase):
         - Orbiting Time: Requires values > 40 mins -> intended for maximization.
 
     3x parameters:
-        - 2 * Voltage Step [0.1, 20] where the max V_oc = U + 2 * (1/2 UHPS)
-        - Delay Time 1 [0, 127] where t1 = 1.28 x [0, 127] us
-        - Delay Time 2 [0, 127] where t2 = 1.28 x [0, 127] us
+        - Maximum Current [7.5, 15]
+        - Pedestal Current [3.0, 7.5]
+        - Maximum Ramp Time [0.1*78, 1*78], where ON time = 78 us
 
     Reference point:
         - Machining Time: 300 min
-        - Tool Wear: 150 um
+        - Electrode Wear: 150 um
         - Orbiting Time: 10 min
         - Orbiting Penalty Time: -50 min (see Note below)
     """
@@ -177,17 +177,17 @@ class SparkAcceleratorMCMultiOutputObjective(MCMultiOutputBase):
             dtype=dtype,
             dim=3,
             parameter_names=[
-                "Voltage Step (V)",
-                "Delay Time 1 (μs)",
-                "Delay Time 2 (μs)"
+                "Maximum Current (A)",
+                "Pedestal Current (A)",
+                "Maximum Ramp Time (μs)"
             ],
             num_objectives=3,
             objective_names=[
                 "Machining Time (min)",
-                "Tool Wear (μm)",
+                "Electrode Wear (μm)",
                 "Orbiting Time Penalty (min)",
             ],
-            bounds=[(0.1, 20), (0, 127), (0, 127)],
+            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True, False],
             ref_point=[300, 150, -50],
             num_outcomes=3,

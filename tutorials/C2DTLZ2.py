@@ -1,9 +1,9 @@
 import os
 import torch
 from pathlib import Path
-from mobo.mobo import Mobo
+from mobo.bayesian_optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
-from objectives.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
+from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective import MultiObjectivePlotter
@@ -52,7 +52,7 @@ def main(n_samples=64, q: int = 1, ):
     X_gt = sampler.draw_samples(n=10000)
 
     """ Instantiate a Mobo object """
-    mobo = Mobo(
+    mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,

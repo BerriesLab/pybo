@@ -1,14 +1,14 @@
 import os
 import torch
 from pathlib import Path
-from mobo.mobo import Mobo
+from mobo.bayesian_optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective import MultiObjectivePlotter
 from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
     ConstraintPlotter, TrackerPlotter, ParameterPlotter
-from objectives.binh_korn import BinhAndKornMCMultiOutputObjective
+from objectives.multi_objective.binh_korn import BinhAndKornMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -48,7 +48,7 @@ def main(n_samples=64, q: int = 1, ):
     X_gt = sampler.draw_samples(n=1000)
 
     """ Main optimization loop """
-    mobo = Mobo(
+    mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,

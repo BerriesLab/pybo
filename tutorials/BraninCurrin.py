@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from mobo.mobo import Mobo
+from mobo.bayesian_optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -9,7 +9,7 @@ from plotters.multi_objective import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
     ObjectivePlotter, TrackerPlotter, ConstraintPlotter
 from plotters.utils import make_grid
-from objectives.branin_currin import BraninCurrinMCMultiOutputObjective
+from objectives.multi_objective.branin_currin import BraninCurrinMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -53,7 +53,7 @@ def main(n_samples: int = 64, q: int = 1, ):
     )
 
     """ Instantiate a Mobo object """
-    mobo = Mobo(
+    mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,

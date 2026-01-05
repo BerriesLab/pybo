@@ -23,7 +23,16 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.acquisition import qNoisyExpectedImprovement, GenericMCObjective, AcquisitionFunction
+from botorch.acquisition import (
+    qNoisyExpectedImprovement,
+    GenericMCObjective,
+    AcquisitionFunction,
+    qExpectedImprovement,
+    qLogExpectedImprovement,
+    qLogNoisyExpectedImprovement,
+    qProbabilityOfImprovement,
+    qUpperConfidenceBound
+)
 from botorch.acquisition.multi_objective import (
     qExpectedHypervolumeImprovement,
     qNoisyExpectedHypervolumeImprovement,
@@ -34,17 +43,18 @@ from botorch.utils.transforms import normalize
 from botorch.utils.sampling import sample_simplex
 from gpytorch.constraints import GreaterThan
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
-from objectives.base_class import MCMultiOutputBase
+from objectives.multi_objective.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
 from gpytorch.mlls import SumMarginalLogLikelihood
 from utils.types import *
 
 
-class Mobo:
+class BayesianOptimizer:
     """
-    A wrapper around BoTorch for (Multi) Objective Bayesian Optimization.
-    Similarly to BoTorch, this class is designed to work with maximization
-    problems only.
+    A wrapper around BoTorch for Bayesian Optimization supporting both
+    single-objective and multi-objective optimization.
+    This class is designed to work with maximization problems only.
+    For minimization, objective values must be negated.
     """
 
     def __init__(
@@ -52,7 +62,7 @@ class Mobo:
             experiment_name: str,
             device: torch.device,
             dtype: torch.device.type,
-            objective: MCMultiOutputBase,
+            objective: MCObjectiveBase,
             X: torch.Tensor | None = None,
             Y_obj: torch.Tensor | None = None,
             Y_obj_var: torch.Tensor | None = None,
@@ -85,6 +95,7 @@ class Mobo:
         self._acquisition_function_instance: AcquisitionFunction | None = None
         self._sampler_instance: MCSampler | None = None
         self._n_initial_samples: int | None = None
+        self._best_f: float | None = None  # For single-objective
 
         # === Experiment Attributes ===
         self.experiment_name = experiment_name
@@ -109,7 +120,8 @@ class Mobo:
         self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
 
         # === Metrics ===
-        self._hypervolume: list[float] = []
+        self._hypervolume: list[float] = []  # for multi-objective
+        self._best_values: list[float] = []  # For single-objective
         self._elapsed_time: list[float] = []
 
     # === Pickling helper ===
@@ -167,12 +179,12 @@ class Mobo:
         return self._datetime
 
     @property
-    def objective(self) -> Union[MCMultiOutputBase,]:
+    def objective(self) -> Union[MCObjectiveBase,]:
         return self._objective
 
     @objective.setter
-    def objective(self, objective: Union[MCMultiOutputBase]):
-        if not isinstance(objective, Union[MCMultiOutputBase]):
+    def objective(self, objective: Union[MCObjectiveBase]):
+        if not isinstance(objective, Union[MCObjectiveBase]):
             raise ValueError("Objective is not compatible.")
         self._objective = objective
 
@@ -339,7 +351,7 @@ class Mobo:
 
     # === STATE properties ===
     @property
-    def model(self) -> SingleTaskGP | None:
+    def model(self) -> SingleTaskGP | ModelListGP | None:
         if self._model is None:
             print("A model has not been generated yet.")
         return self._model
@@ -385,6 +397,10 @@ class Mobo:
         return self._hypervolume
 
     @property
+    def best_values(self):
+        return self._best_values
+
+    @property
     def elapsed_time(self):
         return self._elapsed_time
 
@@ -410,6 +426,11 @@ class Mobo:
             raise ValueError("n_initial_samples must be a positive integer")
         if self._n_initial_samples is None:
             self._n_initial_samples = n
+
+    @property
+    def best_f(self) -> float | None:
+        """Current best observed value (for single-objective)."""
+        return self._best_f
 
     """ Optimizer """
 
@@ -497,6 +518,31 @@ class Mobo:
         if verbose:
             print("✓")
 
+    def compute_best_f(self, verbose=True):
+        """Compute the current best observed value (for single-objective)."""
+
+        if verbose:
+            print("Computing best observed value... ", end="")
+
+        # For single-objective, get the best value considering constraints
+        if self._objective.output_constraints is None:
+            # No constraints: simply take the max
+            self._best_f = self._Y_obj.max().item()
+        else:
+            # With constraints: find best among feasible points
+            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._objective.output_constraints]).all(dim=0)
+            if feasible_mask.any():
+                self._best_f = self._Y_obj[feasible_mask].max().item()
+            else:
+                # No feasible points: use worst observed value
+                self._best_f = self._Y_obj.min().item()
+                if verbose:
+                    print("(no feasible points) ", end="")
+
+        if verbose:
+            print(f"✓ (best_f = {self._best_f:.4f})")
+
     def compute_reference_point(self, verbose=True):
         """
         Compute and set the reference point in the maximization space. Note that the reference point in the
@@ -517,14 +563,60 @@ class Mobo:
         if verbose:
             print("Initializing acquisition function... ", end="")
 
-        if self._acquisition_function_type == AcquisitionFunctionType.qEHVI:
+        # === Single-Objective Acquisition Functions ===
+        if self.acquisition_function_type == AcquisitionFunctionType.qEI:
+            self._acquisition_function_instance = qExpectedImprovement(
+                model=self._model,
+                best_f=self._best_f,
+                sampler=self._sampler_instance,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.qLogEI:
+            self._acquisition_function_instance = qLogExpectedImprovement(
+                model=self._model,
+                best_f=self._best_f,
+                sampler=self._sampler_instance,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.qNEI:
+            self._acquisition_function_instance = qNoisyExpectedImprovement(
+                model=self._model,
+                X_baseline=self._X,
+                sampler=self._sampler_instance,
+                prune_baseline=True,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.qLogNEI:
+            self._acquisition_function_instance = qLogNoisyExpectedImprovement(
+                model=self._model,
+                X_baseline=self._X,
+                sampler=self._sampler_instance,
+                prune_baseline=True,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.qPI:
+            self._acquisition_function_instance = qProbabilityOfImprovement(
+                model=self._model,
+                best_f=self._best_f,
+                sampler=self._sampler_instance,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.qUCB:
+            self._acquisition_function_instance = qUpperConfidenceBound(
+                model=self._model,
+                beta=self.ucb_beta,
+                sampler=self._sampler_instance,
+            )
+
+        # === Multi-Objective Acquisition Functions ===
+        elif self._acquisition_function_type == AcquisitionFunctionType.qEHVI:
             self.initialize_partitioning()
             self._acquisition_function_instance = qExpectedHypervolumeImprovement(
                 model=self._model,
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
-                objective=self._objective,
+                objective=self._objective,  # type: ignore
                 constraints=self._objective.output_constraints,
             )
 
@@ -535,7 +627,7 @@ class Mobo:
                 ref_point=self._ref_point,
                 partitioning=self._partitioning,
                 sampler=self._sampler_instance,
-                objective=self._objective,
+                objective=self._objective,  # type: ignore
                 constraints=self._objective.output_constraints,
             )
 
@@ -546,7 +638,7 @@ class Mobo:
                 X_baseline=self._X,
                 sampler=self._sampler_instance,
                 prune_baseline=True,
-                objective=self._objective,
+                objective=self._objective,  # type: ignore
                 constraints=self._objective.output_constraints,
             )
 
@@ -558,7 +650,7 @@ class Mobo:
                     X_baseline=self._X,
                     prune_baseline=True,
                     sampler=self._sampler_instance,
-                    objective=self._objective,
+                    objective=self._objective,  # type: ignore
                     constraints=self._objective.output_constraints,
                 )
             )
@@ -571,7 +663,7 @@ class Mobo:
                     X_baseline=self._X,
                     prune_baseline=True,
                     sampler=self._sampler_instance,
-                    objective=self._objective,
+                    objective=self._objective,  # type: ignore
                     constraints=self._objective.output_constraints,
                     exploration_weight=1.0,
                 )
@@ -585,7 +677,7 @@ class Mobo:
                     X_baseline=self._X,
                     prune_baseline=True,
                     sampler=self._sampler_instance,
-                    objective=self._objective,
+                    objective=self._objective,  # type: ignore
                     constraints=self._objective.output_constraints,
                     min_dist_radius=1.0,
                     distance_penalty_weight=1.0,
@@ -805,6 +897,8 @@ class Mobo:
         "is_non_dominated" assumes maximization, the Y must be cast into a
         maximization problem before computing the pareto front.
         """
+        if self.objective.num_objectives == 1:
+            raise ValueError("Pareto front cannot be computed for single-objective problems.")
 
         if verbose:
             print("Finding Pareto front... ", end="")
@@ -836,6 +930,9 @@ class Mobo:
         """
         Compute the hypervolume. It assumes maximization.
         """
+        if self.objective.num_objectives == 1:
+            raise ValueError("Hypervolume cannot be computed for single-objective problems.")
+
         if verbose:
             print("Computing hypervolume... ", end="")
 
@@ -856,6 +953,21 @@ class Mobo:
             print("✓")
             print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
 
+    # TODO: is this useful at all?
+    def compute_best_value(self, verbose=True):
+        """Track the best observed value (single-objective only)."""
+
+        if not self.objective.num_objectives == 1:
+            raise ValueError("Best value cannot be computed for multi-objective problems.")
+
+        if verbose:
+            print("Computing best value... ", end="")
+
+        self._best_values.append(self._best_f)
+
+        if verbose:
+            print(f"✓ (best = {self._best_f:.4f})")
+
     def optimize(self, verbose=True):
 
         warnings.filterwarnings("ignore", category=BadInitialCandidatesWarning)
@@ -866,9 +978,15 @@ class Mobo:
 
         t0 = time.monotonic()
         self.initialize_model(verbose=verbose)
-        self.compute_reference_point(verbose=verbose)
         self.initialize_sampler(verbose=verbose)
         self.fit_model(verbose=verbose)
+
+        if self._objective.num_objectives == 1:
+            # if self._acquisition_function_type.requires_best_f():
+            self.compute_best_f(verbose=verbose)
+        else:
+            self.compute_reference_point(verbose=verbose)
+
         self.initialize_acquisition_function(verbose=verbose)
         self.optimize_acquisition_function(verbose=verbose)
         t1 = time.monotonic()
@@ -913,6 +1031,19 @@ class Mobo:
         if new_Y_track_var is not None:
             new_Y_track_var = new_Y_track_var.to(self._device, self._dtype)
             self._Y_track_var = torch.cat([self._Y_track_var, new_Y_track_var], dim=0)
+
+    def get_optimization_history(self) -> dict:
+        """Return optimization history metrics."""
+        if self.objective.num_objectives == 1:
+            return {
+                "best_values": self._best_values,
+                "elapsed_time": self._elapsed_time,
+            }
+        else:
+            return {
+                "hypervolume": self._hypervolume,
+                "elapsed_time": self._elapsed_time,
+            }
 
     """ I/O """
 

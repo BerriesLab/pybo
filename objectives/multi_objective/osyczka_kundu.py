@@ -1,5 +1,5 @@
 import torch
-from objectives.base_class import MCMultiOutputBase
+from objectives.multi_objective.base_class import MCMultiOutputBase
 from torch import Tensor
 
 

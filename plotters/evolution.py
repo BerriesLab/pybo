@@ -1,12 +1,12 @@
 from pathlib import Path
 import numpy as np
-from mobo.mobo import Mobo
+from mobo.bayesian_optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 from plotters.utils import xy_plot_kwargs, line2d_plot_kwargs
 
 
 class HypervolumePlotter(PlotterBase):
-    def __init__(self, mobo: Mobo):
+    def __init__(self, mobo: BayesianOptimizer):
         super().__init__(
             title="Hypervolume",
             labels=[
@@ -35,7 +35,7 @@ class HypervolumePlotter(PlotterBase):
 
 
 class HypervolumeImprovementPlotter(PlotterBase):
-    def __init__(self, mobo: Mobo):
+    def __init__(self, mobo: BayesianOptimizer):
         super().__init__(
             title="Hypervolume Improvement",
             labels=[
@@ -66,7 +66,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
 
 
 class ElapsedTimePlotter(PlotterBase):
-    def __init__(self, mobo: Mobo):
+    def __init__(self, mobo: BayesianOptimizer):
         super().__init__(
             title="Elapsed Time",
             labels=[
@@ -89,7 +89,7 @@ class ElapsedTimePlotter(PlotterBase):
 
 
 class ParameterPlotter(PlotterBase):
-    def __init__(self, mobo: Mobo, idx: int):
+    def __init__(self, mobo: BayesianOptimizer, idx: int):
         super().__init__(
             title=f"{mobo.objective.parameter_names[idx]}"
             if mobo.objective.parameter_names
@@ -170,7 +170,7 @@ class ParameterPlotter(PlotterBase):
 
 
 class ObjectivePlotter(PlotterBase):
-    def __init__(self, mobo: Mobo, idx: int):
+    def __init__(self, mobo: BayesianOptimizer, idx: int):
         super().__init__(
             title=mobo.objective.objective_names[idx]
             if mobo.objective.objective_names is not None
@@ -250,7 +250,7 @@ class ObjectivePlotter(PlotterBase):
 
 
 class ConstraintPlotter(PlotterBase):
-    def __init__(self, mobo: Mobo, idx: int):
+    def __init__(self, mobo: BayesianOptimizer, idx: int):
         super().__init__(
             title=mobo.objective.constraint_names[idx]
             if mobo.objective.constraint_names
@@ -331,7 +331,7 @@ class ConstraintPlotter(PlotterBase):
 
 
 class TrackerPlotter(PlotterBase):
-    def __init__(self, mobo: Mobo, idx: int):
+    def __init__(self, mobo: BayesianOptimizer, idx: int):
         super().__init__(
             title=mobo.objective.tracker_names[idx]
             if mobo.objective.tracker_names

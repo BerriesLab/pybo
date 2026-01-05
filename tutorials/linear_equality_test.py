@@ -1,8 +1,8 @@
 import os
 import torch
 from pathlib import Path
-from mobo.mobo import Mobo
-from objectives.linear_equality_test import LinearEqualityTestProblem
+from mobo.bayesian_optimizer import BayesianOptimizer
+from objectives.multi_objective.linear_equality_test import LinearEqualityTestProblem
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -48,7 +48,7 @@ def main(n_samples=64, q: int = 1, ):
     X_gt = sampler.draw_samples(n=100)
 
     """ Instantiate a Mobo object """
-    mobo = Mobo(
+    mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,
