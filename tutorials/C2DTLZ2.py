@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from mobo.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
@@ -93,12 +93,12 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_hypervolume()
 
         """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"mobo.dat")
+        mobo.to_file(output_path=Path.cwd() / f"bayesian_optimizer.dat")
 
         """ Plots """
         multi_objective_plotter = MultiObjectivePlotter(
             title="Pareto Front",
-            mobo=mobo,
+            bayesian_optimizer=mobo,
             X_gt=X_gt,
             idx_x=0,
             idx_y=1,

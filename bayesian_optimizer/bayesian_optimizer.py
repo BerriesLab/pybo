@@ -23,6 +23,12 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
+from botorch.acquisition.analytic import (
+    ExpectedImprovement,
+    LogExpectedImprovement,
+    ProbabilityOfImprovement,
+    UpperConfidenceBound,
+)
 from botorch.acquisition import (
     qNoisyExpectedImprovement,
     GenericMCObjective,
@@ -42,6 +48,20 @@ from botorch.acquisition.multi_objective import (
 from botorch.utils.transforms import normalize
 from botorch.utils.sampling import sample_simplex
 from gpytorch.constraints import GreaterThan
+from gpytorch.kernels.keops import RBFKernel
+from gpytorch.kernels import (
+    ScaleKernel,
+    RBFKernel as StandardRBFKernel,
+    MaternKernel,
+    PeriodicKernel,
+    RQKernel,
+    SpectralMixtureKernel,
+    LinearKernel,
+    PolynomialKernel,
+    CosineKernel,
+    Kernel,
+)
+
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
 from objectives.multi_objective.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
@@ -71,6 +91,7 @@ class BayesianOptimizer:
             Y_track: torch.Tensor | None = None,
             Y_track_var: torch.Tensor | None = None,
             acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qNEHVI,
+            kernel_type: KernelType = KernelType.RBF,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
             mc_samples: int = 256,
@@ -78,6 +99,8 @@ class BayesianOptimizer:
             n_acqf_opt_max_iter: int = 250,
             n_acqf_opt_restarts: int = 1,
             n_model_fit_restarts: int = 10,
+            ucb_beta: float = 2.0,
+
     ):
 
         # === Device Attributes ===
@@ -91,11 +114,19 @@ class BayesianOptimizer:
         self._ref_point: torch.Tensor | None = None
         self._acquisition_function_list: list[AcquisitionFunction] | None = None
         self._partitioning: torch.Tensor | None = None
-        self._pareto_front: torch.Tensor | None = None
+        # self._pareto_front: torch.Tensor | None = None
         self._acquisition_function_instance: AcquisitionFunction | None = None
         self._sampler_instance: MCSampler | None = None
         self._n_initial_samples: int | None = None
-        self._best_f: float | None = None  # For single-objective
+        self._feasible_mask: torch.Tensor | None = None
+
+        # For single-objective
+        self._best_f: torch.Tensor | None = None
+        self._best_feasible_Y: torch.Tensor | None = None
+        self._best_feasible_X: torch.Tensor | None = None
+        # For multi-objective
+        self._feasible_pareto_front_Y: torch.Tensor | None = None
+        self._feasible_pareto_front_X: torch.Tensor | None = None
 
         # === Experiment Attributes ===
         self.experiment_name = experiment_name
@@ -111,6 +142,7 @@ class BayesianOptimizer:
 
         # === Optimization attributes ===
         self.acquisition_function_type = acquisition_function_type
+        self.kernel_type = kernel_type
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
@@ -118,6 +150,7 @@ class BayesianOptimizer:
         self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
         self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
+        self.ucb_beta = ucb_beta
 
         # === Metrics ===
         self._hypervolume: list[float] = []  # for multi-objective
@@ -428,11 +461,94 @@ class BayesianOptimizer:
             self._n_initial_samples = n
 
     @property
-    def best_f(self) -> float | None:
-        """Current best observed value (for single-objective)."""
+    def feasible_mask(self) -> torch.Tensor | None:
+        """Boolean mask indicating which observations are feasible."""
+        return self._feasible_mask
+
+    @property
+    def best_feasible_X(self) -> torch.Tensor | None:
+        """X value at best feasible observation (single-objective)."""
+        return self._best_feasible_X
+
+    @property
+    def best_feasible_Y(self) -> torch.Tensor | None:
+        """Y value at best feasible observation (single-objective)."""
+        return self._best_feasible_Y
+
+    @property
+    def best_f(self) -> torch.Tensor | None:
         return self._best_f
 
+    @property
+    def feasible_pareto_front_X(self) -> torch.Tensor | None:
+        return self._feasible_pareto_front_X
+
+    @property
+    def feasible_pareto_front_Y(self) -> torch.Tensor | None:
+        return self._feasible_pareto_front_Y
+
+    @property
+    def kernel_type(self) -> KernelType:
+        return self._kernel_type
+
+    @kernel_type.setter
+    def kernel_type(self, kernel_type: KernelType):
+        if not isinstance(kernel_type, KernelType):
+            raise ValueError("kernel_type must be of type KernelType")
+        self._kernel_type = kernel_type
+
     """ Optimizer """
+
+    def initialize_kernel(self, ard_num_dims: int):
+        """ Build a kernel based on the kernel type. All kernels use default
+        hyperparameters which are then optimized during model fitting.
+        'Ard_num_dims' is the number of dimensions for ARD (Automatic Relevance
+        Determination). It returns a gpytorch Kernel instance.
+        """
+
+        # === Basic Kernels ===
+        if self._kernel_type == KernelType.RBF:
+            return ScaleKernel(StandardRBFKernel(ard_num_dims=ard_num_dims))
+
+        elif self._kernel_type == KernelType.MATERN:
+            return ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=ard_num_dims))
+
+        elif self._kernel_type == KernelType.PERIODIC:
+            return ScaleKernel(PeriodicKernel())
+
+        elif self._kernel_type == KernelType.RQ:
+            return ScaleKernel(RQKernel(ard_num_dims=ard_num_dims))
+
+        elif self._kernel_type == KernelType.SPECTRAL_MIXTURE:
+            return SpectralMixtureKernel(num_mixtures=4, ard_num_dims=ard_num_dims)
+
+        elif self._kernel_type == KernelType.LINEAR:
+            return ScaleKernel(LinearKernel(ard_num_dims=ard_num_dims))
+
+        elif self._kernel_type == KernelType.POLYNOMIAL:
+            return ScaleKernel(PolynomialKernel(power=2, ard_num_dims=ard_num_dims))
+
+        elif self._kernel_type == KernelType.COSINE:
+            return ScaleKernel(CosineKernel())
+
+        # === Composite Kernels ===
+        elif self._kernel_type == KernelType.RBF_PLUS_PERIODIC:
+            rbf = ScaleKernel(StandardRBFKernel(ard_num_dims=ard_num_dims))
+            periodic = ScaleKernel(PeriodicKernel())
+            return rbf + periodic
+
+        elif self._kernel_type == KernelType.RBF_TIMES_PERIODIC:
+            rbf = StandardRBFKernel(ard_num_dims=ard_num_dims)
+            periodic = PeriodicKernel()
+            return ScaleKernel(rbf * periodic)
+
+        elif self._kernel_type == KernelType.MATERN_PLUS_PERIODIC:
+            matern = ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=ard_num_dims))
+            periodic = ScaleKernel(PeriodicKernel())
+            return matern + periodic
+
+        else:
+            raise ValueError(f"Unsupported kernel type: {kernel_type}")
 
     def initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
@@ -463,6 +579,8 @@ class BayesianOptimizer:
         train_x, train_y, train_y_var = self.prepare_training_dataset()
         models = []
         for i in range(0, train_y.shape[-1]):
+            # Build a fresh covariance module for each model (kernels have learnable params)
+            covar_module = self.initialize_kernel(ard_num_dims=self.objective.dim)
             models.append(
                 SingleTaskGP(
                     train_X=train_x,
@@ -470,6 +588,7 @@ class BayesianOptimizer:
                     train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
+                    covar_module=covar_module,
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
                 )
             )
@@ -505,8 +624,16 @@ class BayesianOptimizer:
         return train_x, train_y, train_var
 
     def initialize_sampler(self, verbose=True):
+        """Initialize sampler for Monte Carlo acquisition functions."""
+
         if verbose:
             print("Initializing sampler... ", end="")
+
+        # Skip for analytical acquisition functions
+        if self._acquisition_function_type.is_analytical():
+            if verbose:
+                print("Skipping sampler (analytical acquisition function).")
+            return
 
         if self._sampler_type.name == SamplerType.Sobol.name:
             self._sampler_instance = SobolQMCNormalSampler(
@@ -518,35 +645,11 @@ class BayesianOptimizer:
         if verbose:
             print("✓")
 
-    def compute_best_f(self, verbose=True):
-        """Compute the current best observed value (for single-objective)."""
-
-        if verbose:
-            print("Computing best observed value... ", end="")
-
-        # For single-objective, get the best value considering constraints
-        if self._objective.output_constraints is None:
-            # No constraints: simply take the max
-            self._best_f = self._Y_obj.max().item()
-        else:
-            # With constraints: find best among feasible points
-            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._objective.output_constraints]).all(dim=0)
-            if feasible_mask.any():
-                self._best_f = self._Y_obj[feasible_mask].max().item()
-            else:
-                # No feasible points: use worst observed value
-                self._best_f = self._Y_obj.min().item()
-                if verbose:
-                    print("(no feasible points) ", end="")
-
-        if verbose:
-            print(f"✓ (best_f = {self._best_f:.4f})")
-
     def compute_reference_point(self, verbose=True):
         """
-        Compute and set the reference point in the maximization space. Note that the reference point in the
-        original space must be provided explicitly by the objective ("self._objective.ref_point").
+        Compute and set the reference point in the maximization space.
+        Note that the reference point in the original space must be
+        provided explicitly by the objective ("self._objective.ref_point").
         """
 
         if verbose:
@@ -563,18 +666,51 @@ class BayesianOptimizer:
         if verbose:
             print("Initializing acquisition function... ", end="")
 
-        # === Single-Objective Acquisition Functions ===
-        if self.acquisition_function_type == AcquisitionFunctionType.qEI:
-            self._acquisition_function_instance = qExpectedImprovement(
+        # === Single-Objective: Analytical (q=1 only) ===
+        if self.acquisition_function_type == AcquisitionFunctionType.EI:
+            if self._batch_size != 1:
+                raise ValueError("Analytical EI only supports batch_size=1. Use qEI for batch_size>1.")
+            self._acquisition_function_instance = ExpectedImprovement(
                 model=self._model,
                 best_f=self._best_f,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.LogEI:
+            if self._batch_size != 1:
+                raise ValueError("Analytical LogEI only supports batch_size=1. Use qLogEI for batch_size>1.")
+            self._acquisition_function_instance = LogExpectedImprovement(
+                model=self._model,
+                best_f=self._best_f,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.PI:
+            if self._batch_size != 1:
+                raise ValueError("Analytical PI only supports batch_size=1. Use qPI for batch_size>1.")
+            self._acquisition_function_instance = ProbabilityOfImprovement(
+                model=self._model,
+                best_f=self._best_f,
+            )
+
+        elif self.acquisition_function_type == AcquisitionFunctionType.UCB:
+            if self._batch_size != 1:
+                raise ValueError("Analytical UCB only supports batch_size=1. Use qUCB for batch_size>1.")
+            self._acquisition_function_instance = UpperConfidenceBound(
+                model=self._model,
+                beta=self.ucb_beta,
+            )
+
+        # === Single-Objective: Monte Carlo ===
+        elif self.acquisition_function_type == AcquisitionFunctionType.qEI:
+            self._acquisition_function_instance = qExpectedImprovement(
+                model=self._model,
+                best_f=self._best_feasible_Y,
                 sampler=self._sampler_instance,
             )
 
         elif self.acquisition_function_type == AcquisitionFunctionType.qLogEI:
             self._acquisition_function_instance = qLogExpectedImprovement(
                 model=self._model,
-                best_f=self._best_f,
+                best_f=self._best_feasible_Y,
                 sampler=self._sampler_instance,
             )
 
@@ -597,7 +733,7 @@ class BayesianOptimizer:
         elif self.acquisition_function_type == AcquisitionFunctionType.qPI:
             self._acquisition_function_instance = qProbabilityOfImprovement(
                 model=self._model,
-                best_f=self._best_f,
+                best_f=self._best_feasible_Y,
                 sampler=self._sampler_instance,
             )
 
@@ -730,7 +866,7 @@ class BayesianOptimizer:
             Y=Y,
         )
 
-    def fit_model(self, restart_on_error=True, verbose=True):
+    def fit_model(self, restart_on_error=True, verbose=True, diagnose=True):
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
@@ -754,6 +890,10 @@ class BayesianOptimizer:
                     restart_count += 1
                 else:
                     raise e  # Raise if not restarting or max restarts reached
+
+        if diagnose:
+            self.diagnose_gp()
+
         return None
 
     def optimize_acquisition_function(self, verbose=True):
@@ -891,40 +1031,183 @@ class BayesianOptimizer:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
 
+    def compute_feasibility_mask(self):
+        """ Compute feasibility mask on the original, non maximized, Y.
+        If the objective is unconstrained, all observations are feasible.
+        Otherwise, concatenate objectives and constraints along the last
+        dimension, then compute the feasibility mask: a point is feasible
+        only if all constraints are ≤ 0
+        """
+        # if self._objective.output_constraints is None:
+        #     feasible_mask = torch.ones(
+        #         self._Y_obj.shape[0], dtype=torch.bool, device=self._device
+        #     )
+        # else:
+        #     Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
+        #     feasible_mask = torch.stack(
+        #         [c(Y_full) <= 0 for c in self._objective.output_constraints]
+        #     ).all(dim=0)
+        # return feasible_mask
+
+        # Point dimension is always the second-to-last
+        n_points = self._Y_obj.shape[-2]
+
+        if self._objective.output_constraints is None:
+            self._feasible_mask = torch.ones(
+                n_points, dtype=torch.bool, device=self._device
+            )
+        else:
+            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
+            constraint_satisfied = torch.stack(
+                [c(Y_full) <= 0 for c in self._objective.output_constraints], dim=0
+            )
+            self._feasible_mask = constraint_satisfied.all(dim=0)
+
+    def compute_feasible(self, verbose=True):
+        """ Computes feasibile X and Y. This method assumes maximization,
+        therefore, the Y must be cast into a maximization problem. """
+
+        if verbose:
+            print("Computing feasible X and Y... ", end="")
+
+        if self._objective.num_objectives != 1:
+            raise ValueError("Only single objective is currently supported.")
+
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
+
+        if self._feasible_mask.any():
+            feasible_X = self._X[self._feasible_mask].clone()
+            feasible_Y = self._Y_obj[self._feasible_mask].clone()
+        else:
+            feasible_X = None
+            feasible_Y = None
+
+        if verbose:
+            print("✓")
+
+        return feasible_X, feasible_Y
+
+    def compute_infeasible(self, verbose=True):
+        """ Computes infeasibile X and Y. This method assumes maximization,
+        therefore, the Y must be cast into a maximization problem. """
+
+        if verbose:
+            print("Computing infeasible X and Y... ", end="")
+
+        if self._objective.num_objectives != 1:
+            raise ValueError("Only single objective is currently supported.")
+
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
+
+        infeasible_mask = torch.logical_not(self._feasible_mask)
+        if infeasible_mask.any():
+            infeasible_X = self._X[infeasible_mask].clone()
+            infeasible_Y = self._Y_obj[infeasible_mask].clone()
+        else:
+            infeasible_X = None
+            infeasible_Y = None
+
+        if verbose:
+            print("✓")
+
+        return infeasible_X, infeasible_Y
+
+    def compute_best_f(self, verbose=True):
+        """Compute the current best observed value (for single-objective).
+        This method assumes maximization, therefore, the Y must be cast into a
+        maximization problem before computing the best observation."""
+
+        if self._objective.num_objectives != 1:
+            raise ValueError("Best feasible value can be computed only for single-objective problems.")
+
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
+
+        if verbose:
+            print("Computing best feasible... ", end="")
+
+        Y_obj_maximized = self._Y_obj.clone()
+        Y_obj_maximized[..., self._objective.obj_to_minimize] *= -1
+
+        # Compute best feasible X-Y pair
+        if self._feasible_mask.any():
+            feasible_Y_maximized = Y_obj_maximized[self._feasible_mask]
+            best_idx_in_feasible = feasible_Y_maximized.argmax()
+
+            # Map back to global index
+            feasible_indices = torch.where(self._feasible_mask)[0]
+            best_global_idx = feasible_indices[best_idx_in_feasible]
+
+            # Store original-space values
+            self._best_feasible_X = self._X[best_global_idx].unsqueeze(0)
+            self._best_feasible_Y = self._Y_obj[best_global_idx].item()
+
+            # Maximized-space value (for acquisition functions)
+            self._best_f = feasible_Y_maximized[best_idx_in_feasible].item()
+
+            if verbose:
+                print(f"✓ ({self._best_feasible_Y})")
+
+        else:
+            self._best_feasible_Y = None
+            self._best_feasible_X = None
+
+            # Fallback for acquisition functions
+            self._best_f = Y_obj_maximized.min().item()
+
+            if verbose:
+                print("✗ (no feasible points)")
+
     def compute_pareto_front(self, verbose=True):
         """
         Compute the Pareto front including constraints. Note that as
         "is_non_dominated" assumes maximization, the Y must be cast into a
         maximization problem before computing the pareto front.
         """
-        if self.objective.num_objectives == 1:
-            raise ValueError("Pareto front cannot be computed for single-objective problems.")
 
         if verbose:
             print("Finding Pareto front... ", end="")
 
-        Y_obj_for_pareto = self._Y_obj.clone()
-        Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
+        if self._objective.num_objectives == 1:
+            raise ValueError("Pareto front cannot be computed for single-objective problems.")
 
-        # If the objective is unconstrained, all observations are feasible.
-        # Otherwise, concatenate objectives and constraints along the last
-        # dimension, then compute the feasibility mask: a point is feasible
-        # only if all constraints are ≤ 0
-        if self._objective.output_constraints is None:
-            feasible_mask = torch.ones(self._Y_obj.shape[-2], dtype=torch.bool, device=self._device)
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
+
+        Y_obj_maximized = self._Y_obj.clone()
+        Y_obj_maximized[..., self._objective.obj_to_minimize] *= -1
+
+        # Compute feasible Pareto front
+        if self._feasible_mask.any():
+            feasible_pareto_mask = torch.zeros_like(self._feasible_mask)
+            feasible_pareto_mask[self._feasible_mask] = is_non_dominated(
+                Y_obj_maximized[self._feasible_mask]
+            )
+
+            self._feasible_pareto_front_X = self._X[feasible_pareto_mask]
+            self._feasible_pareto_front_Y = self._Y_obj[feasible_pareto_mask]
+
         else:
-            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self._objective.output_constraints]).all(dim=0)
 
-        # Compute the pareto-optimal mask among feasible points. Then, extract
-        # the pareto front from the original objective values.
-        pareto_mask = torch.zeros_like(feasible_mask, dtype=torch.bool)
-        if feasible_mask.any():
-            pareto_mask[feasible_mask] = is_non_dominated(Y_obj_for_pareto[feasible_mask])
-        self._pareto_front = self._Y_obj[pareto_mask]
+            self._feasible_pareto_front_X = None
+            self._feasible_pareto_front_Y = None
 
         if verbose:
-            print("✓.")
+            print(f"✓")
 
     def compute_hypervolume(self, verbose=True):
         """
@@ -936,7 +1219,7 @@ class BayesianOptimizer:
         if verbose:
             print("Computing hypervolume... ", end="")
 
-        if self._pareto_front.shape[0] == 0:
+        if self._feasible_pareto_front_Y is None:
             hv = torch.nan
             if verbose:
                 print("✗ Cannot compute hypervolume. No Pareto front found.")
@@ -944,9 +1227,9 @@ class BayesianOptimizer:
             return
 
         # Negate only the dimensions that are minimization objectives
-        pareto_front = self._pareto_front.clone()
-        pareto_front[..., self._objective.obj_to_minimize] *= -1
-        hv = Hypervolume(self._ref_point).compute(pareto_front)
+        feasible_pareto_front_Y_maximized = self._feasible_pareto_front_Y.clone()
+        feasible_pareto_front_Y_maximized[..., self._objective.obj_to_minimize] *= -1
+        hv = Hypervolume(self._ref_point).compute(feasible_pareto_front_Y_maximized)
         self._hypervolume.append(hv)
 
         if verbose:
@@ -963,10 +1246,10 @@ class BayesianOptimizer:
         if verbose:
             print("Computing best value... ", end="")
 
-        self._best_values.append(self._best_f)
+        self._best_values.append(self.best_feasible_Y)
 
         if verbose:
-            print(f"✓ (best = {self._best_f:.4f})")
+            print(f"✓ (best = {self._best_feasible_Y:.4f})")
 
     def optimize(self, verbose=True):
 
@@ -977,22 +1260,46 @@ class BayesianOptimizer:
         warnings.filterwarnings("ignore", category=OptimizationWarning)
 
         t0 = time.monotonic()
+
         self.initialize_model(verbose=verbose)
-        self.initialize_sampler(verbose=verbose)
         self.fit_model(verbose=verbose)
 
+        # Only initialize sampler if needed
+        if self._acquisition_function_type.requires_sampler():
+            self.initialize_sampler(verbose=verbose)
+
+        self.compute_feasibility_mask()
+
         if self._objective.num_objectives == 1:
-            # if self._acquisition_function_type.requires_best_f():
             self.compute_best_f(verbose=verbose)
         else:
             self.compute_reference_point(verbose=verbose)
 
         self.initialize_acquisition_function(verbose=verbose)
         self.optimize_acquisition_function(verbose=verbose)
+
         t1 = time.monotonic()
         self._elapsed_time.append(t1 - t0)
+
         if verbose:
             print(f"Calculation Time = {t1 - t0:>4.2f} s")
+
+    # TODO: generalize for any kernel
+    def diagnose_gp(self):
+        m = self._model.models[0]
+        ls = m.covar_module.base_kernel.lengthscale.item()
+        os = m.covar_module.outputscale.item()
+        noise = m.likelihood.noise.item()
+
+        print(f"Lengthscale: {ls:.4f}")
+        print(f"Outputscale: {os:.4e}")
+        print(f"Noise:       {noise:.4e}")
+        print(f"Noise/Signal ratio: {noise / os:.1f}")
+
+        if noise / os > 10:
+            print("⚠️  Noise >> signal. Consider constraining noise.")
+        if ls > 1 and os < 1e-4:
+            print("⚠️  GP gave up. Kernel may be unsuited for data.")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
@@ -1049,7 +1356,7 @@ class BayesianOptimizer:
 
     def to_file(self, output_path: Path or str = None):
         if output_path is None:
-            output_path = Path.cwd() / "mobo.dat"
+            output_path = Path.cwd() / "bayesian_optimizer.dat"
         path_obj = Path(output_path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
 

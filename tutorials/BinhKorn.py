@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from mobo.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -83,13 +83,14 @@ def main(n_samples=64, q: int = 1, ):
         mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Compute pareto front and hypervolume """
+        mobo.compute_feasibility_mask()
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
 
         """ Save"""
         multi_objective_plotter = MultiObjectivePlotter(
             title="Pareto Front",
-            mobo=mobo,
+            bayesian_optimizer=mobo,
             X_gt=X_gt,
             idx_x=0,
             idx_y=1,

@@ -1,6 +1,6 @@
 from pathlib import Path
 import numpy as np
-from mobo.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 from plotters.utils import xy_plot_kwargs, line2d_plot_kwargs
 

@@ -25,8 +25,8 @@ class WavePacketTestFunction(MCObjectiveBase):
             add_noise_to_gt=False,
         )
 
-        self.sigma = 0.1
-        self.k0 = 5
+        self.sigma = 0.6
+        self.k0 = 2
         self.x0 = 0
 
     def _f1(self, X: torch.Tensor) -> torch.Tensor:

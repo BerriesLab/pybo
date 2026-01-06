@@ -1,9 +1,10 @@
 import torch
 from torch import Tensor
-from objectives.multi_objective.base_class import MCObjectiveBase
+from objectives.multi_objective.base_class import MCObjectiveBase, MCMultiObjectiveBase
+from botorch.acquisition.multi_objective import MCMultiOutputObjective
 
 
-class BinhAndKornMCMultiOutputObjective(MCObjectiveBase):
+class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):
     """ Two objective problem composed of the Binh and Korn functions.
 
     Notes:

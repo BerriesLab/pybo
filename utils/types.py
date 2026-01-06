@@ -2,7 +2,15 @@ from enum import Enum
 
 
 class AcquisitionFunctionType(Enum):
-    # Single-objective acquisition functions
+    """Acquisition function types."""
+
+    # === Single-Objective: Analytical (q=1 only, no sampler needed) ===
+    EI = "EI"
+    LogEI = "LogEI"
+    PI = "PI"
+    UCB = "UCB"
+
+    # === Single-Objective: Monte Carlo (supports q>=1) ===
     qEI = "qEI"
     qLogEI = "qLogEI"
     qNEI = "qNEI"
@@ -10,7 +18,7 @@ class AcquisitionFunctionType(Enum):
     qPI = "qPI"
     qUCB = "qUCB"
 
-    # Multi-objective acquisition functions
+    # === Multi-Objective ===
     qEHVI = "qEHVI"
     qLogEHVI = "qLogEHVI"
     qNEHVI = "qNEHVI"
@@ -24,16 +32,34 @@ class AcquisitionFunctionType(Enum):
         return [e.value for e in cls]
 
     @classmethod
+    def analytical_types(cls):
+        """Analytical acquisition functions (q=1 only, no sampler)."""
+        return {cls.EI, cls.LogEI, cls.PI, cls.UCB}
+
+    @classmethod
     def single_objective_types(cls):
-        return [cls.qEI, cls.qLogEI, cls.qNEI, cls.qLogNEI, cls.qPI, cls.qUCB]
+        """All single-objective acquisition functions."""
+        return {cls.EI, cls.LogEI, cls.PI, cls.UCB,
+                cls.qEI, cls.qLogEI, cls.qNEI, cls.qLogNEI, cls.qPI, cls.qUCB}
 
     @classmethod
     def multi_objective_types(cls):
-        return [cls.qEHVI, cls.qLogEHVI, cls.qNEHVI, cls.qLogNEHVI, cls.qEWNEHVI, cls.qDWNEHVI, cls.qNParEGO]
+        """All multi-objective acquisition functions."""
+        return {cls.qEHVI, cls.qLogEHVI, cls.qNEHVI, cls.qLogNEHVI,
+                cls.qEWNEHVI, cls.qDWNEHVI, cls.qNParEGO}
 
     @classmethod
     def types_requiring_best_f(cls):
-        return [cls.qEI, cls.qLogEI, cls.qPI]
+        """Acquisition functions that require best_f."""
+        return {cls.EI, cls.LogEI, cls.PI, cls.qEI, cls.qLogEI, cls.qPI}
+
+    @classmethod
+    def types_requiring_sampler(cls):
+        """Acquisition functions that require a sampler."""
+        return cls.single_objective_types() - cls.analytical_types() | cls.multi_objective_types()
+
+    def is_analytical(self):
+        return self in self.analytical_types()
 
     def is_single_objective(self):
         return self in self.single_objective_types()
@@ -42,8 +68,10 @@ class AcquisitionFunctionType(Enum):
         return self in self.multi_objective_types()
 
     def requires_best_f(self):
-        """Check if this acquisition function requires best_f."""
         return self in self.types_requiring_best_f()
+
+    def requires_sampler(self):
+        return self in self.types_requiring_sampler()
 
 
 class SamplerType(Enum):
@@ -53,3 +81,37 @@ class SamplerType(Enum):
     @classmethod
     def values(cls):
         return [e.value for e in cls]
+
+
+class KernelType(Enum):
+    """Supported kernel types for the Gaussian Process.
+
+    Basic kernels:
+        RBF: Smooth, infinitely differentiable (default)
+        MATERN: Adjustable smoothness (nu=2.5 default)
+        PERIODIC: For sinusoidal/seasonal patterns
+        RQ: Rational Quadratic - mixture of RBFs
+        SPECTRAL_MIXTURE: Learns periodicities from data
+        LINEAR: Linear relationships
+        POLYNOMIAL: Polynomial relationships
+        COSINE: Pure cosine kernel
+
+    Composite kernels:
+        RBF_PLUS_PERIODIC: Trend + seasonality
+        RBF_TIMES_PERIODIC: Locally periodic patterns
+        MATERN_PLUS_PERIODIC: Rougher trend + seasonality
+    """
+
+    RBF = "rbf"
+    MATERN = "matern"
+    PERIODIC = "periodic"
+    RQ = "rq"
+    SPECTRAL_MIXTURE = "spectral_mixture"
+    LINEAR = "linear"
+    POLYNOMIAL = "polynomial"
+    COSINE = "cosine"
+
+    # Composite kernels
+    RBF_PLUS_PERIODIC = "rbf_plus_periodic"
+    RBF_TIMES_PERIODIC = "rbf_times_periodic"
+    MATERN_PLUS_PERIODIC = "matern_plus_periodic"

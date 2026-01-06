@@ -21,42 +21,56 @@ class PlotterBase:
         self.labels = labels
         self.lims = lims
         self.figsize = figsize
-        self.fig, self.ax = self._initialize_figure()
-        self.legend_elements = []
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.cbar: plt.Colorbar | None = None
+        self._initialize_figure()
+        self._set_labels()
+        self._set_x_lims()
+        self._set_y_lims()
+        self.legend_elements = []
 
     def _initialize_figure(self):
-        fig, ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         if self.title is not None:
-            ax.set_title(self.title)
-        if self.labels is not None:
-            ax.set_xlabel(self.labels[0])
-            ax.set_ylabel(self.labels[1])
+            self.ax.set_title(self.title)
 
-        # X limits
+    def _set_x_lims(self):
         if self.lims is not None and self.lims[0] is not None:
-            ax.set_xlim(self.lims[0][0], self.lims[0][1])
+            self.ax.set_xlim(self.lims[0][0], self.lims[0][1])
         else:
-            ax.autoscale(enable=True, axis='x')
+            self.ax.autoscale(enable=True, axis='x')
 
-        # Y limits
+    def _set_y_lims(self):
         if self.lims is not None and self.lims[1] is not None:
-            ax.set_ylim(self.lims[1][0], self.lims[1][1])
+            self.ax.set_ylim(self.lims[1][0], self.lims[1][1])
         else:
-            ax.autoscale(enable=True, axis='y')
-
-        return fig, ax
+            self.ax.autoscale(enable=True, axis='y')
 
     def _set_labels(self):
-        self.ax.set_xlabel(self.labels[0])
-        self.ax.set_ylabel(self.labels[1])
+        if self.labels is not None:
+            self.ax.set_xlabel(self.labels[0])
+            self.ax.set_ylabel(self.labels[1])
         if self.cbar is not None:
             self.cbar.set_label(self.labels[2])
 
     def save_figure(self, filename: str | Path | None = None):
         if filename is None:
             filename = self.title.replace(" ", "_").lower() + ".png"
-        self.fig.savefig(fname=Path.cwd() / filename, dpi=600)
+
+        path = Path(filename)
+        save_path = Path.cwd() / path
+
+        if save_path.exists():
+            stem = path.stem
+            suffix = path.suffix
+            i = 1
+            while True:
+                candidate = save_path.with_name(f"{stem}_{i}{suffix}")
+                if not candidate.exists():
+                    save_path = candidate
+                    break
+                i += 1
+
+        self.fig.savefig(fname=save_path, dpi=600)
         return self
 
     def close_figure(self):
