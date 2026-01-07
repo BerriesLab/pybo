@@ -2,14 +2,17 @@ import os
 import torch
 from pathlib import Path
 from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
-from objectives.multi_objective.formaco import FormACOMCMultiOutputConstrainedObjective
 from samplers.samplers import Sampler
+from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
-    ObjectivePlotter, TrackerPlotter, ConstraintPlotter
-from plotters.utils import make_grid
+    ConstraintPlotter, TrackerPlotter, ObjectivePlotter
+
+""" Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
+refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results
+obtained with this script against the official BoTorch tutorial. """
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -18,17 +21,17 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"formaco_constrained"
+    experiment_name = f"c2dtlz2"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = FormACOMCMultiOutputConstrainedObjective(
+    objective = C2DTLZ2MCMultiOutputObjective(
         device=DEVICE,
         dtype=DTYPE,
     )
 
-    """ Generate initial dataset """
+    """ Instantiate a random generator """
     sampler = Sampler(
         device=DEVICE,
         dtype=DTYPE,
@@ -37,20 +40,16 @@ def main(n_samples=64, q: int = 1, ):
         n_dimensions=objective.dim,
         normalize=False,
     )
+
+    """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true_objective(X=X)
-    Y_track = objective.evaluate_trackers(X=X)
-    Y_con = objective.evaluate_true_constraint(X=X)
+    Y_obj = objective.evaluate_true_objective(X)
+    Y_con = objective.evaluate_true_slack(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
     # This is done before the optimization loop to show the same ground truth
     # in each iteration step's figure.
-    gnd_truth_X = make_grid(
-        size=20,
-        bounds=objective.bounds,
-        device=DEVICE,
-        dtype=DTYPE
-    )
+    X_gt = sampler.draw_samples(n=10000)
 
     """ Instantiate a Mobo object """
     mobo = BayesianOptimizer(
@@ -62,8 +61,9 @@ def main(n_samples=64, q: int = 1, ):
         sampler_type=SamplerType.Sobol,
         X=X,
         Y_obj=Y_obj,
+        Y_obj_var=None,
         Y_con=Y_con,
-        Y_track=Y_track,
+        Y_con_var=None,
         batch_size=q,
     )
 
@@ -78,17 +78,15 @@ def main(n_samples=64, q: int = 1, ):
         print(f"New X: {new_X.detach().cpu().numpy()}")
 
         """ Evaluate posterior and acquisition function at new X """
-        mobo.compute_acquisition_function_value_at_X(X=new_X)
-        mobo.compute_posterior_mean_at_X(X=new_X)
+        mobo.compute_acquisition_function_value_at_X(new_X)
+        mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true_objective(X=new_X)
-        new_Y_track = objective.evaluate_trackers(X=new_X)
-        new_Y_con = objective.evaluate_true_constraint(X=new_X)
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_con = objective.evaluate_true_slack(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
-        print(f"New Y_track: {new_Y_track.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con, new_Y_track=new_Y_track)
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
@@ -99,26 +97,29 @@ def main(n_samples=64, q: int = 1, ):
 
         """ Plots """
         multi_objective_plotter = MultiObjectivePlotter(
+            title="Pareto Front",
             bayesian_optimizer=mobo,
-            X_gt=gnd_truth_X,
+            X_gt=X_gt,
             idx_x=0,
             idx_y=1,
-            pareto_idxs=[0, 1]
+            idx_color=None,
+            use_tracker=True,
+            pareto_idxs=[0, 1],
         )
         multi_objective_plotter.plot_ground_truth()
         multi_objective_plotter.plot_objectives()
         multi_objective_plotter.save_figure()
-        ElapsedTimePlotter(mobo=mobo).plot().save_figure().close_figure()
-        HypervolumePlotter(mobo=mobo).plot().save_figure().close_figure()
+        ElapsedTimePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
+        HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
         for idx in range(mobo.objective.dim):
-            ParameterPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ParameterPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_objectives):
-            ObjectivePlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ObjectivePlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_constraints):
-            ConstraintPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ConstraintPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_trackers):
-            TrackerPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            TrackerPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 

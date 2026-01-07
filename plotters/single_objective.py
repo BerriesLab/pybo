@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
@@ -7,7 +9,7 @@ class SingleObjectivePlotter(PlotterBase):
     """
     A class for visualizing a single objective optimization problem.
     It requires only minimal user input: most settings
-    are automatomatically inferred from the passed BayesianOptimizer.
+    are automatically inferred from the passed BayesianOptimizer.
 
     Key features:
     - Plot feasible solutions.
@@ -19,54 +21,57 @@ class SingleObjectivePlotter(PlotterBase):
     def __init__(
             self,
             bayesian_optimizer: BayesianOptimizer,
-            title: str | None = "Pareto front",
-            # idx_x: int = 0,
-            # idx_y: int = 1,
-            pareto_idxs: list[int] | None = None,
             use_tracker: bool = False,
             X_gt: torch.Tensor | None = None,
     ):
         """
         :param bayesian_optimizer: The BayesianOptimizer object containing data to plot.
-        :param title: The title of the plot.
         """
-        super().__init__(title=title)
+        super().__init__()
         self.bayesian_optimizer = bayesian_optimizer
         self.X_gt = X_gt
         self.n_grid_points = 200
 
+    # TODO: extend grid generation to more than one input dimensions
     def _generate_grid(self) -> torch.Tensor:
         """Generate a dense grid over the input bounds for plotting."""
         bounds = self.bayesian_optimizer.objective.bounds
         device = self.bayesian_optimizer.device
         dtype = self.bayesian_optimizer.dtype
-        dim = self.bayesian_optimizer.objective.dim
 
-        if dim == 1:
-            X_grid = torch.linspace(
-                bounds[0, 0].item(),
-                bounds[1, 0].item(),
-                self.n_grid_points,
-                device=device,
-                dtype=dtype
-            ).unsqueeze(-1)
-        else:
-            raise ValueError("GP mean/variance plotting only supported for 1D problems.")
+        X_grid = torch.linspace(
+            bounds[0, 0].item(),
+            bounds[1, 0].item(),
+            self.n_grid_points,
+            device=device,
+            dtype=dtype
+        ).unsqueeze(-1)
 
         return X_grid
 
-    def plot_ground_truth(self):
-        Y_obj_gt = self.bayesian_optimizer.objective.evaluate_true_objective(self.X_gt)
-        self.ax.scatter(x=self.X_gt, y=Y_obj_gt, c='r', s=1)
+    # TODO:
+    # """ Generate samples for ground truth evaluation - random sampler or grid """
+    # # When constraints apply to the input X, build the ground truth by using
+    # # a random generator subject to constraints
+    # X_gt = sampler.draw_samples(n=1000)
 
+    def plot_ground_truth(self):
+        X_gt = self._generate_grid()
+        Y_obj_gt = self.bayesian_optimizer.objective.evaluate_true_objective(X_gt)
+        if X_gt is not None and Y_obj_gt is not None:
+            self.ax.scatter(x=X_gt.detach().cpu().numpy(), y=Y_obj_gt.detach().cpu().numpy(), c='r', s=1)
+
+        return self
         # Y_con_gt = self.bayesian_optimizer.objective.evaluate_true_constraint(self.X_gt)
 
     def plot_objective(self):
-        X, Y = self.bayesian_optimizer.compute_feasible()
-        self.ax.scatter(x=X, y=Y, color="black")
+        X, Y = self.bayesian_optimizer.compute_feasible_XY()
+        if X is not None and Y is not None:
+            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="black")
 
-        X, Y = self.bayesian_optimizer.compute_infeasible()
-        self.ax.scatter(X, Y, color="red")
+        X, Y = self.bayesian_optimizer.compute_infeasible_XY()
+        if X is not None and Y is not None:
+            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="red")
 
         # # === Update colormaps ===
         # if self.idx_color is not None:
@@ -130,3 +135,23 @@ class SingleObjectivePlotter(PlotterBase):
         self.ax.fill_between(X_np, lower, upper, color=color, alpha=alpha, label=label)
 
         return self
+
+    def plot_optimum(self):
+        """Plot the optimal solution."""
+        X, Y = self.bayesian_optimizer.best_feasible_X, self.bayesian_optimizer.best_feasible_Y
+        if X is not None and Y is not None:
+            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="gold", marker="D")
+        return self
+
+    def plot_next_X(self):
+        X = self.bayesian_optimizer.new_X.detach().cpu().numpy()
+        if X is not None:
+            if X.ndim == 0:
+                X = [X.item()]
+            for i, x in enumerate(X):
+                self.ax.axvline(x=x, linestyle='--', color='red', alpha=0.7, label='Next X' if i == 0 else None)
+        return self
+
+    def save_figure(self, filename: str | Path | None = None):
+        filename = "experiment.png"
+        return super().save_figure(filename=filename)

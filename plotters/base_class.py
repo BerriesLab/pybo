@@ -54,7 +54,7 @@ class PlotterBase:
 
     def save_figure(self, filename: str | Path | None = None):
         if filename is None:
-            filename = self.title.replace(" ", "_").lower() + ".png"
+            filename = "noname.png"
 
         path = Path(filename)
         save_path = Path.cwd() / path

@@ -3,7 +3,7 @@ import torch
 from torch import Tensor
 
 
-class WavePacketTestFunction(MCSingleObjectiveBase):
+class Quadratic(MCSingleObjectiveBase):
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
@@ -12,9 +12,9 @@ class WavePacketTestFunction(MCSingleObjectiveBase):
             num_objectives=1,
             num_constraints=0,
             num_trackers=0,
-            obj_to_minimize=[False],
-            bounds=[(-1.0, 1.0)],
-            ref_point=[0.0],
+            obj_to_minimize=[True],
+            bounds=[(-1.0, 5.0)],
+            ref_point=[-1.0],
             outcomes=[0],
             num_outcomes=1,
             gt_noise_std=0.0,
@@ -23,20 +23,8 @@ class WavePacketTestFunction(MCSingleObjectiveBase):
             nonlinear_inequality_input_constraints=None,
             output_constraints=None,
             add_noise_to_gt=False,
+            best_value=0,
         )
 
-        self.sigma = 0.6
-        self.k0 = 2
-        self.x0 = 0
-
-    def _f1(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.exp(-0.5 * ((X - self.x0) / self.sigma) ** 2)
-
-    def _f2(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.sin(2 * torch.pi * self.k0 * X)
-
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
-        f = f1 * f2
-        return f
+        return (X - 2) ** 2

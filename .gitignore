@@ -10,5 +10,5 @@ env/
 .idea/
 
 # Data
-/data/
 /dist/
+/tutorials/single_objective/quadratic/data/

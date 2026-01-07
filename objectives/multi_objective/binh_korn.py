@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
-from objectives.multi_objective.base_class import MCObjectiveBase, MCMultiObjectiveBase
-from botorch.acquisition.multi_objective import MCMultiOutputObjective
+from objectives.base_class import MCMultiObjectiveBase
 
 
 class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):

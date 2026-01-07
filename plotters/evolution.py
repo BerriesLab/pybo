@@ -1,12 +1,44 @@
 from pathlib import Path
 import numpy as np
 from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from objectives.base_class import MCSingleObjectiveBase
 from plotters.base_class import PlotterBase
 from plotters.utils import xy_plot_kwargs, line2d_plot_kwargs
 
 
+class BestValuePlotter(PlotterBase):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer):
+        super().__init__(
+            title="Best Value",
+            labels=[
+                "Number of observations (beyond initial points)",
+                "Best Value",
+            ]
+        )
+
+        if not isinstance(bayesian_optimizer.objective, MCSingleObjectiveBase):
+            raise TypeError("Objective must be of type MCSingleObjectiveBase")
+
+        self.bo = bayesian_optimizer
+
+    def plot(self):
+        best_values = self.bo.best_values
+        best_values = np.array(best_values)
+
+        x = self.bo.n_initial_samples + np.arange(len(best_values)) * self.bo.batch_size
+        self.ax.plot(x, best_values, **line2d_plot_kwargs)
+
+        if self.bo._objective.best_value is not None:
+            self.ax.axhline(y=self.bo._objective.best_value, linestyle='--', color='black', label='Max HV')
+        return self
+
+    def save_figure(self, filename: str | Path | None = None):
+        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
+        return super().save_figure(filename=filename)
+
+
 class HypervolumePlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
             title="Hypervolume",
             labels=[
@@ -14,7 +46,7 @@ class HypervolumePlotter(PlotterBase):
                 "Hypervolume",
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
 
     def plot(self):
         hv = self.mobo.hypervolume
@@ -66,7 +98,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
 
 
 class ElapsedTimePlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
             title="Elapsed Time",
             labels=[
@@ -74,7 +106,7 @@ class ElapsedTimePlotter(PlotterBase):
                 "Elapsed Time (s)"
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
 
     def plot(self):
         elapsed_time = self.mobo.elapsed_time
@@ -89,19 +121,19 @@ class ElapsedTimePlotter(PlotterBase):
 
 
 class ParameterPlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer, idx: int):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
-            title=f"{mobo.objective.parameter_names[idx]}"
-            if mobo.objective.parameter_names
+            title=f"{bayesian_optimizer.objective.parameter_names[idx]}"
+            if bayesian_optimizer.objective.parameter_names
             else f"parameter {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
-                mobo.objective.parameter_names[idx]
-                if mobo.objective.parameter_names
+                bayesian_optimizer.objective.parameter_names[idx]
+                if bayesian_optimizer.objective.parameter_names
                 else f"parameter {idx}"
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -170,19 +202,19 @@ class ParameterPlotter(PlotterBase):
 
 
 class ObjectivePlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer, idx: int):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
-            title=mobo.objective.objective_names[idx]
-            if mobo.objective.objective_names is not None
+            title=bayesian_optimizer.objective.objective_names[idx]
+            if bayesian_optimizer.objective.objective_names is not None
             else f"objective {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
-                mobo.objective.objective_names[idx]
-                if mobo.objective.objective_names
+                bayesian_optimizer.objective.objective_names[idx]
+                if bayesian_optimizer.objective.objective_names
                 else f"objective {idx}"
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -250,19 +282,19 @@ class ObjectivePlotter(PlotterBase):
 
 
 class ConstraintPlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer, idx: int):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
-            title=mobo.objective.constraint_names[idx]
-            if mobo.objective.constraint_names
+            title=bayesian_optimizer.objective.constraint_names[idx]
+            if bayesian_optimizer.objective.constraint_names
             else f"constraint {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
-                mobo.objective.constraint_names[idx]
-                if mobo.objective.constraint_names
+                bayesian_optimizer.objective.constraint_names[idx]
+                if bayesian_optimizer.objective.constraint_names
                 else f"constraint {idx}"
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -331,19 +363,19 @@ class ConstraintPlotter(PlotterBase):
 
 
 class TrackerPlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer, idx: int):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
-            title=mobo.objective.tracker_names[idx]
-            if mobo.objective.tracker_names
+            title=bayesian_optimizer.objective.tracker_names[idx]
+            if bayesian_optimizer.objective.tracker_names
             else f"tracker {idx}",
             labels=[
                 "Number of observations (beyond initial points)",
-                mobo.objective.tracker_names[idx]
-                if mobo.objective.tracker_names
+                bayesian_optimizer.objective.tracker_names[idx]
+                if bayesian_optimizer.objective.tracker_names
                 else f"tracker {idx}"
             ]
         )
-        self.mobo = mobo
+        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):

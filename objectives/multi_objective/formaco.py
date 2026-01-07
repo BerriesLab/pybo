@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 from constraints.output_constraints import Identity
-from objectives.multi_objective.base_class import MCMultiOutputBase
+from objectives.base_class import MCMultiOutputBase
 
 
 class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):

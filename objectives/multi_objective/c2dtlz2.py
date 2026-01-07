@@ -1,7 +1,7 @@
 import torch
 import math
 from torch import Tensor
-from objectives.multi_objective.base_class import MCMultiOutputBase
+from objectives.base_class import MCMultiOutputBase
 from constraints.output_constraints import Identity
 
 

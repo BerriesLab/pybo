@@ -1,12 +1,10 @@
 from collections.abc import Callable
 
-import torch
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
-from botorch.exceptions import BotorchTensorDimensionError, BotorchError, InputDataError
-from botorch.utils.transforms import normalize_indices
+from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
 
 
@@ -29,7 +27,6 @@ class MCObjectiveBase(ABC):
             linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
             output_constraints: list[Callable] | None,
-            max_hv: float | None = None,
             gt_noise_std: float | list[float] | None = None,
             add_noise_to_gt: bool = False,
             parameter_names: list[str] | None = None,
@@ -55,7 +52,6 @@ class MCObjectiveBase(ABC):
         self.num_outcomes = num_outcomes
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
-        self.max_hv = max_hv
         self.parameter_names = parameter_names
         self.objective_names = objective_names
         self.constraint_names = constraint_names
@@ -417,6 +413,14 @@ class MCObjectiveBase(ABC):
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
 
+
+class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
+    def __init__(self, best_value: float | None = None, *args, **kwargs):
+        ABC.__init__(self)
+        MCAcquisitionObjective.__init__(self)
+        MCObjectiveBase.__init__(self, *args, **kwargs)
+        self.best_value = best_value
+
     # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
@@ -429,20 +433,28 @@ class MCObjectiveBase(ABC):
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-        # selected[..., self.negate] *= -1
         selected[..., self.obj_to_minimize] *= -1
-        return selected
-
-
-class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
-    def __init__(self, *args, **kwargs):
-        ABC.__init__(self)
-        MCAcquisitionObjective.__init__(self)
-        MCObjectiveBase.__init__(self, *args, **kwargs)
+        return selected.squeeze(-1)
 
 
 class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, max_hv: float | None = None, *args, **kwargs):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
         MCObjectiveBase.__init__(self, *args, **kwargs)
+        self.max_h = max_hv
+
+    # === MONTE CARLO METHODS ===
+    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
+        """
+        Transform Monte Carlo samples from the model's posterior according
+        to the specified objective configuration. This method selects the
+        relevant output dimensions (if `outcomes` are specified), and optionally
+        applies negation if the objective is formulated as a minimization
+        problem but needs to be maximized internally.
+        """
+        selected = samples.clone()
+        if self.outcomes is not None:
+            selected = selected.index_select(-1, self.outcomes)
+        selected[..., self.obj_to_minimize] *= -1
+        return selected

@@ -1,6 +1,7 @@
 # pyBO — A Python Library for Bayesian Optimization
 
-`pyBO` is a Python library for Multi-Objective Bayesian Optimization (MOBO). Built on top of BoTorch and using Gaussian
+`pyBO` is a Python library for Bayesian Optimization of single and multi objective problems. Built on top of BoTorch and
+using Gaussian
 Processes as surrogate models, it provides a user-friendly framework for optimizing multiple competing objectives under
 experimental constraints, and finding pareto-optimal solutions.
 
@@ -138,16 +139,20 @@ The current version of `pyBO` provides built-in tools to visualize:
 Explore the following examples to learn how to use `pyBO`, and make sure to review the corresponding objective
 definitions.
 
-- [Branin-Currin](tutorials/BraninCurrin.py): An unconstrained bi-objective optimization problem.
-- [Linear Equality Test](tutorials/linear_equality_test.py): A linear equality input constrained bi-objective
+- [Branin-Currin](tutorials/multi_objective/BraninCurrin.py): An unconstrained bi-objective optimization problem.
+- [Linear Equality Test](tutorials/multi_objective/linear_equality_test.py): A linear equality input constrained
+  bi-objective
   optimization problem.
-- [Linear Inequality Test](tutorials/linear_inequality_test.py): A linear inequality input constrained bi-objective
+- [Linear Inequality Test](tutorials/multi_objective/linear_inequality_test.py): A linear inequality input constrained
+  bi-objective
   optimization problem.
-- [Binh and Korn](tutorials/BinhKorn.py): A nonlinear inequality input constrained bi-objective optimization
+- [Binh and Korn](tutorials/multi_objective/BinhKorn.py): A nonlinear inequality input constrained bi-objective
+  optimization
   problem.
-- [Osyczka-Kundu](tutorials/OsyczkaKundu.py): A liner and nonlinear inequality input constrained bi-objective
+- [Osyczka-Kundu](tutorials/multi_objective/OsyczkaKundu.py): A liner and nonlinear inequality input constrained
+  bi-objective
   optimization problem.
-- [C2DTLZ2](tutorials/C2DTLZ2.py): An output constrained bi-objective optimization problem.
+- [C2DTLZ2](tutorials/multi_objective/C2DTLZ2.py): An output constrained bi-objective optimization problem.
 
 ## Notes
 

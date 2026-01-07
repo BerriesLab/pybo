@@ -99,17 +99,17 @@ def main(n_samples: int = 64, q: int = 1, ):
         multi_objective_plotter.plot_ground_truth()
         multi_objective_plotter.plot_objectives()
         multi_objective_plotter.save_figure()
-        ElapsedTimePlotter(mobo=mobo).plot().save_figure().close_figure()
-        HypervolumePlotter(mobo=mobo).plot().save_figure().close_figure()
+        ElapsedTimePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
+        HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
         for idx in range(mobo.objective.dim):
-            ParameterPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ParameterPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_objectives):
-            ObjectivePlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ObjectivePlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_constraints):
-            ConstraintPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            ConstraintPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_trackers):
-            TrackerPlotter(mobo=mobo, idx=idx).plot().save_figure().close_figure()
+            TrackerPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 
