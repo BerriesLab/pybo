@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import botorch
 import gpytorch
+from gpytorch.constraints import Interval
 from botorch.exceptions import (
     BadInitialCandidatesWarning,
     InputDataWarning,
@@ -519,7 +520,7 @@ class BayesianOptimizer:
         self._compute_metrics(verbose=verbose)  # HV or best_value → appends to history
 
         # === 2. Fit model ===
-        self.initialize_model(verbose=verbose)
+        self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
         # === 3. Sampler (if needed) ===
@@ -536,54 +537,6 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
-    def initialize_model(self, verbose=True):
-        """ Initialize Gaussian Process model(s) for the objectives and constraints.
-
-        This method prepares the training dataset by combining the objective and constraint
-        observations (and optionally their variances). Then it creates one independent
-        SingleTaskGP model for each output dimension (each objective or constraint).
-        The SingleTaskGP are finally combined into a ModelListGP to jointly represent the full
-        multi-output model.
-
-        Important: The GP model in BoTorch is a pure regression model: it simply fits the data
-        it receives. It does not know or care about whether the model is for objectives to
-        minimize or maximize. As such, the model must always and only receive the true, unnegated
-        objective values as training data. In other words, the model is always fit to the true data.
-
-        Note: by setting an input transform and an outcome transform, input (X) and output data (Y) are
-        transformed and untransformed accordingly across the whole optimization pipeline, including
-        the optimization of the acquisition function. For example, by setting an outcome transform to
-        standardization, the Ys are standardized before the optimization and unstandardized right after.
-        However, if a penalty is added in the forward method, this is not standardized properly and a
-        pre-factor (or scaling) results in different penalty weights."""
-
-        if verbose:
-            print("Initializing model... ", end="")
-
-        # Prepare dataset by concatenating the objectives and initialize models - one model
-        # for each objective (or observable)
-        train_x, train_y, train_y_var = self._prepare_training_dataset()
-        models = []
-        for i in range(0, train_y.shape[-1]):
-            # Build a fresh covariance module for each model (kernels have learnable params)
-            covar_module = self._initialize_kernel(ard_num_dims=self.objective.dim)
-            models.append(
-                SingleTaskGP(
-                    train_X=train_x,
-                    train_Y=train_y[..., i: i + 1],
-                    train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
-                    input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
-                    outcome_transform=Standardize(m=1),
-                    # covar_module=covar_module,
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
-                )
-            )
-        self._model = ModelListGP(*models)
-        self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
-
-        if verbose:
-            print("✓")
-
     def _initialize_kernel(self, ard_num_dims: int):
         """ Build a kernel based on the kernel type. All kernels use default
         hyperparameters which are then optimized during model fitting.
@@ -593,7 +546,12 @@ class BayesianOptimizer:
 
         # === Basic Kernels ===
         if self._kernel_type == KernelType.RBF:
-            return ScaleKernel(StandardRBFKernel(ard_num_dims=ard_num_dims))
+            rbf = StandardRBFKernel(
+                ard_num_dims=ard_num_dims,
+                lengthscale_constraint=Interval(0.01, 0.1))
+            rbf.lengthscale = 0.05
+
+            return rbf
 
         elif self._kernel_type == KernelType.MATERN:
             return ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=ard_num_dims))
@@ -634,6 +592,54 @@ class BayesianOptimizer:
 
         else:
             raise ValueError(f"Unsupported kernel type: {self._kernel_type}")
+
+    def _initialize_model(self, verbose=True):
+        """ Initialize Gaussian Process model(s) for the objectives and constraints.
+
+        This method prepares the training dataset by combining the objective and constraint
+        observations (and optionally their variances). Then it creates one independent
+        SingleTaskGP model for each output dimension (each objective or constraint).
+        The SingleTaskGP are finally combined into a ModelListGP to jointly represent the full
+        multi-output model.
+
+        Important: The GP model in BoTorch is a pure regression model: it simply fits the data
+        it receives. It does not know or care about whether the model is for objectives to
+        minimize or maximize. As such, the model must always and only receive the true, unnegated
+        objective values as training data. In other words, the model is always fit to the true data.
+
+        Note: by setting an input transform and an outcome transform, input (X) and output data (Y) are
+        transformed and untransformed accordingly across the whole optimization pipeline, including
+        the optimization of the acquisition function. For example, by setting an outcome transform to
+        standardization, the Ys are standardized before the optimization and unstandardized right after.
+        However, if a penalty is added in the forward method, this is not standardized properly and a
+        pre-factor (or scaling) results in different penalty weights."""
+
+        if verbose:
+            print("Initializing model... ", end="")
+
+        # Prepare dataset by concatenating the objectives and initialize models - one model
+        # for each objective (or observable)
+        train_x, train_y, train_y_var = self._prepare_training_dataset()
+        models = []
+        for i in range(0, train_y.shape[-1]):
+            # Build a fresh covariance module for each model (kernels have learnable params)
+            covar_module = self._initialize_kernel(ard_num_dims=self.objective.dim)
+            models.append(
+                SingleTaskGP(
+                    train_X=train_x,
+                    train_Y=train_y[..., i: i + 1],
+                    train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
+                    input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
+                    outcome_transform=Standardize(m=1),
+                    covar_module=covar_module,
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
+                )
+            )
+        self._model = ModelListGP(*models)
+        self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
+
+        if verbose:
+            print("✓")
 
     def _prepare_training_dataset(self):
         """ Prepare the training dataset for fitting the surrogate model.
@@ -713,10 +719,13 @@ class BayesianOptimizer:
             feasible_Y_max = feasible_Y.clone()
             feasible_Y_max[..., self._objective.obj_to_minimize] *= -1
             best_idx = feasible_Y_max.squeeze(-1).argmax()
-            self._best_feasible_X = self._X[best_idx]
-            self._best_feasible_Y = self._Y_obj[best_idx]
+
+            self._best_feasible_X = feasible_X[best_idx]
+            self._best_feasible_Y = feasible_Y[best_idx]
             self._best_f = feasible_Y_max[best_idx]
-            self.best_values.append(feasible_Y[best_idx].item())
+
+            # best_value = feasible_Y[best_idx].squeeze().item()
+            # self._best_values.append(best_value)
 
             if verbose:
                 print(f"✓ {self._best_feasible_Y.item():.4f} in max. space.")
@@ -725,7 +734,7 @@ class BayesianOptimizer:
             self._best_feasible_Y = None
             self._best_feasible_X = None
             self._best_f = -float("inf")
-            self.best_values.append(None)
+            self._best_values.append(None)
 
             if verbose:
                 print("✗ (no feasible points)")
@@ -1285,7 +1294,12 @@ class BayesianOptimizer:
         if verbose:
             print("Computing best value... ", end="")
 
-        self._best_values.append(self.best_f.item())
+        if self._best_feasible_Y is not None:
+            best_value = self._best_feasible_Y.squeeze().item()  # Original space
+        else:
+            best_value = float('inf') if self._objective.obj_to_minimize[0] else float('-inf')
+
+        self._best_values.append(best_value)
 
         if verbose:
             print(f"✓ (best = {self._best_feasible_Y.item():.4f})")
