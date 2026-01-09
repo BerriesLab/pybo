@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
-from utils.types import KernelType
+from utils.bo_types import KernelType
 from gpytorch.constraints import Interval
 from gpytorch.kernels import (
     ScaleKernel,

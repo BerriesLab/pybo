@@ -6,7 +6,7 @@ from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
 from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig, RBFTimesPeriodicConfig
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
-from utils.types import AcquisitionFunctionType, SamplerType, KernelType
+from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
 from objectives.single_objective.periodic import Periodic
 from gpytorch.constraints import Interval

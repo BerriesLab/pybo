@@ -56,7 +56,7 @@ from bayesian_optimizer.kernel import KernelFactory
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
 from gpytorch.mlls import SumMarginalLogLikelihood
-from utils.types import *
+from utils.bo_types import *
 
 
 class BayesianOptimizer:
@@ -86,7 +86,7 @@ class BayesianOptimizer:
             mc_samples: int = 256,
             raw_samples: int = 1024,
             n_acqf_opt_max_iter: int = 250,
-            n_acqf_opt_restarts: int = 10,
+            n_acqf_opt_restarts: int = 20,
             n_model_fit_restarts: int = 10,
             ucb_beta: float = 2.0,
 
@@ -132,7 +132,7 @@ class BayesianOptimizer:
         self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
-        self._acquisition_function_factory = acquisition_function_factory
+        self.acquisition_function_factory = acquisition_function_factory
         self.kernel_factory = kernel_factory
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
@@ -293,11 +293,11 @@ class BayesianOptimizer:
         self._Y_track_var = Y_track_var
 
     @property
-    def _acquisition_function_factory(self) -> AcquisitionFunctionFactory:
+    def acquisition_function_factory(self) -> AcquisitionFunctionFactory:
         return self._acquisition_function_type
 
-    @_acquisition_function_factory.setter
-    def _acquisition_function_factory(self, af_type):
+    @acquisition_function_factory.setter
+    def acquisition_function_factory(self, af_type):
         if not isinstance(af_type, AcquisitionFunctionFactory):
             raise ValueError("Acquisition function type must be of type AcquisitionFunctionFactory.")
         self._acquisition_function_type = af_type
@@ -506,7 +506,7 @@ class BayesianOptimizer:
         self._fit_model(verbose=verbose)
 
         # === 3. Initialize acquisition function ===
-        if self._acquisition_function_factory.requires_sampler():
+        if self.acquisition_function_factory.requires_sampler():
             self._initialize_sampler(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
@@ -610,17 +610,13 @@ class BayesianOptimizer:
             print("Initializing sampler... ", end="")
 
         # Skip for analytical acquisition functions
-        if self._acquisition_function_type.is_analytical():
-            if verbose:
-                print("Skipping sampler (analytical acquisition function).")
-            return
-
-        if self._sampler_type.name == SamplerType.Sobol.name:
-            self._sampler_instance = SobolQMCNormalSampler(
-                torch.Size([self._num_mc_samples])
-            )
-        else:
-            raise ValueError("Only Sobol Sampler is currently supported.")
+        if self.acquisition_function_factory.requires_sampler():
+            if self._sampler_type.name == SamplerType.Sobol.name:
+                self._sampler_instance = SobolQMCNormalSampler(
+                    torch.Size([self._num_mc_samples])
+                )
+            else:
+                raise ValueError("Only Sobol Sampler is currently supported.")
 
         if verbose:
             print("✓")
@@ -737,7 +733,7 @@ class BayesianOptimizer:
 
         if verbose:
             print(
-                f"Initializing acquisition function of type {self._acquisition_function_factory.acquisition_function_type.value}... ",
+                f"Initializing acquisition function of type {self.acquisition_function_factory.acquisition_function_type.value}... ",
                 end="")
 
         params = AcquisitionRuntimeParams(
@@ -751,7 +747,7 @@ class BayesianOptimizer:
             partitioning=self._partitioning,
             constraints=self._objective.output_constraints if hasattr(self._objective, 'output_constraints') else None,
         )
-        self._acquisition_function_instance = self._acquisition_function_factory(params)
+        self._acquisition_function_instance = self.acquisition_function_factory(params)
 
         if verbose:
             print("✓")
@@ -1154,3 +1150,12 @@ class BayesianOptimizer:
 
         with open(filepath, "rb") as f:
             return pickle.load(f)
+
+    """ ===================== """
+    """ ===== DEBUGGERS ===== """
+    """ ===================== """
+
+    def print_hyperparameters(model):
+        print(f"Lengthscale: {model.covar_module.base_kernel.lengthscale.item():.4f}")
+        print(f"Outputscale: {model.covar_module.outputscale.item():.4f}")
+        print(f"Noise: {model.likelihood.noise.item():.6f}")

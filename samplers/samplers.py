@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
-from utils.types import SamplerType
+from utils.bo_types import SamplerType
 from botorch.utils.transforms import unnormalize
 from collections.abc import Callable
 
@@ -18,7 +18,8 @@ class Sampler:
             normalize: bool = True,
             linear_equality_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
             linear_inequality_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            nonlinear_inequality_constraints: list[tuple[Callable, bool]] | None = None
+            nonlinear_inequality_constraints: list[tuple[Callable, bool]] | None = None,
+            seed: int | None = None
     ):
 
         self.device = device
@@ -30,6 +31,7 @@ class Sampler:
         self.linear_equality_constraints = linear_equality_constraints
         self.linear_inequality_constraints = linear_inequality_constraints
         self.nonlinear_inequality_constraints = nonlinear_inequality_constraints
+        self.seed = seed
 
     def _parse_linear_equality_constraints(self):
         r""""
@@ -102,7 +104,7 @@ class Sampler:
                 X = torch.tensor(samples, device=self.device, dtype=self.dtype)
 
             elif self.sampler_type == SamplerType.Sobol:
-                sampler = SobolEngine(dimension=self.n_dimensions, scramble=True)
+                sampler = SobolEngine(dimension=self.n_dimensions, scramble=True, seed=self.seed)
                 X = sampler.draw(n=n).to(device=self.device, dtype=self.dtype)
 
             else:

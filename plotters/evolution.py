@@ -9,6 +9,7 @@ from plotters.utils import xy_plot_kwargs, line2d_plot_kwargs
 class BestValuePlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title="Best Value",
             labels=[
                 "Number of observations (beyond initial points)",
@@ -18,8 +19,6 @@ class BestValuePlotter(PlotterBase):
 
         if not isinstance(bayesian_optimizer.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
-
-        self.bo = bayesian_optimizer
 
     def plot(self):
         best_values = self.bo.best_values
@@ -40,25 +39,25 @@ class BestValuePlotter(PlotterBase):
 class HypervolumePlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title="Hypervolume",
             labels=[
                 "Number of observations (beyond initial points)",
                 "Hypervolume",
             ]
         )
-        self.mobo = bayesian_optimizer
 
     def plot(self):
-        hv = self.mobo.hypervolume
+        hv = self.bo.hypervolume
 
         hv = np.array(hv)
 
         # X-axis: number of observations beyond initial front
-        x = self.mobo.n_initial_samples + np.arange(len(hv)) * self.mobo.batch_size
+        x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
 
         self.ax.plot(x, hv, **line2d_plot_kwargs)
-        if self.mobo.objective.max_hv is not None:
-            self.ax.axhline(y=self.mobo.objective.max_hv, linestyle='--', color='black', label='Max HV')
+        if self.bo.objective.max_hv is not None:
+            self.ax.axhline(y=self.bo.objective.max_hv, linestyle='--', color='black', label='Max HV')
         return self
 
     def save_figure(self, filename: str | Path | None = None):
@@ -67,18 +66,18 @@ class HypervolumePlotter(PlotterBase):
 
 
 class HypervolumeImprovementPlotter(PlotterBase):
-    def __init__(self, mobo: BayesianOptimizer):
+    def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title="Hypervolume Improvement",
             labels=[
                 "Number of observations (beyond initial points)",
                 r"$\log_{10}(\mathrm{HVI})$"
             ]
         )
-        self.mobo = mobo
 
     def plot(self, epsilon: float = 1e-6):
-        hv = self.mobo.hypervolume
+        hv = self.bo.hypervolume
 
         hv = np.array(hv)
         hvi = np.diff(hv, prepend=np.nan)  # first element has no diff
@@ -87,7 +86,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
         hvi_log = np.log10(np.clip(hvi, epsilon, None))
 
         # X-axis: number of observations beyond initial front
-        x = self.mobo.n_initial_samples + np.arange(len(hv)) * self.mobo.batch_size
+        x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
         mask = ~np.isnan(hvi_log)
         self.ax.plot(x[mask], hvi_log[mask], **line2d_plot_kwargs)
         return self
@@ -100,17 +99,17 @@ class HypervolumeImprovementPlotter(PlotterBase):
 class ElapsedTimePlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title="Elapsed Time",
             labels=[
                 "Number of observations (beyond initial points)",
                 "Elapsed Time (s)"
             ]
         )
-        self.mobo = bayesian_optimizer
 
     def plot(self):
-        elapsed_time = self.mobo.elapsed_time
-        x = self.mobo.n_initial_samples + np.arange(len(elapsed_time)) * self.mobo.batch_size
+        elapsed_time = self.bo.elapsed_time
+        x = self.bo.n_initial_samples + np.arange(len(elapsed_time)) * self.bo.batch_size
         y = elapsed_time
         self.ax.plot(x, y, **line2d_plot_kwargs)
         return self
@@ -123,6 +122,7 @@ class ElapsedTimePlotter(PlotterBase):
 class ParameterPlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title=f"{bayesian_optimizer.objective.parameter_names[idx]}"
             if bayesian_optimizer.objective.parameter_names
             else f"parameter {idx}",
@@ -133,7 +133,6 @@ class ParameterPlotter(PlotterBase):
                 else f"parameter {idx}"
             ]
         )
-        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -141,29 +140,29 @@ class ParameterPlotter(PlotterBase):
         self._connect_subsequent_batches(n_iter, x_all, y_all)
         self.ax.scatter(x_all, y_all,
                         **xy_plot_kwargs,
-                        label=self.mobo.objective.parameter_names[self.idx]
-                        if self.mobo.objective.parameter_names
+                        label=self.bo.objective.parameter_names[self.idx]
+                        if self.bo.objective.parameter_names
                         else f"parameter {self.idx}")
-        self.ax.axhline(y=self.mobo.objective.bounds[0][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
-        self.ax.axhline(y=self.mobo.objective.bounds[1][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
-        self.ax.axvline(x=self.mobo.n_initial_samples, linestyle='--', color='black')
+        self.ax.axhline(y=self.bo.objective.bounds[0][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
+        self.ax.axhline(y=self.bo.objective.bounds[1][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
+        self.ax.axvline(x=self.bo.n_initial_samples, linestyle='--', color='black')
         return self
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):
         for i in range(n_iter):
             if i == 0:
                 idx_start = 0
-                idx_end = self.mobo.n_initial_samples
+                idx_end = self.bo.n_initial_samples
                 y_batch_start = y_all[..., idx_start:idx_end]
-                y_batch_end = y_all[..., idx_end: idx_end + self.mobo.batch_size]
+                y_batch_end = y_all[..., idx_end: idx_end + self.bo.batch_size]
                 x_batch_start = x_all[idx_start:idx_end]
-                x_batch_end = x_all[idx_end: idx_end + self.mobo.batch_size]
+                x_batch_end = x_all[idx_end: idx_end + self.bo.batch_size]
             else:
-                idx_start = self.mobo.n_initial_samples + i * self.mobo.batch_size
-                idx_end = idx_start + self.mobo.batch_size
-                y_batch_start = y_all[..., idx_start - self.mobo.batch_size: idx_start]
+                idx_start = self.bo.n_initial_samples + i * self.bo.batch_size
+                idx_end = idx_start + self.bo.batch_size
+                y_batch_start = y_all[..., idx_start - self.bo.batch_size: idx_start]
                 y_batch_end = y_all[..., idx_start: idx_end]
-                x_batch_start = x_all[idx_start - self.mobo.batch_size: idx_start]
+                x_batch_start = x_all[idx_start - self.bo.batch_size: idx_start]
                 x_batch_end = x_all[idx_start: idx_end]
 
             # Plot all combinations of points from the two batches
@@ -180,17 +179,17 @@ class ParameterPlotter(PlotterBase):
 
     def _prepare_xy(self):
         # Prepare the initial scatter points
-        x_init = self.mobo.n_initial_samples * np.ones(self.mobo.n_initial_samples)
-        y_init = self.mobo.X[..., : self.mobo.n_initial_samples, self.idx].detach().cpu().numpy()
+        x_init = self.bo.n_initial_samples * np.ones(self.bo.n_initial_samples)
+        y_init = self.bo.X[..., : self.bo.n_initial_samples, self.idx].detach().cpu().numpy()
         # Prepare the next set of scatter points
-        n_iter = int((self.mobo.X.shape[0] - self.mobo.n_initial_samples) / self.mobo.batch_size)
+        n_iter = int((self.bo.X.shape[0] - self.bo.n_initial_samples) / self.bo.batch_size)
         x_next_points = np.linspace(
-            start=self.mobo.n_initial_samples + self.mobo.batch_size,
-            stop=self.mobo.X.shape[0],
+            start=self.bo.n_initial_samples + self.bo.batch_size,
+            stop=self.bo.X.shape[0],
             num=n_iter,
         )
-        x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
+        x_next = np.repeat(a=x_next_points, repeats=self.bo.batch_size)
+        y_next = self.bo.X[..., self.bo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -204,6 +203,7 @@ class ParameterPlotter(PlotterBase):
 class ObjectivePlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title=bayesian_optimizer.objective.objective_names[idx]
             if bayesian_optimizer.objective.objective_names is not None
             else f"objective {idx}",
@@ -214,7 +214,6 @@ class ObjectivePlotter(PlotterBase):
                 else f"objective {idx}"
             ]
         )
-        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -222,11 +221,11 @@ class ObjectivePlotter(PlotterBase):
         self._connect_subsequent_batches(n_iter, x_all, y_all)
         self.ax.scatter(x_all, y_all,
                         **xy_plot_kwargs,
-                        label=self.mobo.objective.objective_names[self.idx]
-                        if self.mobo.objective.objective_names
+                        label=self.bo.objective.objective_names[self.idx]
+                        if self.bo.objective.objective_names
                         else f"objective {self.idx}"
                         )
-        self.ax.axvline(x=self.mobo.n_initial_samples, linestyle='--', color='black')
+        self.ax.axvline(x=self.bo.n_initial_samples, linestyle='--', color='black')
         return self
 
     def save_figure(self, filename: str | Path | None = None):
@@ -237,17 +236,17 @@ class ObjectivePlotter(PlotterBase):
         for i in range(n_iter):
             if i == 0:
                 idx_start = 0
-                idx_end = self.mobo.n_initial_samples
+                idx_end = self.bo.n_initial_samples
                 y_batch_start = y_all[..., idx_start:idx_end]
-                y_batch_end = y_all[..., idx_end: idx_end + self.mobo.batch_size]
+                y_batch_end = y_all[..., idx_end: idx_end + self.bo.batch_size]
                 x_batch_start = x_all[idx_start:idx_end]
-                x_batch_end = x_all[idx_end: idx_end + self.mobo.batch_size]
+                x_batch_end = x_all[idx_end: idx_end + self.bo.batch_size]
             else:
-                idx_start = self.mobo.n_initial_samples + i * self.mobo.batch_size
-                idx_end = idx_start + self.mobo.batch_size
-                y_batch_start = y_all[..., idx_start - self.mobo.batch_size: idx_start]
+                idx_start = self.bo.n_initial_samples + i * self.bo.batch_size
+                idx_end = idx_start + self.bo.batch_size
+                y_batch_start = y_all[..., idx_start - self.bo.batch_size: idx_start]
                 y_batch_end = y_all[..., idx_start: idx_end]
-                x_batch_start = x_all[idx_start - self.mobo.batch_size: idx_start]
+                x_batch_start = x_all[idx_start - self.bo.batch_size: idx_start]
                 x_batch_end = x_all[idx_start: idx_end]
 
             # Plot all combinations of points from the two batches
@@ -264,17 +263,17 @@ class ObjectivePlotter(PlotterBase):
 
     def _prepare_xy(self):
         # Prepare the initial scatter points
-        x_init = self.mobo.n_initial_samples * np.ones(self.mobo.n_initial_samples)
-        y_init = self.mobo.X[..., : self.mobo.n_initial_samples, self.idx].detach().cpu().numpy()
+        x_init = self.bo.n_initial_samples * np.ones(self.bo.n_initial_samples)
+        y_init = self.bo.X[..., : self.bo.n_initial_samples, self.idx].detach().cpu().numpy()
         # Prepare the next set of scatter points
-        n_iter = int((self.mobo.X.shape[0] - self.mobo.n_initial_samples) / self.mobo.batch_size)
+        n_iter = int((self.bo.X.shape[0] - self.bo.n_initial_samples) / self.bo.batch_size)
         x_next_points = np.linspace(
-            start=self.mobo.n_initial_samples + self.mobo.batch_size,
-            stop=self.mobo.X.shape[0],
+            start=self.bo.n_initial_samples + self.bo.batch_size,
+            stop=self.bo.X.shape[0],
             num=n_iter,
         )
-        x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
+        x_next = np.repeat(a=x_next_points, repeats=self.bo.batch_size)
+        y_next = self.bo.X[..., self.bo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -284,6 +283,7 @@ class ObjectivePlotter(PlotterBase):
 class ConstraintPlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title=bayesian_optimizer.objective.constraint_names[idx]
             if bayesian_optimizer.objective.constraint_names
             else f"constraint {idx}",
@@ -294,7 +294,6 @@ class ConstraintPlotter(PlotterBase):
                 else f"constraint {idx}"
             ]
         )
-        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -303,11 +302,11 @@ class ConstraintPlotter(PlotterBase):
         self.ax.scatter(
             x_all, y_all,
             **xy_plot_kwargs,
-            label=self.mobo.objective.constraint_names[self.idx]
-            if self.mobo.objective.constraint_names
+            label=self.bo.objective.constraint_names[self.idx]
+            if self.bo.objective.constraint_names
             else f"constraint {self.idx}"
         )
-        self.ax.axvline(x=self.mobo.n_initial_samples, linestyle='--', color='black')
+        self.ax.axvline(x=self.bo.n_initial_samples, linestyle='--', color='black')
         return self
 
     def save_figure(self, filename: str | Path | None = None):
@@ -318,17 +317,17 @@ class ConstraintPlotter(PlotterBase):
         for i in range(n_iter):
             if i == 0:
                 idx_start = 0
-                idx_end = self.mobo.n_initial_samples
+                idx_end = self.bo.n_initial_samples
                 y_batch_start = y_all[..., idx_start:idx_end]
-                y_batch_end = y_all[..., idx_end: idx_end + self.mobo.batch_size]
+                y_batch_end = y_all[..., idx_end: idx_end + self.bo.batch_size]
                 x_batch_start = x_all[idx_start:idx_end]
-                x_batch_end = x_all[idx_end: idx_end + self.mobo.batch_size]
+                x_batch_end = x_all[idx_end: idx_end + self.bo.batch_size]
             else:
-                idx_start = self.mobo.n_initial_samples + i * self.mobo.batch_size
-                idx_end = idx_start + self.mobo.batch_size
-                y_batch_start = y_all[..., idx_start - self.mobo.batch_size: idx_start]
+                idx_start = self.bo.n_initial_samples + i * self.bo.batch_size
+                idx_end = idx_start + self.bo.batch_size
+                y_batch_start = y_all[..., idx_start - self.bo.batch_size: idx_start]
                 y_batch_end = y_all[..., idx_start: idx_end]
-                x_batch_start = x_all[idx_start - self.mobo.batch_size: idx_start]
+                x_batch_start = x_all[idx_start - self.bo.batch_size: idx_start]
                 x_batch_end = x_all[idx_start: idx_end]
 
             # Plot all combinations of points from the two batches
@@ -345,17 +344,17 @@ class ConstraintPlotter(PlotterBase):
 
     def _prepare_xy(self):
         # Prepare the initial scatter points
-        x_init = self.mobo.n_initial_samples * np.ones(self.mobo.n_initial_samples)
-        y_init = self.mobo.X[..., : self.mobo.n_initial_samples, self.idx].detach().cpu().numpy()
+        x_init = self.bo.n_initial_samples * np.ones(self.bo.n_initial_samples)
+        y_init = self.bo.X[..., : self.bo.n_initial_samples, self.idx].detach().cpu().numpy()
         # Prepare the next set of scatter points
-        n_iter = int((self.mobo.X.shape[0] - self.mobo.n_initial_samples) / self.mobo.batch_size)
+        n_iter = int((self.bo.X.shape[0] - self.bo.n_initial_samples) / self.bo.batch_size)
         x_next_points = np.linspace(
-            start=self.mobo.n_initial_samples + self.mobo.batch_size,
-            stop=self.mobo.X.shape[0],
+            start=self.bo.n_initial_samples + self.bo.batch_size,
+            stop=self.bo.X.shape[0],
             num=n_iter,
         )
-        x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
+        x_next = np.repeat(a=x_next_points, repeats=self.bo.batch_size)
+        y_next = self.bo.X[..., self.bo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))
@@ -365,6 +364,7 @@ class ConstraintPlotter(PlotterBase):
 class TrackerPlotter(PlotterBase):
     def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
         super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
             title=bayesian_optimizer.objective.tracker_names[idx]
             if bayesian_optimizer.objective.tracker_names
             else f"tracker {idx}",
@@ -375,7 +375,6 @@ class TrackerPlotter(PlotterBase):
                 else f"tracker {idx}"
             ]
         )
-        self.mobo = bayesian_optimizer
         self.idx = idx
 
     def plot(self):
@@ -383,8 +382,8 @@ class TrackerPlotter(PlotterBase):
         self._connect_subsequent_batches(n_iter, x_all, y_all)
         self.ax.scatter(x_all, y_all,
                         **xy_plot_kwargs,
-                        label=self.mobo.objective.tracker_names[self.idx]
-                        if self.mobo.objective.tracker_names
+                        label=self.bo.objective.tracker_names[self.idx]
+                        if self.bo.objective.tracker_names
                         else f"tracker {self.idx}"
                         )
         return self
@@ -397,17 +396,17 @@ class TrackerPlotter(PlotterBase):
         for i in range(n_iter):
             if i == 0:
                 idx_start = 0
-                idx_end = self.mobo.n_initial_samples
+                idx_end = self.bo.n_initial_samples
                 y_batch_start = y_all[..., idx_start:idx_end]
-                y_batch_end = y_all[..., idx_end: idx_end + self.mobo.batch_size]
+                y_batch_end = y_all[..., idx_end: idx_end + self.bo.batch_size]
                 x_batch_start = x_all[idx_start:idx_end]
-                x_batch_end = x_all[idx_end: idx_end + self.mobo.batch_size]
+                x_batch_end = x_all[idx_end: idx_end + self.bo.batch_size]
             else:
-                idx_start = self.mobo.n_initial_samples + i * self.mobo.batch_size
-                idx_end = idx_start + self.mobo.batch_size
-                y_batch_start = y_all[..., idx_start - self.mobo.batch_size: idx_start]
+                idx_start = self.bo.n_initial_samples + i * self.bo.batch_size
+                idx_end = idx_start + self.bo.batch_size
+                y_batch_start = y_all[..., idx_start - self.bo.batch_size: idx_start]
                 y_batch_end = y_all[..., idx_start: idx_end]
-                x_batch_start = x_all[idx_start - self.mobo.batch_size: idx_start]
+                x_batch_start = x_all[idx_start - self.bo.batch_size: idx_start]
                 x_batch_end = x_all[idx_start: idx_end]
 
             # Plot all combinations of points from the two batches
@@ -424,17 +423,17 @@ class TrackerPlotter(PlotterBase):
 
     def _prepare_xy(self):
         # Prepare the initial scatter points
-        x_init = self.mobo.n_initial_samples * np.ones(self.mobo.n_initial_samples)
-        y_init = self.mobo.X[..., : self.mobo.n_initial_samples, self.idx].detach().cpu().numpy()
+        x_init = self.bo.n_initial_samples * np.ones(self.bo.n_initial_samples)
+        y_init = self.bo.X[..., : self.bo.n_initial_samples, self.idx].detach().cpu().numpy()
         # Prepare the next set of scatter points
-        n_iter = int((self.mobo.X.shape[0] - self.mobo.n_initial_samples) / self.mobo.batch_size)
+        n_iter = int((self.bo.X.shape[0] - self.bo.n_initial_samples) / self.bo.batch_size)
         x_next_points = np.linspace(
-            start=self.mobo.n_initial_samples + self.mobo.batch_size,
-            stop=self.mobo.X.shape[0],
+            start=self.bo.n_initial_samples + self.bo.batch_size,
+            stop=self.bo.X.shape[0],
             num=n_iter,
         )
-        x_next = np.repeat(a=x_next_points, repeats=self.mobo.batch_size)
-        y_next = self.mobo.X[..., self.mobo.n_initial_samples:, self.idx].detach().cpu().numpy()
+        x_next = np.repeat(a=x_next_points, repeats=self.bo.batch_size)
+        y_next = self.bo.X[..., self.bo.n_initial_samples:, self.idx].detach().cpu().numpy()
         # Plot all scatter points
         x_all = np.concatenate((x_init, x_next))
         y_all = np.concatenate((y_init, y_next))

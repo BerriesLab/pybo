@@ -25,41 +25,18 @@ class SingleObjectivePlotter(PlotterBase):
             use_tracker: bool = False,
             X_gt: torch.Tensor | None = None,
             lims: List[tuple[float, float]] | None = None,
+            labels: list[str] | None = (r"$x$", r"$f(x)$"),
     ):
         """
         :param bayesian_optimizer: The BayesianOptimizer object containing data to plot.
         """
-        super().__init__(lims=lims)
-        self.bayesian_optimizer = bayesian_optimizer
+        super().__init__(bayesian_optimizer=bayesian_optimizer, lims=lims, labels=labels)
         self.X_gt = X_gt
         self.n_grid_points = 500
 
-    # TODO: extend grid generation to more than one input dimensions
-    def _generate_grid(self) -> torch.Tensor:
-        """Generate a dense grid over the input bounds for plotting."""
-        bounds = self.bayesian_optimizer.objective.bounds
-        device = self.bayesian_optimizer.device
-        dtype = self.bayesian_optimizer.dtype
-
-        X_grid = torch.linspace(
-            bounds[0, 0].item(),
-            bounds[1, 0].item(),
-            self.n_grid_points,
-            device=device,
-            dtype=dtype
-        ).unsqueeze(-1)
-
-        return X_grid
-
-    # TODO:
-    # """ Generate samples for ground truth evaluation - random sampler or grid """
-    # # When constraints apply to the input X, build the ground truth by using
-    # # a random generator subject to constraints
-    # X_gt = sampler.draw_samples(n=1000)
-
     def plot_ground_truth(self):
         X_gt = self._generate_grid()
-        Y_obj_gt = self.bayesian_optimizer.objective.evaluate_true_objective(X_gt)
+        Y_obj_gt = self.bo.objective.evaluate_true_objective(X_gt)
         if X_gt is not None and Y_obj_gt is not None:
             self.ax.scatter(
                 x=X_gt.detach().cpu().numpy(),
@@ -71,7 +48,7 @@ class SingleObjectivePlotter(PlotterBase):
         return self
 
     def plot_objective(self):
-        X, Y = self.bayesian_optimizer.compute_feasible_XY()
+        X, Y = self.bo.compute_feasible_XY()
         if X is not None and Y is not None:
             self.ax.scatter(
                 X.detach().cpu().numpy(),
@@ -82,7 +59,7 @@ class SingleObjectivePlotter(PlotterBase):
                 label="Feasible Observations"
             )
 
-        X, Y = self.bayesian_optimizer.compute_infeasible_XY()
+        X, Y = self.bo.compute_infeasible_XY()
         if X is not None and Y is not None:
             self.ax.scatter(
                 X.detach().cpu().numpy(),
@@ -92,22 +69,18 @@ class SingleObjectivePlotter(PlotterBase):
                 linewidths=1.0,
                 label="Infeasible Observations"
             )
-
-        # === Update legend ===
-        self.ax.legend(handles=self.legend_elements, loc="best")
-
         return self
 
     def plot_mean(self, color: str = 'blue', linewidth: float = 2.0,
                   label: str = 'GP Mean'):
         """Plot the GP posterior mean."""
-        if self.bayesian_optimizer.model is None:
+        if self.bo.model is None:
             raise ValueError("Model must be fitted before plotting GP mean.")
 
         X_grid = self._generate_grid()
 
         with torch.no_grad():
-            posterior = self.bayesian_optimizer.model.posterior(X_grid)
+            posterior = self.bo.model.posterior(X_grid)
             mean = posterior.mean.squeeze()
 
         X_np = X_grid.squeeze().detach().cpu().numpy()
@@ -126,13 +99,13 @@ class SingleObjectivePlotter(PlotterBase):
         :param alpha: Transparency of the shaded region.
         :param label: Label for legend (default: '±{sigma}σ').
         """
-        if self.bayesian_optimizer.model is None:
+        if self.bo.model is None:
             raise ValueError("Model must be fitted before plotting GP confidence.")
 
         X_grid = self._generate_grid()
 
         with torch.no_grad():
-            posterior = self.bayesian_optimizer.model.posterior(X_grid)
+            posterior = self.bo.model.posterior(X_grid)
             mean = posterior.mean.squeeze()
             std = posterior.variance.squeeze().sqrt()
 
@@ -152,7 +125,7 @@ class SingleObjectivePlotter(PlotterBase):
 
     def plot_optimum(self):
         """Plot the optimal solution."""
-        X, Y = self.bayesian_optimizer.best_feasible_X, self.bayesian_optimizer.best_feasible_Y
+        X, Y = self.bo.best_feasible_X, self.bo.best_feasible_Y
         if X is not None and Y is not None:
             self.ax.scatter(
                 X.detach().cpu().numpy(),
@@ -166,7 +139,7 @@ class SingleObjectivePlotter(PlotterBase):
         return self
 
     def plot_next_X(self):
-        X = self.bayesian_optimizer.new_X.detach().cpu().numpy()
+        X = self.bo.new_X.detach().cpu().numpy()
         if X is not None:
             if X.ndim == 0:
                 X = [X.item()]
@@ -194,5 +167,5 @@ class SingleObjectivePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = "experiment.png"
+        filename = "objective.png"
         return super().save_figure(filename=filename)

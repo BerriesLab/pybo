@@ -5,7 +5,7 @@ from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
-from utils.types import AcquisitionFunctionType, SamplerType, KernelType
+from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.multi_objective import MultiObjectivePlotter
 from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
     ConstraintPlotter, TrackerPlotter, ParameterPlotter

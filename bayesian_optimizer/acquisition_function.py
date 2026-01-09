@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional, List, Callable
-from utils.types import AcquisitionFunctionType
+from utils.bo_types import AcquisitionFunctionType
 import torch
 
 from botorch.acquisition import (

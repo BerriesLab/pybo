@@ -56,7 +56,7 @@ class AcquisitionFunctionType(Enum):
     @classmethod
     def types_requiring_sampler(cls):
         """Acquisition functions that require a sampler."""
-        return cls.single_objective_types() - cls.analytical_types() | cls.multi_objective_types()
+        return (cls.single_objective_types() - cls.analytical_types()) | cls.multi_objective_types()
 
     def is_analytical(self):
         return self in self.analytical_types()

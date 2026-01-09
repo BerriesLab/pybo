@@ -4,9 +4,10 @@ import torch
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
 from bayesian_optimizer.kernel import KernelFactory, RBFConfig
 from objectives.single_objective.quadratic import Quadratic
+from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
-from utils.types import AcquisitionFunctionType, SamplerType, KernelType
+from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
 from gpytorch.constraints import Interval
 
@@ -30,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.RBF,
         ard_num_dims=objective.num_objectives,
         config=RBFConfig(
-            lengthscale_constraint=Interval(0.01, 0.1)
+            lengthscale_constraint=Interval(0.01, 1)
         )
     )
 
@@ -50,6 +51,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         n_dimensions=objective.num_objectives,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
+        seed=42,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
@@ -77,8 +79,10 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bayesian_optimizer.optimize()
 
         """ Plot """
-        SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer,
-                               lims=[(-1, 5), (-1, 10)]).plot().save_figure().close_figure()
+        x_lims, y_lims = (-1, 5), (-1, 10)
+        lims = [x_lims, y_lims]
+        SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer, lims=lims).plot().save_figure().close_figure()
+        AcquisitionPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         ElapsedTimePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         BestValuePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         ParameterPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
