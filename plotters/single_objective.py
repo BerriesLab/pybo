@@ -159,6 +159,7 @@ class SingleObjectivePlotter(PlotterBase):
 
     def plot(self):
         self.plot_confidence()
+        self.plot_mean()
         self.plot_ground_truth()
         self.plot_objective()
         self.plot_optimum()

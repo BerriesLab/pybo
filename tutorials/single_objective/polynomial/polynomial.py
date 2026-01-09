@@ -31,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.RBF,
         ard_num_dims=objective.num_objectives,
         config=RBFConfig(
-            lengthscale_constraint=Interval(0.01, 1)
+            lengthscale_constraint=Interval(0.01, 1),
         )
     )
 

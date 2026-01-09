@@ -532,7 +532,7 @@ class BayesianOptimizer:
         if verbose:
             print("✓")
 
-    def _initialize_model(self, verbose=True):
+    def _initialize_model(self, verbose=True, randomize=False):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
 
         This method prepares the training dataset by combining the objective and constraint
@@ -572,6 +572,27 @@ class BayesianOptimizer:
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
                 )
             )
+
+        # TODO: Randomize initial hyperparameters to escape bad local optima
+        if randomize:
+            with torch.no_grad():
+                # Lengthscale: random between 0.1 and 1.0 × domain size
+                domain_size = (self.objective.bounds[1] - self.objective.bounds[0]).max().item()
+                new_ls = domain_size * (0.1 + 0.9 * torch.rand(1, device=self._device, dtype=self._dtype))
+                model.covar_module.base_kernel.lengthscale = new_ls
+
+                # Outputscale: random between 0.5 and 2.0 × Y variance
+                y_var = train_y[..., i:i + 1].var().item()
+                new_os = y_var * (0.5 + 1.5 * torch.rand(1, device=self._device, dtype=self._dtype))
+                model.covar_module.outputscale = max(new_os.item(), 1e-2)
+
+                # Noise: random between 1e-4 and 1e-2
+                new_noise = 10 ** (-4 + 2 * torch.rand(1, device=self._device, dtype=self._dtype))
+                model.likelihood.noise = new_noise
+
+        models.append(model)
+        ######### END TODO
+
         self._model = ModelListGP(*models)
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
@@ -781,23 +802,68 @@ class BayesianOptimizer:
             print("Fitting model... ", end="")
 
         restart_count = 0
-        while True:
+        while restart_count <= self._n_model_fit_restarts:
             try:
                 botorch.fit_gpytorch_mll(self._mll)
+
+                # Check 1: Is model in eval mode?
+                if self._mll.training:
+                    raise RuntimeError("Model fitting failed (still in training mode)")
+
+                # TODO: Check 2: Are hyperparameters reasonable?
+                for i, model in enumerate(self._model.models):
+                    ls = model.covar_module.base_kernel.lengthscale.item()
+                    os = model.covar_module.outputscale.item()
+                    noise = model.likelihood.noise.item()
+
+                    if verbose:
+                        print(f"  Model {i}: lengthscale={ls:.4f}, outputscale={os:.6f}, noise={noise:.6f}")
+
+                    # FLAT MEAN: lengthscale too large
+                    # if ls > 2 * domain_size:
+                    #     raise RuntimeError(
+                    #         f"Model {i}: FLAT MEAN detected. "
+                    #         f"Lengthscale ({ls:.4f}) > 2× domain size ({domain_size:.2f})"
+                    #     )
+
+                    # TODO: if COLLAPSED VARIANCE, i.e. outputscale too small, then lower limit output scale to prevent flat output
+                    if os < 1e-4:
+                        raise RuntimeError(
+                            f"Model {i}: COLLAPSED VARIANCE detected. "
+                            f"Outputscale ({os:.6f}) ≈ 0"
+                        )
+
+                    # ALL NOISE: noise dominates signal
+                    if noise > 10 * os:
+                        raise RuntimeError(
+                            f"Model {i}: ALL NOISE detected. "
+                            f"Noise ({noise:.6f}) >> Outputscale ({os:.6f})"
+                        )
+
                 if verbose:
                     print("✓")
-                break  # Exit the inner loop on success
+                break
 
             except Exception as e:
-                if restart_on_error and restart_count < self._n_model_fit_restarts:
-                    print("x")
-                    print(
-                        f"Restarting fitting... (Attempt {restart_count + 1}/{self._n_model_fit_restarts})"
-                    )
-                    restart_count += 1
-                else:
-                    raise e  # Raise if not restarting or max restarts reached
+                restart_count += 1
 
+                if restart_on_error and restart_count <= self._n_model_fit_restarts:
+                    if verbose:
+                        print("✗")
+                        print(f"Fitting failed: {e}")
+                        print(f"Reinitializing and retrying... (Attempt {restart_count}/{self._n_model_fit_restarts})")
+
+                    # Fresh kernel and model with new random initialization
+                    self._initialize_kernel(verbose=False)
+                    self._initialize_model(verbose=False)
+
+                else:
+                    raise RuntimeError(
+                        f"Model fitting failed after {self._n_model_fit_restarts} attempts. "
+                        f"Last error: {e}"
+                    )
+
+        # TODO
         if diagnose:
             self.diagnose_gp()
 
@@ -1067,23 +1133,6 @@ class BayesianOptimizer:
 
         if verbose:
             print(f"✓ (best = {self._best_feasible_Y.item():.4f})")
-
-    # TODO: generalize for any kernel
-    def diagnose_gp(self):
-        m = self._model.models[0]
-        ls = m.covar_module.base_kernel.lengthscale.item()
-        os = m.covar_module.outputscale.item()
-        noise = m.likelihood.noise.item()
-
-        print(f"Lengthscale: {ls:.4f}")
-        print(f"Outputscale: {os:.4e}")
-        print(f"Noise:       {noise:.4e}")
-        print(f"Noise/Signal ratio: {noise / os:.1f}")
-
-        if noise / os > 10:
-            print("⚠️  Noise >> signal. Consider constraining noise.")
-        if ls > 1 and os < 1e-4:
-            print("⚠️  GP gave up. Kernel may be unsuited for data.")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
