@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import List
 
 import torch
-from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 
 
@@ -23,14 +24,15 @@ class SingleObjectivePlotter(PlotterBase):
             bayesian_optimizer: BayesianOptimizer,
             use_tracker: bool = False,
             X_gt: torch.Tensor | None = None,
+            lims: List[tuple[float, float]] | None = None,
     ):
         """
         :param bayesian_optimizer: The BayesianOptimizer object containing data to plot.
         """
-        super().__init__()
+        super().__init__(lims=lims)
         self.bayesian_optimizer = bayesian_optimizer
         self.X_gt = X_gt
-        self.n_grid_points = 200
+        self.n_grid_points = 500
 
     # TODO: extend grid generation to more than one input dimensions
     def _generate_grid(self) -> torch.Tensor:
@@ -59,25 +61,37 @@ class SingleObjectivePlotter(PlotterBase):
         X_gt = self._generate_grid()
         Y_obj_gt = self.bayesian_optimizer.objective.evaluate_true_objective(X_gt)
         if X_gt is not None and Y_obj_gt is not None:
-            self.ax.scatter(x=X_gt.detach().cpu().numpy(), y=Y_obj_gt.detach().cpu().numpy(), c='r', s=1)
-
+            self.ax.scatter(
+                x=X_gt.detach().cpu().numpy(),
+                y=Y_obj_gt.detach().cpu().numpy(),
+                c='r',
+                s=1,
+                label="Ground truth",
+            )
         return self
-        # Y_con_gt = self.bayesian_optimizer.objective.evaluate_true_constraint(self.X_gt)
 
     def plot_objective(self):
         X, Y = self.bayesian_optimizer.compute_feasible_XY()
         if X is not None and Y is not None:
-            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="black")
+            self.ax.scatter(
+                X.detach().cpu().numpy(),
+                Y.detach().cpu().numpy(),
+                facecolors='none',
+                edgecolors='black',
+                linewidths=1.0,
+                label="Feasible Observations"
+            )
 
         X, Y = self.bayesian_optimizer.compute_infeasible_XY()
         if X is not None and Y is not None:
-            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="red")
-
-        # # === Update colormaps ===
-        # if self.idx_color is not None:
-        #     if self.cbar is None:
-        #         self._add_colorbar()
-        #     self._update_cmap_and_norm()
+            self.ax.scatter(
+                X.detach().cpu().numpy(),
+                Y.detach().cpu().numpy(),
+                facecolors='none',
+                edgecolors='red',
+                linewidths=1.0,
+                label="Infeasible Observations"
+            )
 
         # === Update legend ===
         self.ax.legend(handles=self.legend_elements, loc="best")
@@ -140,7 +154,15 @@ class SingleObjectivePlotter(PlotterBase):
         """Plot the optimal solution."""
         X, Y = self.bayesian_optimizer.best_feasible_X, self.bayesian_optimizer.best_feasible_Y
         if X is not None and Y is not None:
-            self.ax.scatter(x=X.detach().cpu().numpy(), y=Y.detach().cpu().numpy(), color="gold", marker="D")
+            self.ax.scatter(
+                X.detach().cpu().numpy(),
+                Y.detach().cpu().numpy(),
+                facecolors='orange',
+                edgecolors='black',
+                linewidths=1.0,
+                marker="D",
+                label="Best Observation"
+            )
         return self
 
     def plot_next_X(self):
@@ -149,7 +171,26 @@ class SingleObjectivePlotter(PlotterBase):
             if X.ndim == 0:
                 X = [X.item()]
             for i, x in enumerate(X):
-                self.ax.axvline(x=x, linestyle='--', color='red', alpha=0.7, label='Next X' if i == 0 else None)
+                self.ax.axvline(
+                    x=x,
+                    linestyle='--',
+                    color='red',
+                    alpha=0.7,
+                    label="Next X" if i == 0 else None
+                )
+            return self
+
+    def plot_legend(self, loc: str = "upper right"):
+        self.ax.legend(loc=loc)
+        return self
+
+    def plot(self):
+        self.plot_confidence()
+        self.plot_ground_truth()
+        self.plot_objective()
+        self.plot_optimum()
+        self.plot_next_X()
+        self.plot_legend()
         return self
 
     def save_figure(self, filename: str | Path | None = None):

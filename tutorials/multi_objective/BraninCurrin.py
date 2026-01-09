@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
 from utils.types import AcquisitionFunctionType, SamplerType
@@ -58,7 +58,7 @@ def main(n_samples: int = 64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_type=AcquisitionFunctionType.qLogEHVI,
+        acquisition_function_factory=AcquisitionFunctionType.qLogEHVI,
         X=X,
         Y_obj=Y_obj,
         batch_size=q,

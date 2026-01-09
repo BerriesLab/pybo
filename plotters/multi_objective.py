@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib as mpl
-from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.optimizer import BayesianOptimizer
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 from plotters.base_class import PlotterBase

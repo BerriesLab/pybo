@@ -1,12 +1,14 @@
 import os
 from datetime import datetime
-
 import torch
+from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
+from bayesian_optimizer.kernel import KernelFactory, RBFConfig
+from objectives.single_objective.quadratic import Quadratic
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
 from utils.types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
-from objectives.single_objective.quadratic import Quadratic
+from gpytorch.constraints import Interval
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -23,7 +25,23 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
     )
 
-    """ Instantiate a random generator """
+    """ Instantiate a kernel constructor"""
+    kernel_factory = KernelFactory(
+        kernel_type=KernelType.RBF,
+        ard_num_dims=objective.num_objectives,
+        config=RBFConfig(
+            lengthscale_constraint=Interval(0.01, 0.1)
+        )
+    )
+
+    """ Instantiate an acquisition function constructor"""
+    acquisition_function_factory = AcquisitionFunctionFactory(
+        acqf_type=AcquisitionFunctionType.LogEI,
+    )
+
+    """ Generate initial dataset """
+    # Create a random sampler and draw an initial set of points within the objective bounds.
+    # Compute the true objective values at the sampled points.
     sampler = Sampler(
         device=DEVICE,
         dtype=DTYPE,
@@ -33,19 +51,15 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
     )
-
-    """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
-    """ Initialize optimizer """
     bayesian_optimizer = BayesianOptimizer(
-        experiment_name="quadratic",
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_type=AcquisitionFunctionType.qLogEI,
-        kernel_type=KernelType.RBF,
+        acquisition_function_factory=acquisition_function_factory,
+        kernel_factory=kernel_factory,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
@@ -63,14 +77,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bayesian_optimizer.optimize()
 
         """ Plot """
-        (SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer).plot_objective().plot_ground_truth().
-         plot_mean().plot_confidence().plot_optimum().plot_next_X().save_figure().close_figure())
+        SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer,
+                               lims=[(-1, 5), (-1, 10)]).plot().save_figure().close_figure()
         ElapsedTimePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         BestValuePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         ParameterPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
         ObjectivePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        # ConstraintPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        # TrackerPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bayesian_optimizer.new_X
@@ -91,6 +103,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2, 4, 8]
+    batch_sizes = [1, 2]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)

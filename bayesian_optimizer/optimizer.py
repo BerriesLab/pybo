@@ -49,19 +49,10 @@ from botorch.acquisition.multi_objective import (
 from botorch.utils.transforms import normalize
 from botorch.utils.sampling import sample_simplex
 from gpytorch.constraints import GreaterThan
-from gpytorch.kernels import (
-    ScaleKernel,
-    RBFKernel as StandardRBFKernel,
-    MaternKernel,
-    PeriodicKernel,
-    RQKernel,
-    SpectralMixtureKernel,
-    LinearKernel,
-    PolynomialKernel,
-    CosineKernel,
-)
 
 from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
+from bayesian_optimizer.acquisition_function import AcquisitionRuntimeParams, AcquisitionFunctionFactory
+from bayesian_optimizer.kernel import KernelFactory
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
 from gpytorch.mlls import SumMarginalLogLikelihood
@@ -78,7 +69,6 @@ class BayesianOptimizer:
 
     def __init__(
             self,
-            experiment_name: str,
             device: torch.device,
             dtype: torch.device.type,
             objective: MCObjectiveBase,
@@ -89,8 +79,8 @@ class BayesianOptimizer:
             Y_con_var: torch.Tensor | None = None,
             Y_track: torch.Tensor | None = None,
             Y_track_var: torch.Tensor | None = None,
-            acquisition_function_type: AcquisitionFunctionType = AcquisitionFunctionType.qNEHVI,
-            kernel_type: KernelType = KernelType.RBF,
+            acquisition_function_factory: AcquisitionFunctionFactory | None = None,
+            kernel_factory: KernelFactory | None = None,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
             mc_samples: int = 256,
@@ -114,8 +104,11 @@ class BayesianOptimizer:
         self._acquisition_function_list: list[AcquisitionFunction] | None = None
         self._partitioning: torch.Tensor | None = None
         # self._pareto_front: torch.Tensor | None = None
+
         self._acquisition_function_instance: AcquisitionFunction | None = None
+        self._kernel_instance: Kernel | None = None
         self._sampler_instance: MCSampler | None = None
+
         self._n_initial_samples: int | None = None
         self._feasible_mask: torch.Tensor | None = None
 
@@ -128,7 +121,6 @@ class BayesianOptimizer:
         self._feasible_pareto_front_X: torch.Tensor | None = None
 
         # === Experiment Attributes ===
-        self.experiment_name = experiment_name
         self._datetime = datetime.datetime.now()
         self.objective = objective
         self.X: torch.Tensor = X
@@ -140,8 +132,8 @@ class BayesianOptimizer:
         self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
-        self.acquisition_function_type = acquisition_function_type
-        self.kernel_type = kernel_type
+        self._acquisition_function_factory = acquisition_function_factory
+        self.kernel_factory = kernel_factory
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
@@ -204,16 +196,6 @@ class BayesianOptimizer:
     """ =================================== """
     """ ===== EXPERIMENTAL PROPERTIES ===== """
     """ =================================== """
-
-    @property
-    def experiment_name(self):
-        return self._experiment_name
-
-    @experiment_name.setter
-    def experiment_name(self, name: str):
-        if not isinstance(name, str):
-            raise ValueError("Experiment name must be a string.")
-        self._experiment_name = name
 
     @property
     def datetime(self):
@@ -311,13 +293,13 @@ class BayesianOptimizer:
         self._Y_track_var = Y_track_var
 
     @property
-    def acquisition_function_type(self) -> AcquisitionFunctionType:
+    def _acquisition_function_factory(self) -> AcquisitionFunctionFactory:
         return self._acquisition_function_type
 
-    @acquisition_function_type.setter
-    def acquisition_function_type(self, af_type):
-        if not isinstance(af_type, AcquisitionFunctionType):
-            raise ValueError("Acquisition function type must be of type AcquisitionFunctionType")
+    @_acquisition_function_factory.setter
+    def _acquisition_function_factory(self, af_type):
+        if not isinstance(af_type, AcquisitionFunctionFactory):
+            raise ValueError("Acquisition function type must be of type AcquisitionFunctionFactory.")
         self._acquisition_function_type = af_type
 
     @property
@@ -422,8 +404,7 @@ class BayesianOptimizer:
         return self._partitioning
 
     @property
-    def \
-            pareto_front(self) -> torch.Tensor | None:
+    def pareto_front(self) -> torch.Tensor | None:
         if self._pareto_front is None:
             print("A pareto front has not been computed yet.")
         return self._pareto_front
@@ -497,14 +478,14 @@ class BayesianOptimizer:
         return self._feasible_pareto_front_Y
 
     @property
-    def kernel_type(self) -> KernelType:
-        return self._kernel_type
+    def kernel_factory(self) -> KernelFactory:
+        return self._kernel_factory
 
-    @kernel_type.setter
-    def kernel_type(self, kernel_type: KernelType):
-        if not isinstance(kernel_type, KernelType):
+    @kernel_factory.setter
+    def kernel_factory(self, kernel_factory: KernelFactory):
+        if not isinstance(kernel_factory, KernelFactory):
             raise ValueError("kernel_type must be of type KernelType")
-        self._kernel_type = kernel_type
+        self._kernel_factory = kernel_factory
 
     """ ===================== """
     """ ===== Optimizer ===== """
@@ -519,16 +500,17 @@ class BayesianOptimizer:
         self._compute_acquisition_function_reference(verbose=verbose)  # best_f or ref_point + pareto
         self._compute_metrics(verbose=verbose)  # HV or best_value → appends to history
 
-        # === 2. Fit model ===
+        # === 2. Initialize model ===
+        self._initialize_kernel(verbose=verbose)
         self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
-        # === 3. Sampler (if needed) ===
-        if self._acquisition_function_type.requires_sampler():
+        # === 3. Initialize acquisition function ===
+        if self._acquisition_function_factory.requires_sampler():
             self._initialize_sampler(verbose=verbose)
-
-        # === 4. Acquisition optimization ===
         self._initialize_acquisition_function(verbose=verbose)
+
+        # === 3. Optimize ===
         self._optimize_acquisition_function(verbose=verbose)
 
         t1 = time.monotonic()
@@ -537,61 +519,18 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
-    def _initialize_kernel(self, ard_num_dims: int):
-        """ Build a kernel based on the kernel type. All kernels use default
-        hyperparameters which are then optimized during model fitting.
-        'Ard_num_dims' is the number of dimensions for ARD (Automatic Relevance
-        Determination). It returns a gpytorch Kernel instance.
-        """
+    def _initialize_kernel(self, verbose=True):
+        """ Initialize a kernel (or covariance module) instance using the kernel_factory.
+        Note that, by building a fresh covariance module for each model and for each optimization
+        iteration, kernels are freshly optimized at each iteration. """
 
-        # === Basic Kernels ===
-        if self._kernel_type == KernelType.RBF:
-            rbf = StandardRBFKernel(
-                ard_num_dims=ard_num_dims,
-                lengthscale_constraint=Interval(0.01, 0.1))
-            rbf.lengthscale = 0.05
+        if verbose:
+            print(f"Initializing kernel instance of type {self.kernel_factory.kernel_type.value}... ", end="")
 
-            return rbf
+        self._kernel_instance = self._kernel_factory() if self._kernel_factory else None
 
-        elif self._kernel_type == KernelType.MATERN:
-            return ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=ard_num_dims))
-
-        elif self._kernel_type == KernelType.PERIODIC:
-            return ScaleKernel(PeriodicKernel())
-
-        elif self._kernel_type == KernelType.RQ:
-            return ScaleKernel(RQKernel(ard_num_dims=ard_num_dims))
-
-        elif self._kernel_type == KernelType.SPECTRAL_MIXTURE:
-            return SpectralMixtureKernel(num_mixtures=4, ard_num_dims=ard_num_dims)
-
-        elif self._kernel_type == KernelType.LINEAR:
-            return ScaleKernel(LinearKernel(ard_num_dims=ard_num_dims))
-
-        elif self._kernel_type == KernelType.POLYNOMIAL:
-            return ScaleKernel(PolynomialKernel(power=2, ard_num_dims=ard_num_dims))
-
-        elif self._kernel_type == KernelType.COSINE:
-            return ScaleKernel(CosineKernel())
-
-        # === Composite Kernels ===
-        elif self._kernel_type == KernelType.RBF_PLUS_PERIODIC:
-            rbf = ScaleKernel(StandardRBFKernel(ard_num_dims=ard_num_dims))
-            periodic = ScaleKernel(PeriodicKernel())
-            return rbf + periodic
-
-        elif self._kernel_type == KernelType.RBF_TIMES_PERIODIC:
-            rbf = StandardRBFKernel(ard_num_dims=ard_num_dims)
-            periodic = PeriodicKernel()
-            return ScaleKernel(rbf * periodic)
-
-        elif self._kernel_type == KernelType.MATERN_PLUS_PERIODIC:
-            matern = ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=ard_num_dims))
-            periodic = ScaleKernel(PeriodicKernel())
-            return matern + periodic
-
-        else:
-            raise ValueError(f"Unsupported kernel type: {self._kernel_type}")
+        if verbose:
+            print("✓")
 
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
@@ -622,8 +561,6 @@ class BayesianOptimizer:
         train_x, train_y, train_y_var = self._prepare_training_dataset()
         models = []
         for i in range(0, train_y.shape[-1]):
-            # Build a fresh covariance module for each model (kernels have learnable params)
-            covar_module = self._initialize_kernel(ard_num_dims=self.objective.dim)
             models.append(
                 SingleTaskGP(
                     train_X=train_x,
@@ -631,7 +568,7 @@ class BayesianOptimizer:
                     train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
-                    covar_module=covar_module,
+                    covar_module=self._kernel_instance,
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
                 )
             )
@@ -796,194 +733,25 @@ class BayesianOptimizer:
             print(f"✓")
 
     def _initialize_acquisition_function(self, verbose=True):
+        """ Initialize an acquisition function instance using the acquisition_function_factory. """
+
         if verbose:
-            print("Initializing acquisition function... ", end="")
+            print(
+                f"Initializing acquisition function of type {self._acquisition_function_factory.acquisition_function_type.value}... ",
+                end="")
 
-        # === Single-Objective: Analytical (q=1 only) ===
-        if self.acquisition_function_type == AcquisitionFunctionType.EI:
-            if self._batch_size != 1:
-                raise ValueError("Analytical EI only supports batch_size=1. Use qEI for batch_size>1.")
-            self._acquisition_function_instance = ExpectedImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                maximize=not self._objective.obj_to_minimize[0],  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.LogEI:
-            if self._batch_size != 1:
-                raise ValueError("Analytical LogEI only supports batch_size=1. Use qLogEI for batch_size>1.")
-            self._acquisition_function_instance = LogExpectedImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                maximize=not self._objective.obj_to_minimize[0],  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.PI:
-            if self._batch_size != 1:
-                raise ValueError("Analytical PI only supports batch_size=1. Use qPI for batch_size>1.")
-            self._acquisition_function_instance = ProbabilityOfImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                maximize=not self._objective.obj_to_minimize[0],  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.UCB:
-            if self._batch_size != 1:
-                raise ValueError("Analytical UCB only supports batch_size=1. Use qUCB for batch_size>1.")
-            self._acquisition_function_instance = UpperConfidenceBound(
-                model=self._model,
-                beta=self.ucb_beta,
-                maximize=not self._objective.obj_to_minimize[0],  # type: ignore
-            )
-
-        # === Single-Objective: Monte Carlo ===
-        elif self.acquisition_function_type == AcquisitionFunctionType.qEI:
-            self._acquisition_function_instance = qExpectedImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogEI:
-            self._acquisition_function_instance = qLogExpectedImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.qNEI:
-            self._acquisition_function_instance = qNoisyExpectedImprovement(
-                model=self._model,
-                X_baseline=self._X,
-                sampler=self._sampler_instance,
-                prune_baseline=True,
-                objective=self._objective,  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogNEI:
-            self._acquisition_function_instance = qLogNoisyExpectedImprovement(
-                model=self._model,
-                X_baseline=self._X,
-                sampler=self._sampler_instance,
-                prune_baseline=True,
-                objective=self._objective,  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.qPI:
-            self._acquisition_function_instance = qProbabilityOfImprovement(
-                model=self._model,
-                best_f=self._best_f,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-            )
-
-        elif self.acquisition_function_type == AcquisitionFunctionType.qUCB:
-            self._acquisition_function_instance = qUpperConfidenceBound(
-                model=self._model,
-                beta=self.ucb_beta,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-            )
-
-        # === Multi-Objective Acquisition Functions ===
-        elif self._acquisition_function_type == AcquisitionFunctionType.qEHVI:
-            self._initialize_partitioning()
-            self._acquisition_function_instance = qExpectedHypervolumeImprovement(
-                model=self._model,
-                ref_point=self._ref_point,
-                partitioning=self._partitioning,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-                constraints=self._objective.output_constraints,
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qLogEHVI:
-            self._initialize_partitioning()
-            self._acquisition_function_instance = qLogExpectedHypervolumeImprovement(
-                model=self._model,
-                ref_point=self._ref_point,
-                partitioning=self._partitioning,
-                sampler=self._sampler_instance,
-                objective=self._objective,  # type: ignore
-                constraints=self._objective.output_constraints,
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qNEHVI:
-            self._acquisition_function_instance = qNoisyExpectedHypervolumeImprovement(
-                model=self._model,
-                ref_point=self._ref_point,
-                X_baseline=self._X,
-                sampler=self._sampler_instance,
-                prune_baseline=True,
-                objective=self._objective,  # type: ignore
-                constraints=self._objective.output_constraints,
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qLogNEHVI:
-            self._acquisition_function_instance = (
-                qLogNoisyExpectedHypervolumeImprovement(
-                    model=self._model,
-                    ref_point=self._ref_point,
-                    X_baseline=self._X,
-                    prune_baseline=True,
-                    sampler=self._sampler_instance,
-                    objective=self._objective,  # type: ignore
-                    constraints=self._objective.output_constraints,
-                )
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qEWNEHVI:
-            self._acquisition_function_instance = (
-                qExplorationWeightedNEHVI(
-                    model=self._model,
-                    ref_point=self._ref_point,
-                    X_baseline=self._X,
-                    prune_baseline=True,
-                    sampler=self._sampler_instance,
-                    objective=self._objective,  # type: ignore
-                    constraints=self._objective.output_constraints,
-                    exploration_weight=1.0,
-                )
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qDWNEHVI:
-            self._acquisition_function_instance = (
-                qDiversityWeightedNEHVI(
-                    model=self._model,
-                    ref_point=self._ref_point,
-                    X_baseline=self._X,
-                    prune_baseline=True,
-                    sampler=self._sampler_instance,
-                    objective=self._objective,  # type: ignore
-                    constraints=self._objective.output_constraints,
-                    min_dist_radius=1.0,
-                    distance_penalty_weight=1.0,
-                )
-            )
-
-        elif self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
-            with torch.no_grad():
-                pred = self._model.posterior(self._X).mean
-            self._acquisition_function_list = []
-            for _ in range(self._batch_size):
-                weights = sample_simplex(self.objective.num_objectives, device=self._device,
-                                         dtype=self._dtype).squeeze()
-                objective = GenericMCObjective(get_chebyshev_scalarization(weights=weights, Y=pred))
-                acq_func = qNoisyExpectedImprovement(
-                    model=self._model,
-                    objective=objective,
-                    X_baseline=normalize(self._X, self.objective.bounds),
-                    sampler=self._sampler_instance,
-                    prune_baseline=True,
-                )
-                self._acquisition_function_list.append(acq_func)
-
-        else:
-            raise ValueError(
-                f"Invalid acquisition function. Supported values are {AcquisitionFunctionType.values()}."
-            )
+        params = AcquisitionRuntimeParams(
+            model=self._model,
+            maximize=not self._objective.obj_to_minimize[0],
+            best_f=self._best_f,
+            X_baseline=self._X,
+            sampler=self._sampler_instance,
+            objective=self._objective,
+            ref_point=self._ref_point,
+            partitioning=self._partitioning,
+            constraints=self._objective.output_constraints if hasattr(self._objective, 'output_constraints') else None,
+        )
+        self._acquisition_function_instance = self._acquisition_function_factory(params)
 
         if verbose:
             print("✓")

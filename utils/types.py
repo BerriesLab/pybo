@@ -102,16 +102,16 @@ class KernelType(Enum):
         MATERN_PLUS_PERIODIC: Rougher trend + seasonality
     """
 
-    RBF = "rbf"
-    MATERN = "matern"
-    PERIODIC = "periodic"
-    RQ = "rq"
-    SPECTRAL_MIXTURE = "spectral_mixture"
-    LINEAR = "linear"
-    POLYNOMIAL = "polynomial"
-    COSINE = "cosine"
+    RBF = "RBF"
+    MATERN = "Matern"
+    PERIODIC = "Periodic"
+    RQ = "RQ"
+    SPECTRAL_MIXTURE = "Spectral_mixture"
+    LINEAR = "Linear"
+    POLYNOMIAL = "Polynomial"
+    COSINE = "Cosine"
 
     # Composite kernels
-    RBF_PLUS_PERIODIC = "rbf_plus_periodic"
-    RBF_TIMES_PERIODIC = "rbf_times_periodic"
-    MATERN_PLUS_PERIODIC = "matern_plus_periodic"
+    RBF_PLUS_PERIODIC = "RBF_plus_Periodic"
+    RBF_TIMES_PERIODIC = "RBF_times_Periodic"
+    MATERN_PLUS_PERIODIC = "Matern_plus_Periodic"

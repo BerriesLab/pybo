@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.multi_objective.osyczka_kundu import OsyczkaKundu
 from samplers.samplers import Sampler
 from utils.helpers import create_experiment_directory
@@ -54,7 +54,7 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_type=AcquisitionFunctionType.qNEHVI,
+        acquisition_function_factory=AcquisitionFunctionType.qNEHVI,
         X=X,
         Y_obj=Y_obj,
         n_acqf_opt_restarts=50,

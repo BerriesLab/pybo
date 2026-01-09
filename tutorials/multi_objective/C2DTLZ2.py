@@ -1,7 +1,7 @@
 import os
 import torch
 from pathlib import Path
-from bayesian_optimizer.bayesian_optimizer import BayesianOptimizer
+from bayesian_optimizer.optimizer import BayesianOptimizer
 from samplers.samplers import Sampler
 from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
@@ -57,7 +57,7 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_type=AcquisitionFunctionType.qNEHVI,
+        acquisition_function_factory=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         X=X,
         Y_obj=Y_obj,

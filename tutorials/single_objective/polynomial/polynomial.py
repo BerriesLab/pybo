@@ -6,7 +6,7 @@ from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
 from utils.types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
-from objectives.single_objective.quadratic import Quadratic
+from objectives.single_objective.polynomial import Polynomial
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -18,7 +18,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the true_objective """
-    objective = Quadratic(
+    objective = Polynomial(
         device=DEVICE,
         dtype=DTYPE,
     )
@@ -44,8 +44,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_type=AcquisitionFunctionType.qLogEI,
-        kernel_type=KernelType.RBF,
+        acquisition_function_factory=AcquisitionFunctionType.qLogEI,
+        kernel_factory=KernelType.RBF,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,

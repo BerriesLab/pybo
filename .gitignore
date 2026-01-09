@@ -11,4 +11,4 @@ env/
 
 # Data
 /dist/
-/tutorials/single_objective/quadratic/data/
+/tutorials/single_objective/**/data/
