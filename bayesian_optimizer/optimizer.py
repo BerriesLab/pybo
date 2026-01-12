@@ -461,10 +461,6 @@ class BayesianOptimizer:
 
     def optimize(self, verbose=True):
 
-        if self._is_converged():
-            print("The optimizer has converged.")
-            return False
-
         t0 = time.monotonic()
 
         # === 1. Compute metrics on current data ===
@@ -490,8 +486,6 @@ class BayesianOptimizer:
 
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
-
-        return True
 
     def _initialize_kernel(self, verbose=True):
         """ Initialize a kernel (or covariance module) instance using the kernel_factory.
@@ -888,7 +882,7 @@ class BayesianOptimizer:
         if verbose:
             print(f"✓ (New X: {self._new_X.detach().cpu().numpy()}")
 
-    def _is_converged(self, patience=3, tol=1e-3):
+    def is_converged(self, patience=3, tol=1e-3):
 
         # Select the relevant metric
         if self._objective.num_objectives == 1:

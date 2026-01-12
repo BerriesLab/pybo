@@ -73,13 +73,14 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
+        if bayesian_optimizer.is_converged():
+            break
+
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
-        is_converged = bayesian_optimizer.optimize()
-        if is_converged:
-            break
+        bayesian_optimizer.optimize()
 
         """ Plot """
         x_lims, y_lims = (-2, 2), (-2, 8)
