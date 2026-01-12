@@ -83,7 +83,7 @@ def main(n_samples=64, q: int = 1, ):
         mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Compute pareto front and hypervolume """
-        mobo.compute_feasibility_mask()
+        mobo._compute_feasibility_mask()
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
 

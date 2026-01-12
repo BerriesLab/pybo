@@ -1,6 +1,8 @@
 import os
 from datetime import datetime
 import torch
+from sympy import GreaterThan
+
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
 from bayesian_optimizer.kernel import KernelFactory, RBFConfig
 from objectives.single_objective.quadratic import Quadratic
@@ -9,7 +11,7 @@ from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
 from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
-from gpytorch.constraints import Interval
+from gpytorch.constraints import Interval, GreaterThan
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -31,13 +33,14 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.RBF,
         ard_num_dims=objective.num_objectives,
         config=RBFConfig(
-            lengthscale_constraint=Interval(0.01, 1)
+            lengthscale_constraint=GreaterThan(0.01)
+            # lengthscale_constraint=Interval(0.01, 0.1)
         )
     )
 
     """ Instantiate an acquisition function constructor"""
     acquisition_function_factory = AcquisitionFunctionFactory(
-        acqf_type=AcquisitionFunctionType.LogEI,
+        acqf_type=AcquisitionFunctionType.qLogNEI,
     )
 
     """ Generate initial dataset """
@@ -109,4 +112,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_samples=8, q=batch_size, output_dir=main_path)

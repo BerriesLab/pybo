@@ -21,6 +21,7 @@ from gpytorch.kernels import (
 class RBFConfig:
     lengthscale: Optional[float] = None
     lengthscale_constraint: Optional[Interval] = None
+    lengthscale_prior: Optional[Interval] = None
 
 
 @dataclass

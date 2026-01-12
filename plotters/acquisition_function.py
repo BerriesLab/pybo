@@ -2,6 +2,7 @@ from pathlib import Path
 import torch
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
+import numpy as np
 
 
 class AcquisitionPlotter(PlotterBase):
@@ -28,8 +29,13 @@ class AcquisitionPlotter(PlotterBase):
         X_np = X_grid.squeeze().detach().cpu().numpy()
         acq_np = acq_values.squeeze().detach().cpu().numpy()
 
-        self.ax.plot(X_np, acq_np, color=color, linewidth=linewidth, label=label)
-        self.ax.set_ylabel('Acquisition Value')
+        if self.bo.acquisition_function_factory.acquisition_function_type.is_log():
+            log_abs_acqf = np.log(np.abs(acq_np))
+            self.ax.plot(X_np, -log_abs_acqf, color=color, linewidth=linewidth, label=label)
+            self.ax.set_ylabel(r'$-\log \left( | \mathrm{Acquisition\ Value} | \right) $')
+        else:
+            self.ax.plot(X_np, acq_np, color=color, linewidth=linewidth, label=label)
+            self.ax.set_ylabel(r'$\mathrm{Acquisition\ Value}$')
 
         return self
 

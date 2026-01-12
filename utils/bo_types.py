@@ -58,6 +58,11 @@ class AcquisitionFunctionType(Enum):
         """Acquisition functions that require a sampler."""
         return (cls.single_objective_types() - cls.analytical_types()) | cls.multi_objective_types()
 
+    @classmethod
+    def log_types(cls):
+        """Acquisition functions that are logarithmic. """
+        return {cls.LogEI, cls.qLogEI, cls.qLogNEI, cls.qLogEHVI, cls.qLogNEHVI}
+
     def is_analytical(self):
         return self in self.analytical_types()
 
@@ -72,6 +77,9 @@ class AcquisitionFunctionType(Enum):
 
     def requires_sampler(self):
         return self in self.types_requiring_sampler()
+
+    def is_log(self):
+        return self in self.log_types()
 
 
 class SamplerType(Enum):

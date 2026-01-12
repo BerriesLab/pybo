@@ -34,7 +34,7 @@ class SingleObjectivePlotter(PlotterBase):
         self.X_gt = X_gt
         self.n_grid_points = 500
 
-    def plot_ground_truth(self):
+    def plot_ground_truth(self, zorder: int = 2):
         X_gt = self._generate_grid()
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_gt)
         if X_gt is not None and Y_obj_gt is not None:
@@ -44,10 +44,11 @@ class SingleObjectivePlotter(PlotterBase):
                 c='r',
                 s=1,
                 label="Ground truth",
+                zorder=zorder,
             )
         return self
 
-    def plot_objective(self):
+    def plot_objective(self, zorder: int = 3):
         X, Y = self.bo.compute_feasible_XY()
         if X is not None and Y is not None:
             self.ax.scatter(
@@ -56,7 +57,8 @@ class SingleObjectivePlotter(PlotterBase):
                 facecolors='none',
                 edgecolors='black',
                 linewidths=1.0,
-                label="Feasible Observations"
+                label="Feasible Observations",
+                zorder=zorder,
             )
 
         X, Y = self.bo.compute_infeasible_XY()
@@ -67,12 +69,13 @@ class SingleObjectivePlotter(PlotterBase):
                 facecolors='none',
                 edgecolors='red',
                 linewidths=1.0,
-                label="Infeasible Observations"
+                label="Infeasible Observations",
+                zorder=zorder,
             )
         return self
 
     def plot_mean(self, color: str = 'blue', linewidth: float = 2.0,
-                  label: str = 'GP Mean'):
+                  label: str = 'Mean', zorder: int = 1):
         """Plot the GP posterior mean."""
         if self.bo.model is None:
             raise ValueError("Model must be fitted before plotting GP mean.")
@@ -91,13 +94,14 @@ class SingleObjectivePlotter(PlotterBase):
         return self
 
     def plot_confidence(self, sigma: float = 3.0, color: str = 'blue',
-                        alpha: float = 0.2, label: str = None):
+                        alpha: float = 0.2, label: str = None, zorder: int = 0):
         """Plot the GP confidence region (±sigma standard deviations).
 
         :param sigma: Number of standard deviations for confidence region.
         :param color: Color for the shaded region.
         :param alpha: Transparency of the shaded region.
         :param label: Label for legend (default: '±{sigma}σ').
+        :param zorder: stack order.
         """
         if self.bo.model is None:
             raise ValueError("Model must be fitted before plotting GP confidence.")
@@ -119,11 +123,11 @@ class SingleObjectivePlotter(PlotterBase):
         if label is None:
             label = f'±{sigma}σ'
 
-        self.ax.fill_between(X_np, lower, upper, color=color, alpha=alpha, label=label)
+        self.ax.fill_between(X_np, lower, upper, color=color, alpha=alpha, label=label, zorder=zorder)
 
         return self
 
-    def plot_optimum(self):
+    def plot_optimum(self, zorder: int = 4):
         """Plot the optimal solution."""
         X, Y = self.bo.best_feasible_X, self.bo.best_feasible_Y
         if X is not None and Y is not None:
@@ -134,11 +138,12 @@ class SingleObjectivePlotter(PlotterBase):
                 edgecolors='black',
                 linewidths=1.0,
                 marker="D",
-                label="Best Observation"
+                label="Best Observation",
+                zorder=zorder,
             )
         return self
 
-    def plot_next_X(self):
+    def plot_next_X(self, zorder: int = 5):
         X = self.bo.new_X.detach().cpu().numpy()
         if X is not None:
             if X.ndim == 0:
@@ -149,7 +154,8 @@ class SingleObjectivePlotter(PlotterBase):
                     linestyle='--',
                     color='red',
                     alpha=0.7,
-                    label="Next X" if i == 0 else None
+                    label="Next X" if i == 0 else None,
+                    zorder=zorder,
                 )
             return self
 

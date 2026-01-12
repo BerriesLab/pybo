@@ -87,7 +87,7 @@ def main(n_samples=64, q: int = 1, ):
         """ Compute pareto front and hypervolume """
         # bayesian_optimizer.compute_pareto_front()
         # bayesian_optimizer.compute_hypervolume()
-        mobo.compute_feasibility_mask()
+        mobo._compute_feasibility_mask()
         mobo.compute_best_value()
 
         """ Save"""

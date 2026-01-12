@@ -1,21 +1,14 @@
 import pickle
+import warnings
 from typing import Union
 import torch
 import datetime
-import warnings
 import time
 import glob
 import os
 from pathlib import Path
 import botorch
 import gpytorch
-from gpytorch.constraints import Interval
-from botorch.exceptions import (
-    BadInitialCandidatesWarning,
-    InputDataWarning,
-    OptimizationWarning,
-)
-from botorch.exceptions.warnings import NumericsWarning
 from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import SobolQMCNormalSampler, MCSampler
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume, get_chebyshev_scalarization
@@ -24,33 +17,8 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.acquisition.analytic import (
-    ExpectedImprovement,
-    LogExpectedImprovement,
-    ProbabilityOfImprovement,
-    UpperConfidenceBound,
-)
-from botorch.acquisition import (
-    qNoisyExpectedImprovement,
-    GenericMCObjective,
-    AcquisitionFunction,
-    qExpectedImprovement,
-    qLogExpectedImprovement,
-    qLogNoisyExpectedImprovement,
-    qProbabilityOfImprovement,
-    qUpperConfidenceBound
-)
-from botorch.acquisition.multi_objective import (
-    qExpectedHypervolumeImprovement,
-    qNoisyExpectedHypervolumeImprovement,
-    qLogExpectedHypervolumeImprovement,
-    qLogNoisyExpectedHypervolumeImprovement,
-)
-from botorch.utils.transforms import normalize
-from botorch.utils.sampling import sample_simplex
+from botorch.acquisition import AcquisitionFunction
 from gpytorch.constraints import GreaterThan
-
-from acquisition_functions.qNEHVI import qExplorationWeightedNEHVI, qDiversityWeightedNEHVI
 from bayesian_optimizer.acquisition_function import AcquisitionRuntimeParams, AcquisitionFunctionFactory
 from bayesian_optimizer.kernel import KernelFactory
 from objectives.base_class import MCObjectiveBase
@@ -493,10 +461,14 @@ class BayesianOptimizer:
 
     def optimize(self, verbose=True):
 
+        if self._is_converged():
+            print("The optimizer has converged.")
+            return False
+
         t0 = time.monotonic()
 
         # === 1. Compute metrics on current data ===
-        self.compute_feasibility_mask(verbose=verbose)
+        self._compute_feasibility_mask(verbose=verbose)
         self._compute_acquisition_function_reference(verbose=verbose)  # best_f or ref_point + pareto
         self._compute_metrics(verbose=verbose)  # HV or best_value → appends to history
 
@@ -518,6 +490,8 @@ class BayesianOptimizer:
 
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
+
+        return True
 
     def _initialize_kernel(self, verbose=True):
         """ Initialize a kernel (or covariance module) instance using the kernel_factory.
@@ -557,7 +531,7 @@ class BayesianOptimizer:
             print("Initializing model... ", end="")
 
         # Prepare dataset by concatenating the objectives and initialize models - one model
-        # for each objective (or observable)
+        # for each objective (or observable). Note that a base noise of 1e-4 is the default value
         train_x, train_y, train_y_var = self._prepare_training_dataset()
         models = []
         for i in range(0, train_y.shape[-1]):
@@ -569,29 +543,9 @@ class BayesianOptimizer:
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
                     covar_module=self._kernel_instance,
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-6)),
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4)),
                 )
             )
-
-        # TODO: Randomize initial hyperparameters to escape bad local optima
-        if randomize:
-            with torch.no_grad():
-                # Lengthscale: random between 0.1 and 1.0 × domain size
-                domain_size = (self.objective.bounds[1] - self.objective.bounds[0]).max().item()
-                new_ls = domain_size * (0.1 + 0.9 * torch.rand(1, device=self._device, dtype=self._dtype))
-                model.covar_module.base_kernel.lengthscale = new_ls
-
-                # Outputscale: random between 0.5 and 2.0 × Y variance
-                y_var = train_y[..., i:i + 1].var().item()
-                new_os = y_var * (0.5 + 1.5 * torch.rand(1, device=self._device, dtype=self._dtype))
-                model.covar_module.outputscale = max(new_os.item(), 1e-2)
-
-                # Noise: random between 1e-4 and 1e-2
-                new_noise = 10 ** (-4 + 2 * torch.rand(1, device=self._device, dtype=self._dtype))
-                model.likelihood.noise = new_noise
-
-        models.append(model)
-        ######### END TODO
 
         self._model = ModelListGP(*models)
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
@@ -794,54 +748,32 @@ class BayesianOptimizer:
             Y=Y,
         )
 
-    def _fit_model(self, restart_on_error=True, verbose=True, diagnose=False):
+    def _fit_model(self, restart_on_error=True, verbose=True):
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
         if verbose:
-            print("Fitting model... ", end="")
+            print("Fitting model... ", end="", flush=True)
 
         restart_count = 0
         while restart_count <= self._n_model_fit_restarts:
             try:
                 botorch.fit_gpytorch_mll(self._mll)
 
-                # Check 1: Is model in eval mode?
                 if self._mll.training:
                     raise RuntimeError("Model fitting failed (still in training mode)")
 
-                # TODO: Check 2: Are hyperparameters reasonable?
+                # Validate each model in the list
+                all_issues = []
                 for i, model in enumerate(self._model.models):
-                    ls = model.covar_module.base_kernel.lengthscale.item()
-                    os = model.covar_module.outputscale.item()
-                    noise = model.likelihood.noise.item()
+                    issues = self._validate_model_fit(model, i, verbose=verbose)
+                    all_issues.extend(issues)
 
-                    if verbose:
-                        print(f"  Model {i}: lengthscale={ls:.4f}, outputscale={os:.6f}, noise={noise:.6f}")
-
-                    # FLAT MEAN: lengthscale too large
-                    # if ls > 2 * domain_size:
-                    #     raise RuntimeError(
-                    #         f"Model {i}: FLAT MEAN detected. "
-                    #         f"Lengthscale ({ls:.4f}) > 2× domain size ({domain_size:.2f})"
-                    #     )
-
-                    # TODO: if COLLAPSED VARIANCE, i.e. outputscale too small, then lower limit output scale to prevent flat output
-                    if os < 1e-4:
-                        raise RuntimeError(
-                            f"Model {i}: COLLAPSED VARIANCE detected. "
-                            f"Outputscale ({os:.6f}) ≈ 0"
-                        )
-
-                    # ALL NOISE: noise dominates signal
-                    if noise > 10 * os:
-                        raise RuntimeError(
-                            f"Model {i}: ALL NOISE detected. "
-                            f"Noise ({noise:.6f}) >> Outputscale ({os:.6f})"
-                        )
+                if all_issues:
+                    raise RuntimeError(f"Fit validation failed: {all_issues}")
 
                 if verbose:
-                    print("✓")
+                    print("Fitting model... ✓")
                 break
 
             except Exception as e:
@@ -849,27 +781,74 @@ class BayesianOptimizer:
 
                 if restart_on_error and restart_count <= self._n_model_fit_restarts:
                     if verbose:
-                        print("✗")
-                        print(f"Fitting failed: {e}")
-                        print(f"Reinitializing and retrying... (Attempt {restart_count}/{self._n_model_fit_restarts})")
+                        print("Fitting model... ✗")
+                        print(f"  Error: {e}")
+                        print(f"  Reinitializing and retrying... "
+                              f"(Attempt {restart_count}/{self._n_model_fit_restarts})")
 
-                    # Fresh kernel and model with new random initialization
                     self._initialize_kernel(verbose=False)
                     self._initialize_model(verbose=False)
+                    self._randomize_hyperparameters()
 
                 else:
                     raise RuntimeError(
                         f"Model fitting failed after {self._n_model_fit_restarts} attempts. "
                         f"Last error: {e}"
                     )
-
-        # TODO
-        if diagnose:
-            self.diagnose_gp()
-
         return None
 
+    def _randomize_hyperparameters(self):
+        """Randomize hyperparameters for a fresh optimization start."""
+        for m in self._model.models:
+            # Sample in log space for better coverage
+            # Lengthscale: log-uniform in [0.1, 10] relative to default
+            log_ls = torch.empty_like(m.covar_module.base_kernel.lengthscale).uniform_(-1, 1)
+            m.covar_module.base_kernel.lengthscale = 10 ** log_ls
+
+            # Outputscale: log-uniform in [0.1, 10]
+            log_os = torch.empty(1, device=self._device).uniform_(-1, 1)
+            m.covar_module.outputscale = 10 ** log_os
+
+            # Noise: log-uniform in [1e-4, 1e-1]
+            log_noise = torch.empty(1, device=self._device).uniform_(-4, -1)
+            m.likelihood.noise = 10 ** log_noise
+
+    def _validate_model_fit(self, model, model_idx, verbose=True):
+        """ Validate hyperparameters of a fitted GP model. Specifically, checks whether the model outputscale
+        is not smaller than the noise, otherwise the model would be noise dominated; and the lenghtscales are
+        not larger than 100 x the corresponding domain size. Returns list of issues (empty if fit looks healthy).
+        Note that the lengthscale may be upper limited when constructing the kernel instance."""
+        issues = []
+
+        os = model.covar_module.outputscale.item()
+        noise = model.likelihood.noise.item()
+        lengthscales = model.covar_module.base_kernel.lengthscale
+
+        bounds = self._objective.bounds  # shape (2, d)
+        n_dims = bounds.shape[1]
+
+        if verbose:
+            print(
+                f"Model {model_idx}: "
+                f"outputscale={os:.2e}, "
+                f"noise={noise:.2e}, "
+                f"lengthscales={[f'{x:.2e}' for x in lengthscales.view(-1).tolist()]}")
+
+        # Output scale checks (with Standardize, Y variance is ca. 1)
+        if os < noise:
+            issues.append(f"Noise ({noise:.2e}) >= output scale ({os:.2e})")
+
+        # Per-dimension lengthscale checks
+        for dim in range(n_dims):
+            domain_range = bounds[1, dim] - bounds[0, dim]
+            relative_ls = lengthscales[dim].item() / domain_range.item()
+            if relative_ls > 100:
+                issues.append(f"Dim {dim}: lengthscale too large ({relative_ls:.2e} of domain)")
+
+        return issues
+
     def _optimize_acquisition_function(self, verbose=True):
+
         if verbose:
             print(f"Optimizing acquisition function... ", end="")
 
@@ -908,6 +887,25 @@ class BayesianOptimizer:
 
         if verbose:
             print(f"✓ (New X: {self._new_X.detach().cpu().numpy()}")
+
+    def _is_converged(self, patience=3, tol=1e-3):
+
+        # Select the relevant metric
+        if self._objective.num_objectives == 1:
+            metrics_list = self._best_values
+        else:
+            metrics_list = self._hypervolume
+
+        # Need enough history to evaluate
+        if not metrics_list or len(metrics_list) < patience:
+            return False
+
+        # Take the last `patience` values
+        metrics = metrics_list[-patience:]
+        # Compute improvements between consecutive steps
+        improvements = [metrics[i + 1] - metrics[i] for i in range(len(metrics) - 1)]
+        # Converged if all improvements are smaller than tolerance
+        return all(abs(impr) < tol for impr in improvements)
 
     def _ic_generator(
             self,
@@ -1004,7 +1002,7 @@ class BayesianOptimizer:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
 
-    def compute_feasibility_mask(self, verbose=True):
+    def _compute_feasibility_mask(self, verbose=True):
         """ Compute feasibility mask on the original, non maximized, Y.
         If the objective is unconstrained, all observations are feasible.
         Otherwise, concatenate objectives and constraints along the last

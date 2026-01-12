@@ -31,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.RBF,
         ard_num_dims=objective.num_objectives,
         config=RBFConfig(
-            lengthscale_constraint=Interval(0.01, 1),
+            # lengthscale_constraint=Interval(0.01, 1),
         )
     )
 
@@ -77,7 +77,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
-        bayesian_optimizer.optimize()
+        is_converged = bayesian_optimizer.optimize()
+        if is_converged:
+            break
 
         """ Plot """
         x_lims, y_lims = (-2, 2), (-2, 8)
@@ -110,4 +112,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_samples=16, q=batch_size, output_dir=main_path)
