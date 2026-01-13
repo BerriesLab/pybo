@@ -65,10 +65,10 @@ class PeriodicConfig:
 #     offset_constraint: Optional[Interval] = None
 #
 #
-# @dataclass
-# class CosineConfig:
-#     period_length: Optional[float] = None
-#     period_length_constraint: Optional[Interval] = None
+@dataclass
+class CosineConfig:
+    period_length: Optional[float] = None
+    period_length_constraint: Optional[Interval] = None
 
 
 # === Composite Kernel Configs ===
@@ -173,14 +173,14 @@ class KernelFactory:
         #         poly.offset = cfg.offset
         #     return ScaleKernel(poly)
         #
-        # elif self.kernel_type == KernelType.COSINE:
-        #     cfg = self.config or CosineConfig()
-        #     cosine = CosineKernel(
-        #         period_length_constraint=cfg.period_length_constraint,
-        #     )
-        #     if cfg.period_length is not None:
-        #         cosine.period_length = cfg.period_length
-        #     return ScaleKernel(cosine)
+        elif self.kernel_type == KernelType.COSINE:
+            cfg = self.config or CosineConfig()
+            cosine = CosineKernel(
+                period_length_constraint=cfg.period_length_constraint,
+            )
+            if cfg.period_length is not None:
+                cosine.period_length = cfg.period_length
+            return ScaleKernel(cosine)
 
         # === Composite Kernels ===
         elif self.kernel_type == KernelType.RBF_PLUS_PERIODIC:

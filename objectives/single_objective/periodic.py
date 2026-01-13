@@ -27,4 +27,5 @@ class Periodic(MCSingleObjectiveBase):
         )
 
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        return X ** 2 + 10 * (1 - torch.cos(2 * torch.pi * X))
+        # return X ** 2 + 10 * (1 - torch.cos(2 * torch.pi * X))
+        return torch.cos(2 * torch.pi * X)

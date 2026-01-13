@@ -1,17 +1,15 @@
 import os
 from datetime import datetime
 import torch
-from sympy import GreaterThan
-
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
-from bayesian_optimizer.kernel import KernelFactory, RBFConfig
-from objectives.single_objective.quadratic import Quadratic
+from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig, CosineConfig
+from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
 from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
 from plotters.evolution import *
-from gpytorch.constraints import Interval, GreaterThan
+from gpytorch.constraints import Interval
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -23,18 +21,16 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the true_objective """
-    objective = Quadratic(
+    objective = Periodic(
         device=DEVICE,
         dtype=DTYPE,
     )
 
-    """ Instantiate a kernel constructor"""
     kernel_factory = KernelFactory(
-        kernel_type=KernelType.RBF,
+        kernel_type=KernelType.COSINE,
         ard_num_dims=objective.num_objectives,
-        config=RBFConfig(
-            lengthscale_constraint=GreaterThan(0.01)
-            # lengthscale_constraint=Interval(0.01, 0.1)
+        config=CosineConfig(
+            # period_length_constraint=Interval(0.9, 1.1)
         )
     )
 
@@ -54,11 +50,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         n_dimensions=objective.num_objectives,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-        seed=42,
+        seed=45,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
+    """ Initialize optimizer """
     bayesian_optimizer = BayesianOptimizer(
         device=DEVICE,
         dtype=DTYPE,
@@ -75,7 +72,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bayesian_optimizer.is_converged(patience=10):
+        if i > 0 and bayesian_optimizer.is_converged(patience=32):
             break
 
         print("\n\n")
@@ -85,7 +82,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bayesian_optimizer.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-1, 5), (-1, 10)
+        x_lims, y_lims = (-3, 3), (-2, 2)
         lims = [x_lims, y_lims]
         SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer, lims=lims).plot().save_figure().close_figure()
         AcquisitionPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
@@ -115,4 +112,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2]
     for batch_size in batch_sizes:
-        main(n_samples=8, q=batch_size, output_dir=main_path)
+        main(n_samples=32, q=batch_size, output_dir=main_path)
