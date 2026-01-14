@@ -538,7 +538,7 @@ class BayesianOptimizer:
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
                     covar_module=self._kernel_instance,
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=Interval(1e-4, 1e-2)),
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4)),
                 )
             )
 
