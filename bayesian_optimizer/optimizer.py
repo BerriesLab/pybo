@@ -804,7 +804,21 @@ class BayesianOptimizer:
 
     # TODO
     def _randomize_hyperparameters(self):
-        """Randomize hyperparameters with log-uniform distribution."""
+        """Randomize hyperparameters with log-uniform distribution.
+
+        Workflow should be:
+
+        raw = module.raw_outputscale
+        c = module.constraint_for_parameter_name("raw_outputscale")
+
+        # sample in transformed space (positive)
+        target = torch.empty_like(module.outputscale).uniform_(0.1, 10.0)
+
+        # write into raw space
+        raw.data = c.inverse_transform(target)
+
+
+        """
         for model in self._model.models:
             for name, param in model.named_parameters():
                 if param.requires_grad:
