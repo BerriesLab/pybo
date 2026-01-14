@@ -30,7 +30,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.COSINE,
         ard_num_dims=objective.num_objectives,
         config=CosineConfig(
-            # period_length_constraint=Interval(0.9, 1.1)
+            # period_length_constraint=Interval(0.9, 1.1),
+            # outputscale_constraint=Interval(0.01, 10),
         )
     )
 

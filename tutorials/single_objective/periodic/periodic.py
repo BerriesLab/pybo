@@ -39,7 +39,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         kernel_type=KernelType.PERIODIC,
         ard_num_dims=objective.num_objectives,
         config=PeriodicConfig(
-            period_length_constraint=Interval(0.9, 1.1)
+
         )
     )
 

@@ -1,3 +1,4 @@
+import copy
 import pickle
 import warnings
 from typing import Union
@@ -18,7 +19,7 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction
-from gpytorch.constraints import GreaterThan
+from gpytorch.constraints import GreaterThan, Interval
 from bayesian_optimizer.acquisition_function import AcquisitionRuntimeParams, AcquisitionFunctionFactory
 from bayesian_optimizer.kernel import KernelFactory
 from objectives.base_class import MCObjectiveBase
@@ -495,7 +496,7 @@ class BayesianOptimizer:
         if verbose:
             print(f"Initializing kernel instance of type {self.kernel_factory.kernel_type.value}... ", end="")
 
-        self._kernel_instance = self._kernel_factory() if self._kernel_factory else None
+        self._kernel_instance = self._kernel_factory()
 
         if verbose:
             print("✓")
@@ -537,7 +538,7 @@ class BayesianOptimizer:
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
                     covar_module=self._kernel_instance,
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4)),
+                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=Interval(1e-4, 1e-2)),
                 )
             )
 
@@ -746,95 +747,135 @@ class BayesianOptimizer:
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialized before fitting.")
 
-        if verbose:
-            print("Fitting model... ", end="", flush=True)
-
         restart_count = 0
+        last_error = None
+
         while restart_count <= self._n_model_fit_restarts:
+            issues = []
+
             try:
+                if verbose:
+                    print("Fitting model... ", end="", flush=True)
+
                 botorch.fit_gpytorch_mll(self._mll)
 
-                if self._mll.training:
-                    raise RuntimeError("Model fitting failed (still in training mode)")
+                # validate and collect issues
+                issues = self._validate_models(verbose=verbose)
 
-                # Validate each model in the list
-                for i, model in enumerate(self._model.models):
-                    self._validate_model_fit(model, i, verbose=verbose)
+                # ANY issue triggers restart
+                if len(issues) > 0:
+                    raise RuntimeError(f"Validation produced {len(issues)} issue(s).")
 
                 if verbose:
-                    print("Fitting model... ✓")
-                break
+                    print("✓")
+
+                return
 
             except Exception as e:
+                last_error = e
                 restart_count += 1
 
-                if restart_on_error and restart_count <= self._n_model_fit_restarts:
-                    if verbose:
-                        print("Fitting model... ✗")
-                        print(f"  Error: {e}")
-                        print(f"  Reinitializing and retrying... "
-                              f"(Attempt {restart_count}/{self._n_model_fit_restarts})")
-
-                    self._initialize_kernel(verbose=False)
-                    self._initialize_model(verbose=False)
-                    self._randomize_hyperparameters()
-
-                else:
+                if not restart_on_error or restart_count >= self._n_model_fit_restarts:
                     raise RuntimeError(
                         f"Model fitting failed after {self._n_model_fit_restarts} attempts. "
-                        f"Last error: {e}"
+                        f"Last error: {last_error}"
                     )
-        return None
 
-    def _randomize_hyperparameters_bak(self):
-        """Randomize hyperparameters for a fresh optimization start."""
-        for m in self._model.models:
-            # Sample in log space for better coverage
-            # Lengthscale: log-uniform in [0.1, 10] relative to default
-            log_ls = torch.empty_like(m.covar_module.base_kernel.lengthscale).uniform_(-1, 1)
-            m.covar_module.base_kernel.lengthscale = 10 ** log_ls
+                if verbose:
+                    print("Fitting model... ✗")
+                    if issues:
+                        # print a compact summary of issues
+                        for it in issues[:5]:
+                            if isinstance(it, dict):
+                                print(f"  Issue: {it.get('param', '?')}: {it.get('message', it)}")
+                            else:
+                                print(f"  Issue: {it}")
+                        if len(issues) > 5:
+                            print(f"  ... {len(issues) - 5} more")
+                    print(f"  Reinitializing and retrying... "
+                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")
 
-            # Outputscale: log-uniform in [0.1, 10]
-            log_os = torch.empty(1, device=self._device).uniform_(-1, 1)
-            m.covar_module.outputscale = 10 ** log_os
+                self._initialize_kernel(verbose=verbose)
+                self._initialize_model(verbose=verbose)
+                # self._randomize_hyperparameters(issues)
 
-            # Noise: log-uniform in [1e-4, 1e-1]
-            log_noise = torch.empty(1, device=self._device).uniform_(-4, -1)
-            m.likelihood.noise = 10 ** log_noise
+    # def _randomize_hyperparameters_bak(self):
+    #     """Randomize hyperparameters for a fresh optimization start."""
+    #     for m in self._model.models:
+    #         # Sample in log space for better coverage
+    #         # Lengthscale: log-uniform in [0.1, 10] relative to default
+    #         log_ls = torch.empty_like(m.covar_module.base_kernel.lengthscale).uniform_(-1, 1)
+    #         m.covar_module.base_kernel.lengthscale = 10 ** log_ls
+    #
+    #         # Outputscale: log-uniform in [0.1, 10]
+    #         log_os = torch.empty(1, device=self._device).uniform_(-1, 1)
+    #         m.covar_module.outputscale = 10 ** log_os
+    #
+    #         # Noise: log-uniform in [1e-4, 1e-1]
+    #         log_noise = torch.empty(1, device=self._device).uniform_(-4, -1)
+    #         m.likelihood.noise = 10 ** log_noise
 
     # TODO
-    def _randomize_hyperparameters(self):
-        """Randomize hyperparameters with log-uniform distribution.
+    # def _randomize_hyperparameters(self, issues):
+    #     """Randomize hyperparameters with log-uniform distribution.
+    #
+    #     Workflow should be:
+    #
+    #     raw = module.raw_outputscale
+    #     c = module.constraint_for_parameter_name("raw_outputscale")
+    #
+    #     # sample in transformed space (positive)
+    #     target = torch.empty_like(module.outputscale).uniform_(0.1, 10.0)
+    #
+    #     # write into raw space
+    #     raw.data = c.inverse_transform(target)
+    #
+    #
+    #     """
+    #     for model in self._model.models:
+    #         cm = model.covar_module
+    #         for full_name, raw_param in cm.named_parameters():
+    #             if not raw_param.requires_grad:
+    #                 continue
+    #
+    #             # match issue keys to transformed name
+    #             transformed_name = full_name.replace("raw_", "")
+    #             if transformed_name not in issues:
+    #                 continue
+    #
+    #             # find constraint on covar_module (works if constraint lookup supports dotted names)
+    #             c = cm.constraint_for_parameter_name(full_name)
+    #             if c is None:
+    #                 continue
+    #
+    #             with torch.no_grad():
+    #                 old_raw = raw_param.detach().clone()
+    #
+    #                 # sample target in transformed space
+    #                 target = torch.empty_like(raw_param).uniform_(0.01, 1.0)
+    #                 raw_param.copy_(c.inverse_transform(target))
+    #
+    #                 print(
+    #                     f"Randomized {full_name}: raw mean {old_raw.mean().item():.3e} → {raw_param.mean().item():.3e}")
 
-        Workflow should be:
+    def _validate_models(self, verbose=False):
+        issues = []
+        for i, model in enumerate(self._model.models):
+            issues.extend(self._validate_model(model, i, verbose=verbose))
+        return issues
 
-        raw = module.raw_outputscale
-        c = module.constraint_for_parameter_name("raw_outputscale")
-
-        # sample in transformed space (positive)
-        target = torch.empty_like(module.outputscale).uniform_(0.1, 10.0)
-
-        # write into raw space
-        raw.data = c.inverse_transform(target)
-
-
-        """
-        for model in self._model.models:
-            for name, param in model.named_parameters():
-                if param.requires_grad:
-                    with torch.no_grad():
-                        old_val = param.clone()
-                        log_val = torch.empty_like(param).uniform_(-1, 1)
-                        param.copy_(10 ** log_val)
-                        print(f"  Randomized {name}: {old_val.item():.4e} → {param.item():.4e}")
-
-    def _validate_model_fit(self, model, model_idx, verbose=False):
+    def _validate_model(self, model, model_idx, verbose=False):
         """ Validate hyperparameters of a fitted GP model. Note: this validation method
         operates on a single GP model. Returns list of issues (empty if fit looks healthy). """
+        issues = []
+
         noise = self._extract_model_noise(model, verbose=verbose)
-        self._validate_noise(noise)
+        issues.extend(self._validate_noise(noise))
+
         transformed_params = self._extract_transformed_params(covar_module=model.covar_module, verbose=verbose)
-        self._validate_transformed_params(params=transformed_params, noise=noise)
+        issues.extend(self._validate_transformed_params(params=transformed_params, noise=noise))
+
+        return issues
 
     @staticmethod
     def _extract_transformed_params(covar_module, verbose=False):
@@ -916,27 +957,38 @@ class BayesianOptimizer:
 
     @staticmethod
     def _validate_noise(noise: torch.Tensor):
+        issues = []
         if not torch.isfinite(noise).all():
-            raise Warning(f"Noise is not finite: {noise}")
+            msg = f"Noise is not finite: {noise}"
+            issues.append(noise)
+            warnings.warn(msg, RuntimeWarning)
+        return issues
 
     def _validate_transformed_params(self, params: dict, noise: torch.Tensor):
         """Hard check: ensure hyperparameters and noise are finite."""
+        issues = []
+
         # Validate NaN/Infinite
-        self._validate_transformed_params_finiteness(params)
+        issues.extend(self._validate_transformed_params_finiteness(params))
 
         # Validate parameters by group
         groups = self._group_params_by_type(params)
-        self._validate_transformed_params_variance(groups["variance"], noise)
-        self._validate_transformed_params_lengthscale(groups["lengthscale"])
-        self._validate_transformed_params_period(groups["period"])
-        self._validate_transformed_params_mixture(groups["mixture"])
+        issues.extend(self._validate_transformed_params_variance(groups["variance"], noise))
+        issues.extend(self._validate_transformed_params_lengthscale(groups["lengthscale"]))
+        issues.extend(self._validate_transformed_params_period(groups["period"]))
+        issues.extend(self._validate_transformed_params_mixture(groups["mixture"]))
+
+        return issues
 
     @staticmethod
     def _validate_transformed_params_finiteness(params: dict):
+        issues = []
         for key, val in params.items():
             if not torch.isfinite(val).all():
-                raise Warning(f"Non-finite hyperparameter {key} detected: {val}.")
-        return
+                msg = f"Non-finite hyperparameter {key} detected: {val}."
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
+        return issues
 
     @staticmethod
     def _validate_transformed_params_variance(params: dict, noise):
@@ -945,27 +997,38 @@ class BayesianOptimizer:
         Core principle: signal variance should exceed noise variance,
         otherwise the GP is noise-dominated and predictions collapse to mean.
         With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
+        issues = []
         for key, val in params.items():
             if val < noise:
-                raise Warning(f"{key} ({val.item():.2e}) < noise ({noise.item():.2e})")
-        return warnings
+                msg = f"{key} ({val.item():.2e}) < noise ({noise.item():.2e})"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
+        return issues
 
     @staticmethod
     def _validate_transformed_params_lengthscale(params: dict):
         """ Validate lenghtscale/domain range. Specifically, checks whether the
          lengthscale is larger than 100x the corresponding domain size. This method
          assumes that the input domain is normalized between 0 and 1. """
+        issues = []
         for key, val in params.items():
             if val > 100:
-                warnings.append(f"{key} ({val.item():.2e}) > 100 → no correlation")
+                msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
             elif val > 10:
-                warnings.append(f"{key} ({val.item():.2e}) > 10 → weak correlation")
-            elif val < 0.01:
-                warnings.append(f"{key} ({val.item():.2e}) < 0.01 → possible overfitting")
+                msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
             elif val < 0.0001:
-                warnings.append(f"{key} ({val.item():.2e}) < 0.0001 → overfitting")
-
-        return warnings
+                msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
+            elif val < 0.01:
+                msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
+        return issues
 
     @staticmethod
     def _validate_transformed_params_period(params: dict):
@@ -973,17 +1036,25 @@ class BayesianOptimizer:
         - period = 1.0 means one full cycle in domain
         - Too small → high frequency, overfitting
         - Too large → effectively non-periodic. """
+        issues = []
         for key, val in params.items():
             if val > 10:
-                warnings.append(f"{key} ({val.item():.2e}) > 10 → effectively non-periodic")
+                msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
             elif val > 5:
-                warnings.append(f"{key} ({val.item():.2e}) > 5 → weak periodicity")
+                msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
             elif val < 0.05:
-                warnings.append(f"{key} ({val.item():.2e}) < 0.05 → likely overfitting")
+                msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
             elif val < 0.1:
-                warnings.append(f"{key} ({val.item():.2e}) < 0.1 → possible overfitting")
-
-        return warnings
+                msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
+                issues.append(key)
+                warnings.warn(msg, RuntimeWarning)
+        return issues
 
     @staticmethod
     def _validate_transformed_params_mixture(params):
@@ -994,8 +1065,9 @@ class BayesianOptimizer:
         - Degenerate weights (all near zero)
         - Single component dominance (wasted complexity)
         """
+        issues = []
         # Check on the mixture in not implemented yet.
-        return
+        return issues
 
     def _optimize_acquisition_function(self, verbose=True):
 
