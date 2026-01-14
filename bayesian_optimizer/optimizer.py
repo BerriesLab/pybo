@@ -824,16 +824,10 @@ class BayesianOptimizer:
         operates on a single GP model. Returns list of issues (empty if fit looks healthy). """
         issues = []
 
-        noise = self._extract_noise(model)
-        kernel_params = self._extract_hyperparams(model.covar_module)
-        self._print_kernel_params(kernel_params)
-        groups = self._group_params_by_type(kernel_params)
-
-        # Run checks by type
-        issues.extend(self._check_variance(groups["variance"], noise))
-        issues.extend(self._check_lengthscale(groups["lengthscale"]))
-        issues.extend(self._check_periods(groups["period"]))
-        issues.extend(self._check_mixture(groups["mixture"]))
+        noise = self._extract_model_noise(model)
+        self._validate_noise(noise)
+        transformed_params = self._extract_transformed_params(model.covar_module)
+        self._validate_transformed_params(params=transformed_params, noise=noise)
 
         if issues and verbose:
             print("  ⚠ Validation issues:")
@@ -842,58 +836,23 @@ class BayesianOptimizer:
 
         return issues
 
-    def _extract_hyperparams(self, covar_module):
-        """Extract all transformed kernel parameters with module info."""
-        params = []
+    @staticmethod
+    def _extract_transformed_params(covar_module):
 
-        for name, param in covar_module.named_parameters():
-            if not param.requires_grad:
-                continue
+        params = {}
+        # for name, param in covar_module.named_parameters():
+        #     # these are ALWAYS raw parameters
+        #     if not param.requires_grad:
+        #         continue
+        #     params[name] = param
 
-            parts = name.split(".")
-            raw_param_name = parts[-1]
-            param_name = raw_param_name.replace("raw_", "")
-            module_path = ".".join(parts[:-1])
-
-            # Get the parent module
-            if module_path:
-                module = self._get_nested_attr(covar_module, module_path)
-            else:
-                module = covar_module
-
-            if module is None:
-                continue
-
-            # Get transformed value
-            value = getattr(module, param_name, None)
-
-            if value is not None and hasattr(value, "detach"):
-                params.append({
-                    "name": param_name,
-                    "full_path": f"{module_path}.{param_name}" if module_path else param_name,
-                    "value": self._param_to_value(value),
-                    "module_name": module.__class__.__name__,
-                    "module_path": module_path or "root",
-                })
+        for name, raw_param in covar_module.named_parameters():
+            constraint = covar_module.constraint_for_parameter_name(name)
+            if constraint is not None:
+                value = constraint.transform(raw_param)
+                params[name] = value
 
         return params
-
-    @staticmethod
-    def _get_nested_attr(obj, path):
-        """
-        Get attribute from nested path.
-        Handles both regular attributes and numeric indices for ModuleList.
-        e.g., 'base_kernel.kernels.0.base_kernel'
-        """
-        for part in path.split("."):
-            if part.isdigit():
-                # ModuleList index
-                obj = obj[int(part)]
-            else:
-                obj = getattr(obj, part, None)
-            if obj is None:
-                return None
-        return obj
 
     @staticmethod
     def _print_kernel_params(params):
@@ -912,19 +871,11 @@ class BayesianOptimizer:
         return tensor.view(-1).tolist()
 
     @staticmethod
-    def _extract_noise(model):
-        """Extract scalar noise variance, handling edge cases."""
-        if hasattr(model, "likelihood") and hasattr(model.likelihood, "noise"):
-            noise = model.likelihood.noise
-            # Handle potential multi-task or batched noise
-            if noise.numel() == 1:
-                return noise.item()
-            else:
-                return noise.detach().cpu().view(-1).tolist()
-        return None
+    def _extract_model_noise(model):
+        return model.likelihood.noise
 
     @staticmethod
-    def _group_params_by_type(kernel_params):
+    def _group_params_by_type(kernel_params: dict):
         """ Group hyperparameters by type for targeted validation.
         Returns dict with keys:
         - variance: These parameters control the output magnitude of the kernel — how much the GP function
@@ -936,61 +887,77 @@ class BayesianOptimizer:
         - other
         """
         groups = {
-            "variance": [],  # outputscale, variance, constant
-            "lengthscale": [],
-            "period": [],
-            "mixture": [],  # spectral mixture params
-            "other": [],
+            "variance": {},  # outputscale, variance, constant
+            "lengthscale": {},
+            "period": {},
+            "mixture": {},  # spectral mixture params
+            "other": {},
         }
 
-        # Classify each parameter
-        for param in kernel_params:
-            name_lower = param["name"].lower()
-
-            if "lengthscale" in name_lower:
-                groups["lengthscale"].append(param)
-            elif "outputscale" in name_lower:
-                groups["variance"].append(param)
-            elif "period" in name_lower:
-                groups["period"].append(param)
-            elif "mixture" in name_lower:
-                groups["mixture"].append(param)
+        for key, val in kernel_params.items():
+            k = key.lower()
+            if "lengthscale" in k:
+                groups["lengthscale"][key] = val
+            elif "outputscale" in k or "variance" in k:
+                groups["variance"][key] = val
+            elif "period" in k:
+                groups["period"][key] = val
+            elif "mixture" in k:
+                groups["mixture"][key] = val
             else:
-                groups["other"].append(param)
+                groups["other"][key] = val
 
         return groups
 
     @staticmethod
-    def _check_variance(params, noise):
+    def _validate_noise(noise: torch.Tensor):
+        if not torch.isfinite(noise).all():
+            raise Warning(f"Noise is not finite: {noise}")
+
+    def _validate_transformed_params(self, params: dict, noise: torch.Tensor):
+        """Hard check: ensure hyperparameters and noise are finite."""
+        # Validate NaN/Infinite
+        self._validate_transformed_params_finiteness(params)
+
+        # Validate parameters by group
+        groups = self._group_params_by_type(params)
+        self._validate_transformed_params_variance(groups["variance"], noise)
+        self._validate_transformed_params_lengthscale(groups["lengthscale"])
+        self._validate_transformed_params_period(groups["period"])
+        self._validate_transformed_params_mixture(groups["mixture"])
+
+        # Kernel params check
+        for param in params:
+            if not torch.isfinite(param).all():
+                issues.append(f"Non-finite hyperparameter {param} detected.")
+
+        return issues
+
+    @staticmethod
+    def _validate_transformed_params_finiteness(params: dict):
+        for key, val in params.items():
+            if not torch.isfinite(val).all():
+                raise Warning(f"Non-finite hyperparameter {key} detected: {val}.")
+        return
+
+    @staticmethod
+    def _validate_transformed_params_variance(params: dict, noise):
         """ Validate variance/outputscale parameters. Specifically, checks whether the
         model outputscale is not smaller than the noise.
         Core principle: signal variance should exceed noise variance,
         otherwise the GP is noise-dominated and predictions collapse to mean.
         With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
-        warnings = []
-
-        if not params:
-            return warnings
-
-        for param in params:
-            if param["value"] < noise:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) < noise ({noise:.2e}) → noise-dominated")
-            elif param["value"] < 2 * noise:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) ≈ noise ({noise:.2e}) → weak signal")
-
+        for key, val in params.items():
+            if val < noise:
+                raise Warning(f"{key} ({val.item():.2e}) < noise ({noise.item():.2e})")
         return warnings
 
     @staticmethod
-    def _check_lengthscale(params):
+    def _validate_transformed_params_lengthscale(params: dict):
         """ Validate lenghtscale/domain range. Specifically, checks whether the
          lengthscale is larger than 100x the corresponding domain size. This method
          assumes that the input domain is normalized between 0 and 1. """
-        warnings = []
-
-        if not params:
-            return warnings
-
-        for param in params:
+        for key, val in params.items():
             if param["value"] > 100:
                 warnings.append(f"{param["name"]} ({param["value"]:.2e}) > 100 → no correlation")
             elif param["value"] > 10:
@@ -1003,7 +970,7 @@ class BayesianOptimizer:
         return warnings
 
     @staticmethod
-    def _check_periods(params):
+    def _validate_transformed_params_period(params):
         """ Validate period parameters. With standardized inputs in [0, 1]:
         - period = 1.0 means one full cycle in domain
         - Too small → high frequency, overfitting
@@ -1026,7 +993,7 @@ class BayesianOptimizer:
         return warnings
 
     @staticmethod
-    def _check_mixture(params):
+    def _validate_transformed_params_mixture(params):
         """
         Validate spectral mixture parameters.
 
