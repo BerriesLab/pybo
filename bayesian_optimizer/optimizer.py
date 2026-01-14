@@ -55,7 +55,7 @@ class BayesianOptimizer:
             raw_samples: int = 1024,
             n_acqf_opt_max_iter: int = 250,
             n_acqf_opt_restarts: int = 20,
-            n_model_fit_restarts: int = 10,
+            n_model_fit_restarts: int = 20,
             ucb_beta: float = 2.0,
 
     ):
@@ -758,13 +758,8 @@ class BayesianOptimizer:
                     raise RuntimeError("Model fitting failed (still in training mode)")
 
                 # Validate each model in the list
-                all_issues = []
                 for i, model in enumerate(self._model.models):
-                    issues = self._validate_model_fit(model, i, verbose=verbose)
-                    all_issues.extend(issues)
-
-                if all_issues:
-                    raise RuntimeError(f"Fit validation failed: {all_issues}")
+                    self._validate_model_fit(model, i, verbose=verbose)
 
                 if verbose:
                     print("Fitting model... ✓")
@@ -819,25 +814,16 @@ class BayesianOptimizer:
                         param.copy_(10 ** log_val)
                         print(f"  Randomized {name}: {old_val.item():.4e} → {param.item():.4e}")
 
-    def _validate_model_fit(self, model, model_idx, verbose=True):
+    def _validate_model_fit(self, model, model_idx, verbose=False):
         """ Validate hyperparameters of a fitted GP model. Note: this validation method
         operates on a single GP model. Returns list of issues (empty if fit looks healthy). """
-        issues = []
-
-        noise = self._extract_model_noise(model)
+        noise = self._extract_model_noise(model, verbose=verbose)
         self._validate_noise(noise)
-        transformed_params = self._extract_transformed_params(model.covar_module)
+        transformed_params = self._extract_transformed_params(covar_module=model.covar_module, verbose=verbose)
         self._validate_transformed_params(params=transformed_params, noise=noise)
 
-        if issues and verbose:
-            print("  ⚠ Validation issues:")
-            for issue in issues:
-                print(f"    - {issue}")
-
-        return issues
-
     @staticmethod
-    def _extract_transformed_params(covar_module):
+    def _extract_transformed_params(covar_module, verbose=False):
 
         params = {}
         # for name, param in covar_module.named_parameters():
@@ -850,7 +836,9 @@ class BayesianOptimizer:
             constraint = covar_module.constraint_for_parameter_name(name)
             if constraint is not None:
                 value = constraint.transform(raw_param)
-                params[name] = value
+                params[name.replace("raw_", "")] = value
+                if verbose:
+                    print(f"{name.replace("raw_", "")}: {value.item():.2e}")
 
         return params
 
@@ -871,8 +859,11 @@ class BayesianOptimizer:
         return tensor.view(-1).tolist()
 
     @staticmethod
-    def _extract_model_noise(model):
-        return model.likelihood.noise
+    def _extract_model_noise(model, verbose=False):
+        noise = model.likelihood.noise
+        if verbose:
+            print(f"\nnoise: {noise.item():.2e}")
+        return noise
 
     @staticmethod
     def _group_params_by_type(kernel_params: dict):
@@ -926,13 +917,6 @@ class BayesianOptimizer:
         self._validate_transformed_params_period(groups["period"])
         self._validate_transformed_params_mixture(groups["mixture"])
 
-        # Kernel params check
-        for param in params:
-            if not torch.isfinite(param).all():
-                issues.append(f"Non-finite hyperparameter {param} detected.")
-
-        return issues
-
     @staticmethod
     def _validate_transformed_params_finiteness(params: dict):
         for key, val in params.items():
@@ -958,37 +942,32 @@ class BayesianOptimizer:
          lengthscale is larger than 100x the corresponding domain size. This method
          assumes that the input domain is normalized between 0 and 1. """
         for key, val in params.items():
-            if param["value"] > 100:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) > 100 → no correlation")
-            elif param["value"] > 10:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) > 10 → weak correlation")
-            elif param["value"] < 0.01:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) < 0.01 → possible overfitting")
-            elif param["value"] < 0.0001:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) < 0.0001 → overfitting")
+            if val > 100:
+                warnings.append(f"{key} ({val.item():.2e}) > 100 → no correlation")
+            elif val > 10:
+                warnings.append(f"{key} ({val.item():.2e}) > 10 → weak correlation")
+            elif val < 0.01:
+                warnings.append(f"{key} ({val.item():.2e}) < 0.01 → possible overfitting")
+            elif val < 0.0001:
+                warnings.append(f"{key} ({val.item():.2e}) < 0.0001 → overfitting")
 
         return warnings
 
     @staticmethod
-    def _validate_transformed_params_period(params):
+    def _validate_transformed_params_period(params: dict):
         """ Validate period parameters. With standardized inputs in [0, 1]:
         - period = 1.0 means one full cycle in domain
         - Too small → high frequency, overfitting
         - Too large → effectively non-periodic. """
-        warnings = []
-
-        if not params:
-            return warnings
-
-        for param in params:
-            if param["value"] > 10:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) > 10 → effectively non-periodic")
-            elif param["value"] > 5:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) > 5 → weak periodicity")
-            elif param["value"] < 0.05:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) < 0.05 → likely overfitting")
-            elif param["value"] < 0.1:
-                warnings.append(f"{param["name"]} ({param["value"]:.2e}) < 0.1 → possible overfitting")
+        for key, val in params.items():
+            if val > 10:
+                warnings.append(f"{key} ({val.item():.2e}) > 10 → effectively non-periodic")
+            elif val > 5:
+                warnings.append(f"{key} ({val.item():.2e}) > 5 → weak periodicity")
+            elif val < 0.05:
+                warnings.append(f"{key} ({val.item():.2e}) < 0.05 → likely overfitting")
+            elif val < 0.1:
+                warnings.append(f"{key} ({val.item():.2e}) < 0.1 → possible overfitting")
 
         return warnings
 
@@ -1001,13 +980,8 @@ class BayesianOptimizer:
         - Degenerate weights (all near zero)
         - Single component dominance (wasted complexity)
         """
-        warnings = []
-
-        if not params:
-            return warnings
-
-        print("A check on the mixture in not implemented yet.")
-        return warnings
+        # Check on the mixture in not implemented yet.
+        return
 
     def _optimize_acquisition_function(self, verbose=True):
 
