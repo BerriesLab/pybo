@@ -3,7 +3,7 @@ import torch
 from torch import Tensor
 
 
-class Periodic(MCSingleObjectiveBase):
+class Harmonic(MCSingleObjectiveBase):
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
@@ -14,7 +14,7 @@ class Periodic(MCSingleObjectiveBase):
             num_trackers=0,
             obj_to_minimize=[True],
             bounds=[(-3.0, 3.0)],
-            ref_point=[-1.0],
+            ref_point=[-2.0],
             outcomes=[0],
             num_outcomes=1,
             gt_noise_std=0.0,
@@ -27,4 +27,4 @@ class Periodic(MCSingleObjectiveBase):
         )
 
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        return X ** 2 + 10 * (1 - torch.cos(2 * torch.pi * X))
+        return torch.cos(2 * torch.pi * X)

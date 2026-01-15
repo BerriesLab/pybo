@@ -7,7 +7,9 @@ import datetime
 import time
 import glob
 import os
+import pandas as pd
 from pathlib import Path
+from tabulate import tabulate
 import botorch
 import gpytorch
 from botorch.optim.optimize import optimize_acqf_list
@@ -117,6 +119,9 @@ class BayesianOptimizer:
         self._best_values: list[float] = []  # For single-objective
         self._elapsed_time: list[float] = []
 
+        # === Warnings ===
+        self._warnings = []
+
     """ =========================== """
     """ ===== PICKLING HELPER ===== """
     """ =========================== """
@@ -137,6 +142,28 @@ class BayesianOptimizer:
         self.__dict__.update(state)
         # Re-initialize excluded attributes if needed
         self._transient = None
+
+    def _print_caught_warnings(self, flush=True):
+        ORANGE = "\033[38;5;208m"
+        RESET = "\033[0m"
+        for w in self._warnings:
+            if flush:
+                print(f"{ORANGE}{w.category.__name__}: {w.message}{RESET}", flush=True)
+
+    def _clear_warnings(self):
+        self._warnings = []
+
+    @staticmethod
+    def _print_success(msg: str = "", flush=True):
+        GREEN = "\033[32m"
+        RESET = "\033[0m"
+        print(f"{GREEN}✅ {msg}{RESET}", flush=flush)
+
+    @staticmethod
+    def _print_failed(msg: str = "", flush=True):
+        RED = "\033[31m"
+        RESET = "\033[0m"
+        print(f"{RED}❌ {msg}{RESET}", flush=flush)
 
     """ =========================== """
     """ ===== CUDA PROPERTIES ===== """
@@ -499,7 +526,7 @@ class BayesianOptimizer:
         self._kernel_instance = self._kernel_factory()
 
         if verbose:
-            print("✓")
+            self._print_success()
 
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
@@ -517,10 +544,13 @@ class BayesianOptimizer:
 
         Note: by setting an input transform and an outcome transform, input (X) and output data (Y) are
         transformed and untransformed accordingly across the whole optimization pipeline, including
-        the optimization of the acquisition function. For example, by setting an outcome transform to
+        the optimization of the acquisition function. For example, by setting the outcome transform to
         standardization, the Ys are standardized before the optimization and unstandardized right after.
         However, if a penalty is added in the forward method, this is not standardized properly and a
-        pre-factor (or scaling) results in different penalty weights."""
+        pre-factor (or scaling) results in different penalty weights.
+
+        Note: the kernel instance must be deep-copied, otherwise the same kernel would be shared across
+        all the initialized models. """
 
         if verbose:
             print("Initializing model... ", end="")
@@ -537,7 +567,7 @@ class BayesianOptimizer:
                     train_Yvar=(train_y_var[..., i: i + 1] if train_y_var is not None else None),
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
-                    covar_module=self._kernel_instance,
+                    covar_module=copy.deepcopy(self._kernel_instance),
                     likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4)),
                 )
             )
@@ -546,7 +576,7 @@ class BayesianOptimizer:
         self._mll = SumMarginalLogLikelihood(self._model.likelihood, self._model)
 
         if verbose:
-            print("✓")
+            self._print_success()
 
     def _prepare_training_dataset(self):
         """ Prepare the training dataset for fitting the surrogate model.
@@ -595,7 +625,6 @@ class BayesianOptimizer:
         """Compute reference values needed for acquisition function initialization.
         Single-objective: computes best value (_best_f)
         Multi-objective: computes reference point in high dimensional space."""
-
         if self._objective.num_objectives == 1:
             self._compute_best_Y(verbose=verbose)
         else:
@@ -631,7 +660,7 @@ class BayesianOptimizer:
             # self._best_values.append(best_value)
 
             if verbose:
-                print(f"✓ {self._best_feasible_Y.item():.4f} in max. space.")
+                self._print_success(msg=f"{self._best_feasible_Y.item():.4f} in max. space.")
 
         else:
             self._best_feasible_Y = None
@@ -640,7 +669,7 @@ class BayesianOptimizer:
             self._best_values.append(None)
 
             if verbose:
-                print("✗ (no feasible points)")
+                self._print_failed(msg="(no feasible points)")
 
     def _compute_reference_point(self, verbose=True):
         """
@@ -656,7 +685,7 @@ class BayesianOptimizer:
         self._ref_point[..., self._objective.obj_to_minimize] *= -1
 
         if verbose:
-            print(f"✓ {self._ref_point.detach().cpu().numpy()} in max. space.")
+            self._print_success(msg=f"{self._ref_point.detach().cpu().numpy()} in max. space.")
 
     def _compute_pareto_front(self, verbose=True):
         """
@@ -696,7 +725,7 @@ class BayesianOptimizer:
             self._feasible_pareto_front_Y = None
 
         if verbose:
-            print(f"✓")
+            self._print_success()
 
     def _initialize_acquisition_function(self, verbose=True):
         """ Initialize an acquisition function instance using the acquisition_function_factory. """
@@ -704,23 +733,31 @@ class BayesianOptimizer:
         if verbose:
             print(
                 f"Initializing acquisition function of type {self.acquisition_function_factory.acquisition_function_type.value}... ",
-                end="")
+                end="", flush=True)
 
-        params = AcquisitionRuntimeParams(
-            model=self._model,
-            maximize=not self._objective.obj_to_minimize[0],
-            best_f=self._best_f,
-            X_baseline=self._X,
-            sampler=self._sampler_instance,
-            objective=self._objective,
-            ref_point=self._ref_point,
-            partitioning=self._partitioning,
-            constraints=self._objective.output_constraints if hasattr(self._objective, 'output_constraints') else None,
-        )
-        self._acquisition_function_instance = self.acquisition_function_factory(params)
+        with warnings.catch_warnings(record=True) as caught:
+
+            params = AcquisitionRuntimeParams(
+                model=self._model,
+                maximize=not self._objective.obj_to_minimize[0],
+                best_f=self._best_f,
+                X_baseline=self._X,
+                sampler=self._sampler_instance,
+                objective=self._objective,
+                ref_point=self._ref_point,
+                partitioning=self._partitioning,
+                constraints=self._objective.output_constraints if hasattr(self._objective,
+                                                                          'output_constraints') else None,
+            )
+            self._acquisition_function_instance = self.acquisition_function_factory(params)
+
+        self._warnings.extend(caught)
 
         if verbose:
-            print("✓")
+            self._print_success()
+            self._print_caught_warnings()
+
+        self._warnings = []
 
     def _initialize_partitioning(self):
         # Compute posterior mean of objectives
@@ -751,49 +788,48 @@ class BayesianOptimizer:
         last_error = None
 
         while restart_count <= self._n_model_fit_restarts:
-            issues = []
 
             try:
+                # === Fit ===
                 if verbose:
-                    print("Fitting model... ", end="", flush=True)
+                    print("Fitting model... ", end="")
 
-                botorch.fit_gpytorch_mll(self._mll)
-
-                # validate and collect issues
-                issues = self._validate_models(verbose=verbose)
-
-                # ANY issue triggers restart
-                if len(issues) > 0:
-                    raise RuntimeError(f"Validation produced {len(issues)} issue(s).")
+                with warnings.catch_warnings(record=True) as caught:
+                    botorch.fit_gpytorch_mll(self._mll)
+                self._warnings.extend(caught)
 
                 if verbose:
-                    print("✓")
+                    self._print_success()
+                    self._print_caught_warnings()
+                    self._clear_warnings()
 
-                return
+                # TODO
+                # === Validation ===
+                # with warnings.catch_warnings(record=True) as caught:
+                #     self._validate_models(verbose=verbose)
+                # self._warnings.extend(caught)
+                #
+                # if self._warnings:
+                #     raise RuntimeError("Unphysical model parameters.")
+
+                break
 
             except Exception as e:
                 last_error = e
+                # self._print_failed()
+                self._print_caught_warnings()
+                self._clear_warnings()
                 restart_count += 1
 
                 if not restart_on_error or restart_count >= self._n_model_fit_restarts:
                     raise RuntimeError(
-                        f"Model fitting failed after {self._n_model_fit_restarts} attempts. "
+                        f"Model validation failed after {self._n_model_fit_restarts} attempts. "
                         f"Last error: {last_error}"
                     )
 
                 if verbose:
-                    print("Fitting model... ✗")
-                    if issues:
-                        # print a compact summary of issues
-                        for it in issues[:5]:
-                            if isinstance(it, dict):
-                                print(f"  Issue: {it.get('param', '?')}: {it.get('message', it)}")
-                            else:
-                                print(f"  Issue: {it}")
-                        if len(issues) > 5:
-                            print(f"  ... {len(issues) - 5} more")
-                    print(f"  Reinitializing and retrying... "
-                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")
+                    print(f"Reinitializing and retrying... "
+                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")  #
 
                 self._initialize_kernel(verbose=verbose)
                 self._initialize_model(verbose=verbose)
@@ -859,66 +895,39 @@ class BayesianOptimizer:
     #                     f"Randomized {full_name}: raw mean {old_raw.mean().item():.3e} → {raw_param.mean().item():.3e}")
 
     def _validate_models(self, verbose=False):
-        issues = []
-        for i, model in enumerate(self._model.models):
-            issues.extend(self._validate_model(model, i, verbose=verbose))
-        return issues
-
-    def _validate_model(self, model, model_idx, verbose=False):
-        """ Validate hyperparameters of a fitted GP model. Note: this validation method
-        operates on a single GP model. Returns list of issues (empty if fit looks healthy). """
-        issues = []
-
-        noise = self._extract_model_noise(model, verbose=verbose)
-        issues.extend(self._validate_noise(noise))
-
-        transformed_params = self._extract_transformed_params(covar_module=model.covar_module, verbose=verbose)
-        issues.extend(self._validate_transformed_params(params=transformed_params, noise=noise))
-
-        return issues
+        """ Collect and validate the model parameters in the transformed space. """
+        for model in self._model.models:
+            transformed_params = self._extract_transformed_params(model)
+            self._validate_transformed_params(params=transformed_params)
+            if verbose:
+                self._print_params(transformed_params)
 
     @staticmethod
-    def _extract_transformed_params(covar_module, verbose=False):
-
+    def _extract_transformed_params(model):
         params = {}
-        # for name, param in covar_module.named_parameters():
-        #     # these are ALWAYS raw parameters
-        #     if not param.requires_grad:
-        #         continue
-        #     params[name] = param
-
-        for name, raw_param in covar_module.named_parameters():
-            constraint = covar_module.constraint_for_parameter_name(name)
+        for name, raw_param in model.named_parameters():
+            constraint = model.constraint_for_parameter_name(name)
             if constraint is not None:
-                value = constraint.transform(raw_param)
-                params[name.replace("raw_", "")] = value
-                if verbose:
-                    print(f"{name.replace("raw_", "")}: {value.item():.2e}")
-
+                param_val = constraint.transform(raw_param).detach()
+                params[name] = param_val
         return params
 
     @staticmethod
-    def _print_kernel_params(params):
-        print(f"\n{'Parameter':<20} {'Module':<20} {'Value'}")
-        print("-" * 55)
-        for p in params:
-            val = p["value"]
-            val_str = f"{val:.4e}" if isinstance(val, float) else str(val)
-            print(f"  {p['name']:<18} {p['module_name']:<20} {val_str}")
+    def _print_params(params):
+        rows = []
+        for key, val in params.items():
+            row = {"Parameter": key, "Value": val}
+            rows.append(row)
+        df = pd.DataFrame(rows)
 
-    @staticmethod
-    def _param_to_value(param):
-        tensor = param.detach().cpu()
-        if tensor.numel() == 1:
-            return tensor.item()
-        return tensor.view(-1).tolist()
-
-    @staticmethod
-    def _extract_model_noise(model, verbose=False):
-        noise = model.likelihood.noise
-        if verbose:
-            print(f"\nnoise: {noise.item():.2e}")
-        return noise
+        print(
+            tabulate(
+                df,
+                headers="keys",
+                tablefmt="grid",  # nice ASCII box with edges
+                showindex=False
+            ),
+        )
 
     @staticmethod
     def _group_params_by_type(kernel_params: dict):
@@ -927,10 +936,10 @@ class BayesianOptimizer:
         - variance: These parameters control the output magnitude of the kernel — how much the GP function
         can deviate from the mean. For example, the outputscale of the ScaleKernel is the variance of the
         GP, since k(x, x) = sigma_f^2 = Var(f(x)).
-        - lengthscale:
-        - period
-        - mixture
-        - other
+        - lengthscale: These parameters control the characteristic length of the kernel.
+        - period: These parameters control the period length of the kernel.
+        - mixture: These parameters control the mixture parameters of the kernel.
+        - other: Everything else.
         """
         groups = {
             "variance": {},  # outputscale, variance, constant
@@ -955,109 +964,103 @@ class BayesianOptimizer:
 
         return groups
 
-    @staticmethod
-    def _validate_noise(noise: torch.Tensor):
-        issues = []
-        if not torch.isfinite(noise).all():
-            msg = f"Noise is not finite: {noise}"
-            issues.append(noise)
-            warnings.warn(msg, RuntimeWarning)
-        return issues
-
-    def _validate_transformed_params(self, params: dict, noise: torch.Tensor):
+    def _validate_transformed_params(self, params: dict):
         """Hard check: ensure hyperparameters and noise are finite."""
-        issues = []
+        for param in params.items():
+            if "noise" in param[0]:
+                self._validate_transformed_noise(param)
+            elif "outputscale" in param[0]:
+                x = "likelihood.noise_covar.raw_noise"
+                noise = next((k, v) for k, v in params.items() if x in k)
+                self._validate_transformed_variance(param, noise)
+            elif "lengthscale" in param[0]:
+                self._validate_transformed_lengthscale(param)
+            elif "period" in param[0]:
+                self._validate_transformed_period(param)
+            elif "mixture" in param[0]:
+                self._validate_transformed_mixture(param)
+            else:
+                continue
 
-        # Validate NaN/Infinite
-        issues.extend(self._validate_transformed_params_finiteness(params))
+    def _validate_transformed_noise(self, param: tuple[str, torch.Tensor]):
+        key, val = param
+        # issues = []
+        if not torch.isfinite(val).all():
+            msg = f"{key} is not finite: {val}"
+            warnings.warn(msg, RuntimeWarning)
+        # return issues
 
-        # Validate parameters by group
-        groups = self._group_params_by_type(params)
-        issues.extend(self._validate_transformed_params_variance(groups["variance"], noise))
-        issues.extend(self._validate_transformed_params_lengthscale(groups["lengthscale"]))
-        issues.extend(self._validate_transformed_params_period(groups["period"]))
-        issues.extend(self._validate_transformed_params_mixture(groups["mixture"]))
-
-        return issues
-
+    # TODO: fix extraction of noise
     @staticmethod
-    def _validate_transformed_params_finiteness(params: dict):
-        issues = []
-        for key, val in params.items():
-            if not torch.isfinite(val).all():
-                msg = f"Non-finite hyperparameter {key} detected: {val}."
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-        return issues
-
-    @staticmethod
-    def _validate_transformed_params_variance(params: dict, noise):
+    def _validate_transformed_variance(param: tuple[str, torch.Tensor], noise: torch.Tensor):
         """ Validate variance/outputscale parameters. Specifically, checks whether the
         model outputscale is not smaller than the noise.
         Core principle: signal variance should exceed noise variance,
         otherwise the GP is noise-dominated and predictions collapse to mean.
         With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
-        issues = []
-        for key, val in params.items():
-            if val < noise:
-                msg = f"{key} ({val.item():.2e}) < noise ({noise.item():.2e})"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-        return issues
+        key, val = param
+        n_key, n_val = noise
+        # issues = []
+        if val < n_val:
+            msg = f"{key} ({val.item():.2e}) < noise ({n_val.item():.2e})"
+            warnings.warn(msg, RuntimeWarning)
+            # issues.append(key)
+            # warnings.warn(msg, RuntimeWarning)
+        # return issues
 
     @staticmethod
-    def _validate_transformed_params_lengthscale(params: dict):
+    def _validate_transformed_lengthscale(param: tuple[str, torch.Tensor]):
         """ Validate lenghtscale/domain range. Specifically, checks whether the
          lengthscale is larger than 100x the corresponding domain size. This method
          assumes that the input domain is normalized between 0 and 1. """
-        issues = []
-        for key, val in params.items():
-            if val > 100:
-                msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val > 10:
-                msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val < 0.0001:
-                msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val < 0.01:
-                msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-        return issues
+        # issues = []
+        key, val = param
+        if val > 100:
+            msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val > 10:
+            msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val < 0.0001:
+            msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val < 0.01:
+            msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        # return issues
 
     @staticmethod
-    def _validate_transformed_params_period(params: dict):
+    def _validate_transformed_period(param: tuple[str, torch.Tensor]):
         """ Validate period parameters. With standardized inputs in [0, 1]:
         - period = 1.0 means one full cycle in domain
         - Too small → high frequency, overfitting
         - Too large → effectively non-periodic. """
-        issues = []
-        for key, val in params.items():
-            if val > 10:
-                msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val > 5:
-                msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val < 0.05:
-                msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-            elif val < 0.1:
-                msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
-                issues.append(key)
-                warnings.warn(msg, RuntimeWarning)
-        return issues
+        # issues = []
+        key, val = param
+        if val > 10:
+            msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val > 5:
+            msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val < 0.05:
+            msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
+            # issues.appendæ(key)
+            warnings.warn(msg, RuntimeWarning)
+        elif val < 0.1:
+            msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
+            # issues.append(key)
+            warnings.warn(msg, RuntimeWarning)
+        # return issues
 
     @staticmethod
-    def _validate_transformed_params_mixture(params):
+    def _validate_transformed_mixture(params):
         """
         Validate spectral mixture parameters.
 
@@ -1074,41 +1077,50 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimizing acquisition function... ", end="")
 
-        if self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
-            self._new_X, _ = optimize_acqf_list(
-                acq_function_list=self._acquisition_function_list,
-                bounds=self._objective.bounds,
-                num_restarts=self._n_acqf_opt_restarts,
-                raw_samples=self._num_raw_samples,
-                options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
-            )
-        else:
-            # If nonlinear inequality input constraints are provided, use a custom initial condition
-            # generator that selects "num_restarts" points. These points are distributed according to
-            # "fraction_of_previous_X" between the current pareto front and randomly generated points.
-            self._new_X, _ = optimize_acqf(
-                acq_function=self._acquisition_function_instance,
-                bounds=self._objective.bounds,
-                q=self._batch_size,
-                num_restarts=self._n_acqf_opt_restarts,
-                raw_samples=self._num_raw_samples,
-                options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
-                sequential=True,
-                equality_constraints=self._objective.linear_equality_input_constraints,
-                inequality_constraints=self._objective.linear_inequality_input_constraints,
-                nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
-                ic_generator=self._ic_generator
-                if self._objective.nonlinear_inequality_input_constraints is not None
-                else None,
-                **{
-                    "fraction_of_previous_X": 0.8,
-                    "noise_scale": 0,
-                } if self.objective.nonlinear_inequality_input_constraints is not None
-                else {}
-            )
+        with warnings.catch_warnings(record=True) as caught:
+            # # record=True replaces the warning printer, so they won't spam stdout
+            # warnings.simplefilter("always")
+
+            if self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
+                self._new_X, _ = optimize_acqf_list(
+                    acq_function_list=self._acquisition_function_list,
+                    bounds=self._objective.bounds,
+                    num_restarts=self._n_acqf_opt_restarts,
+                    raw_samples=self._num_raw_samples,
+                    options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
+                )
+            else:
+                # If nonlinear inequality input constraints are provided, use a custom initial condition
+                # generator that selects "num_restarts" points. These points are distributed according to
+                # "fraction_of_previous_X" between the current pareto front and randomly generated points.
+                self._new_X, _ = optimize_acqf(
+                    acq_function=self._acquisition_function_instance,
+                    bounds=self._objective.bounds,
+                    q=self._batch_size,
+                    num_restarts=self._n_acqf_opt_restarts,
+                    raw_samples=self._num_raw_samples,
+                    options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
+                    sequential=True,
+                    equality_constraints=self._objective.linear_equality_input_constraints,
+                    inequality_constraints=self._objective.linear_inequality_input_constraints,
+                    nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
+                    ic_generator=self._ic_generator
+                    if self._objective.nonlinear_inequality_input_constraints is not None
+                    else None,
+                    **{
+                        "fraction_of_previous_X": 0.8,
+                        "noise_scale": 0,
+                    } if self.objective.nonlinear_inequality_input_constraints is not None
+                    else {}
+                )
+
+        self._warnings.extend(caught)
 
         if verbose:
-            print(f"✓ (New X: {self._new_X.detach().cpu().numpy()}")
+            self._print_success(msg=f"New X: {self._new_X.detach().cpu().numpy()}")
+            self._print_caught_warnings()
+
+        self._warnings = []
 
     def is_converged(self, patience=10, tol=1e-3, verbose=True):
 
@@ -1124,7 +1136,7 @@ class BayesianOptimizer:
         # Need enough history to evaluate
         if not metrics_list or len(metrics_list) < patience:
             if verbose:
-                print("✗")
+                self._print_failed()
             return False
 
         # Take the last `patience` values
@@ -1133,7 +1145,7 @@ class BayesianOptimizer:
         improvements = [metrics[i + 1] - metrics[i] for i in range(len(metrics) - 1)]
         # Converged if all improvements are smaller than tolerance
         if verbose:
-            print("✓")
+            self._print_success()
         return all(abs(impr) < tol for impr in improvements)
 
     def _ic_generator(
@@ -1256,7 +1268,7 @@ class BayesianOptimizer:
 
         if verbose:
             n_feasible = self._feasible_mask.sum().item()
-            print(f"✓ ({n_feasible}/{n_points} feasible)")
+            self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
 
     def compute_feasible_XY(self, verbose=False):
         """ Computes feasible X and Y. This method assumes maximization,
@@ -1359,7 +1371,7 @@ class BayesianOptimizer:
         self._best_values.append(best_value)
 
         if verbose:
-            print(f"✓ (best = {self._best_feasible_Y.item():.4f})")
+            self._print_success(msg=f"{self._best_feasible_Y.item():.4f})")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,

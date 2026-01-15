@@ -2,7 +2,8 @@ import os
 from datetime import datetime
 import torch
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
-from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig, CosineConfig
+from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig
+from objectives.single_objective.harmonic import Harmonic
 from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
@@ -21,18 +22,15 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the true_objective """
-    objective = Periodic(
+    objective = Harmonic(
         device=DEVICE,
         dtype=DTYPE,
     )
 
     kernel_factory = KernelFactory(
-        kernel_type=KernelType.COSINE,
+        kernel_type=KernelType.PERIODIC,
         ard_num_dims=objective.num_objectives,
-        config=CosineConfig(
-            # period_length_constraint=Interval(0.9, 1.1),
-            # outputscale_constraint=Interval(0.01, 10),
-        )
+        config=PeriodicConfig()
     )
 
     """ Instantiate an acquisition function constructor"""
@@ -111,6 +109,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2]
+    batch_sizes = [1]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)
