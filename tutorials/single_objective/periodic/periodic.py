@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 import torch
-from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
+from bayesian_optimizer.acquisition_function import AcquisitionFunctionBuilder
 from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig
 from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
@@ -27,7 +27,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     )
 
     # """ Instantiate a kernel constructor"""
-    # kernel_factory = KernelFactory(
+    # kernel_builder = KernelFactory(
     #     kernel_type=KernelType.RBF,
     #     ard_num_dims=objective.num_objectives,
     #     config=RBFConfig(
@@ -54,7 +54,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     #     )
     # )
 
-    # kernel_factory = KernelFactory(
+    # kernel_builder = KernelFactory(
     #     kernel_type=KernelType.RBF_PLUS_PERIODIC,
     #     ard_num_dims=objective.num_objectives,
     #     config=RBFTimesPeriodicConfig(
@@ -66,7 +66,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     # )
 
     """ Instantiate an acquisition function constructor"""
-    acquisition_function_factory = AcquisitionFunctionFactory(
+    acquisition_function_factory = AcquisitionFunctionBuilder(
         acqf_type=AcquisitionFunctionType.qLogNEI,
     )
 
@@ -91,8 +91,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_factory=acquisition_function_factory,
-        kernel_factory=kernel_factory,
+        acquisition_function_builder=acquisition_function_factory,
+        kernel_builder=kernel_factory,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,

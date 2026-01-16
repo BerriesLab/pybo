@@ -58,7 +58,7 @@ def main(n_samples: int = 64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_factory=AcquisitionFunctionType.qLogEHVI,
+        acquisition_function_builder=AcquisitionFunctionType.qLogEHVI,
         X=X,
         Y_obj=Y_obj,
         batch_size=q,

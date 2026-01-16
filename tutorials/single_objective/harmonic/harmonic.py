@@ -2,10 +2,10 @@ import os
 from datetime import datetime
 import torch
 from gpytorch.kernels import ScaleKernel
+from gpytorch.kernels.keops import PeriodicKernel
 
-from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
-from bayesian_optimizer.kernel import RBFKernelBuilder, CosineKernelBuilder, RBFKernelConfig, ScaleKernelConfig, \
-    CosineKernelConfig
+from bayesian_optimizer.acquisition_function import *
+from bayesian_optimizer.kernel import *
 from objectives.single_objective.harmonic import Harmonic
 from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
@@ -30,30 +30,28 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
     )
 
-    kernel = RBFKernelBuilder(
+    kernel_builder = RBFKernelBuilder()
+
+    kernel_builder = RBFKernelBuilder(
         ard_num_dims=objective.num_objectives,
         base_cfg=RBFKernelConfig(),
         scale_cfg=ScaleKernelConfig()
     )
 
-    kernel = CosineKernelBuilder(
-        ard_num_dims=objective.num_objectives,
-        base_cfg=CosineKernelConfig(),
-        scale_cfg=ScaleKernelConfig()
-    )
-
-    # kernel_factory = KernelFactory(
-    #     kernel_type=KernelType.COSINE,
+    # kernel_builder = CosineKernelBuilder(
     #     ard_num_dims=objective.num_objectives,
-    #     config=CosineConfig(
-    #         period_length_constraint=Interval(1 / 6 * (1 - 0.2), 1 / 6 * (1 + 0.2)),
-    #     )
+    #     base_cfg=CosineKernelConfig(),
+    #     scale_cfg=ScaleKernelConfig()
+    # )
+    #
+    # kernel_builder = PeriodicKernelBuilder(
+    #     ard_num_dims=objective.num_objectives,
+    #     base_cfg=PeriodicKernelConfig(),
+    #     scale_cfg=ScaleKernelConfig()
     # )
 
     """ Instantiate an acquisition function constructor"""
-    acquisition_function_factory = AcquisitionFunctionFactory(
-        acqf_type=AcquisitionFunctionType.qLogNEI,
-    )
+    acqf_builder = EIBuilder()
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -76,8 +74,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_factory=acquisition_function_factory,
-        kernel_factory=kernel,
+        acquisition_function_builder=acquisition_function_builder,
+        kernel_builder=kernel_builder,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,

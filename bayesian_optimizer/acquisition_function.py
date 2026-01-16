@@ -1,8 +1,7 @@
-from dataclasses import dataclass
-from typing import Optional, List, Callable
-from utils.bo_types import AcquisitionFunctionType
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, fields
+from typing import Any, Callable, Optional, List
 import torch
-
 from botorch.acquisition import (
     ExpectedImprovement,
     LogExpectedImprovement,
@@ -21,215 +20,361 @@ from botorch.acquisition.multi_objective import (
     qNoisyExpectedHypervolumeImprovement,
     qLogNoisyExpectedHypervolumeImprovement,
 )
+from botorch.acquisition.objective import PosteriorTransform
+from bayesian_optimizer.optimizer import BayesianOptimizer
 
 
-# === Acquisition Function Configs ===
+# =========================
+# Base builder
+# =========================
 
-@dataclass
-class EIConfig:
-    """Config for ExpectedImprovement variants."""
-    pass
+class AcquisitionFunctionBuilderBase(ABC):
+    """Base class for acquisition function builders."""
 
+    def __init__(
+            self,
+            require_sampler: bool,
+            is_analytical: bool,
+            runtime_params: Optional[Any] = None
+    ):
+        self._runtime_params = runtime_params
+        self._require_sampler = require_sampler
+        self._is_analytical = is_analytical
 
-@dataclass
-class PIConfig:
-    """Config for ProbabilityOfImprovement variants."""
-    pass
+    @abstractmethod
+    def build_acquisition_function_instance(self):
+        ...
 
+    def build_runtime_params(self, params: Any):
+        self._runtime_params = params
 
-@dataclass
-class UCBConfig:
-    """Config for UpperConfidenceBound variants."""
-    beta: float = 0.1
-
-
-@dataclass
-class NEIConfig:
-    """Config for NoisyExpectedImprovement variants."""
-    prune_baseline: bool = True
-
-
-@dataclass
-class EHVIConfig:
-    """Config for ExpectedHypervolumeImprovement variants."""
-    pass
+    def build_runtime_params_from_bo(self, bo: BayesianOptimizer):
+        """ Build runtime params from a BayesianOptimizer instance"""
+        for field in fields(self._runtime_params):
+            setattr(self._runtime_params, field.name, getattr(bo, field.name))
 
 
-@dataclass
-class NEHVIConfig:
-    """Config for NoisyExpectedHypervolumeImprovement variants."""
-    prune_baseline: bool = True
+# =========================
+# Single-objective: Analytical
+# =========================
+
+class EIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class RuntimeParams:
+        model: Any = None
+        best_f: float | torch.Tensor = None
+        posterior_transform: PosteriorTransform = None
+        maximize: bool = True
+
+    def __init__(self, runtime_params: Optional[RuntimeParams] = None):
+        super().__init__(require_sampler=False, is_analytical=True, runtime_params=runtime_params)
+
+    def build_acquisition_function_instance(self):
+        return ExpectedImprovement(
+            model=self._runtime_params.model,
+            best_f=self._runtime_params.best_f,
+            posterior_transform=self._runtime_params.posterior_transform,
+            maximize=self._runtime_params.maximize,
+        )
 
 
-@dataclass
-class EWNEHVIConfig:
-    """Config for ExplorationWeightedNEHVI."""
-    prune_baseline: bool = True
-    exploration_weight: float = 1.0
+class LogEIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class RuntimeParams:
+        model: Any = None
+        best_f: float | torch.Tensor = None
+        posterior_transform: PosteriorTransform = None
+        maximize: bool = True
+
+    def __init__(self, runtime_params: Optional[RuntimeParams] = None):
+        super().__init__(require_sampler=False, is_analytical=True, runtime_params=runtime_params)
+
+    def build_acquisition_function_instance(self):
+        return LogExpectedImprovement(
+            model=self._runtime_params.model,
+            best_f=self._runtime_params.best_f,
+            posterior_transform=self._runtime_params.posterior_transform,
+            maximize=self._runtime_params.maximize,
+        )
 
 
-@dataclass
-class DWNEHVIConfig:
-    """Config for DiversityWeightedNEHVI."""
-    prune_baseline: bool = True
-    min_dist_radius: float = 1.0
-    distance_penalty_weight: float = 1.0
+class PIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class RuntimeParams:
+        model: Any = None
+        best_f: float | torch.Tensor = None
+        posterior_transform: PosteriorTransform = None
+        maximize: bool = True
+
+    def __init__(self, runtime_params: Optional[RuntimeParams] = None):
+        super().__init__(require_sampler=False, is_analytical=True, runtime_params=runtime_params)
+
+    def build_acquisition_function_instance(self):
+        return ProbabilityOfImprovement(
+            model=self._runtime_params.model,
+            best_f=self._runtime_params.best_f,
+            posterior_transform=self._runtime_params.posterior_transform,
+            maximize=self._runtime_params.maximize,
+        )
 
 
-@dataclass
-class AcquisitionRuntimeParams:
-    """Runtime parameters passed from optimizer."""
-    model: any
-    maximize: bool = False
-    best_f: Optional[float] = None
-    X_baseline: Optional[torch.Tensor] = None
-    sampler: Optional[any] = None
-    objective: Optional[any] = None
-    ref_point: Optional[torch.Tensor] = None
-    partitioning: Optional[any] = None
-    constraints: Optional[List[Callable]] = None
+class UCBBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class RuntimeParams:
+        model: Any = None
+        beta: float | torch.Tensor = None
+        posterior_transform: PosteriorTransform = None
+        maximize: bool = True
+
+    def __init__(self, runtime_params: Optional[RuntimeParams] = None):
+        super().__init__(require_sampler=False, is_analytical=True, runtime_params=runtime_params)
+
+    def build_acquisition_function_instance(self):
+        return UpperConfidenceBound(
+            model=self._runtime_params.model,
+            beta=self._runtime_params.beta,
+            posterior_transform=self._runtime_params.posterior_transform,
+            maximize=self._runtime_params.maximize,
+        )
 
 
-class AcquisitionFunctionFactory:
-    def __init__(self, acqf_type: AcquisitionFunctionType, config=None):
-        self.acquisition_function_type = acqf_type
-        self.config = config
+# =========================
+# Single-objective: Monte Carlo
+# =========================
 
-    def requires_sampler(self) -> bool:
-        return self.acquisition_function_type.requires_sampler()
+class qEIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        best_f: float | torch.Tensor
+        sampler: Any
+        objective: Optional[Any] = None
 
-    def __call__(self, params: AcquisitionRuntimeParams):
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
 
-        # === Single-Objective: Analytical ===
-        if self.acquisition_function_type == AcquisitionFunctionType.EI:
-            return ExpectedImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                maximize=params.maximize,
-            )
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qExpectedImprovement(
+            model=self.runtime_params.model,
+            best_f=self.runtime_params.best_f,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+        )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.LogEI:
-            return LogExpectedImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                maximize=params.maximize,
-            )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.PI:
-            return ProbabilityOfImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                maximize=params.maximize,
-            )
+class qLogEIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        best_f: float | torch.Tensor
+        sampler: Any
+        objective: Optional[Any] = None
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.UCB:
-            cfg = self.config or UCBConfig()
-            return UpperConfidenceBound(
-                model=params.model,
-                beta=cfg.beta,
-                maximize=params.maximize,
-            )
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
 
-        # === Single-Objective: Monte Carlo ===
-        elif self.acquisition_function_type == AcquisitionFunctionType.qEI:
-            return qExpectedImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                sampler=params.sampler,
-                objective=params.objective,
-            )
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qLogExpectedImprovement(
+            model=self.runtime_params.model,
+            best_f=self.runtime_params.best_f,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+        )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogEI:
-            return qLogExpectedImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                sampler=params.sampler,
-                objective=params.objective,
-            )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qNEI:
-            cfg = self.config or NEIConfig()
-            return qNoisyExpectedImprovement(
-                model=params.model,
-                X_baseline=params.X_baseline,
-                sampler=params.sampler,
-                prune_baseline=cfg.prune_baseline,
-                objective=params.objective,
-            )
+class qPIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        best_f: float | torch.Tensor
+        sampler: Any
+        objective: Optional[Any] = None
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogNEI:
-            cfg = self.config or NEIConfig()
-            return qLogNoisyExpectedImprovement(
-                model=params.model,
-                X_baseline=params.X_baseline,
-                sampler=params.sampler,
-                prune_baseline=cfg.prune_baseline,
-                objective=params.objective,
-            )
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qPI:
-            return qProbabilityOfImprovement(
-                model=params.model,
-                best_f=params.best_f,
-                sampler=params.sampler,
-                objective=params.objective,
-            )
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qProbabilityOfImprovement(
+            model=self.runtime_params.model,
+            best_f=self.runtime_params.best_f,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+        )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qUCB:
-            cfg = self.config or UCBConfig()
-            return qUpperConfidenceBound(
-                model=params.model,
-                beta=cfg.beta,
-                sampler=params.sampler,
-                objective=params.objective,
-            )
 
-        # === Multi-Objective: Monte Carlo ===
-        elif self.acquisition_function_type == AcquisitionFunctionType.qEHVI:
-            return qExpectedHypervolumeImprovement(
-                model=params.model,
-                ref_point=params.ref_point,
-                partitioning=params.partitioning,
-                sampler=params.sampler,
-                objective=params.objective,
-                constraints=params.constraints,
-            )
+class qUCBBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        beta: float
+        sampler: Any
+        objective: Optional[Any] = None
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogEHVI:
-            return qLogExpectedHypervolumeImprovement(
-                model=params.model,
-                ref_point=params.ref_point,
-                partitioning=params.partitioning,
-                sampler=params.sampler,
-                objective=params.objective,
-                constraints=params.constraints,
-            )
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qNEHVI:
-            cfg = self.config or NEHVIConfig()
-            return qNoisyExpectedHypervolumeImprovement(
-                model=params.model,
-                ref_point=params.ref_point,
-                X_baseline=params.X_baseline,
-                sampler=params.sampler,
-                prune_baseline=cfg.prune_baseline,
-                objective=params.objective,
-                constraints=params.constraints,
-            )
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qUpperConfidenceBound(
+            model=self.runtime_params.model,
+            beta=self.runtime_params.beta,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+        )
 
-        elif self.acquisition_function_type == AcquisitionFunctionType.qLogNEHVI:
-            cfg = self.config or NEHVIConfig()
-            return qLogNoisyExpectedHypervolumeImprovement(
-                model=params.model,
-                ref_point=params.ref_point,
-                X_baseline=params.X_baseline,
-                sampler=params.sampler,
-                prune_baseline=cfg.prune_baseline,
-                objective=params.objective,
-                constraints=params.constraints,
-            )
 
-        # Note: qEWNEHVI, qDWNEHVI, qNParEGO would need their own imports and handling
+class qNEIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        X_baseline: torch.Tensor
+        sampler: Any
+        prune_baseline: bool = True
+        objective: Optional[Any] = None
 
-        else:
-            raise ValueError(f"Unsupported acquisition function type: {self.acquisition_function_type}")
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qNoisyExpectedImprovement(
+            model=self.runtime_params.model,
+            X_baseline=self.runtime_params.X_baseline,
+            sampler=self.runtime_params.sampler,
+            prune_baseline=self.runtime_params.prune_baseline,
+            objective=self.runtime_params.objective,
+        )
+
+
+class qLogNEIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        X_baseline: torch.Tensor
+        sampler: Any
+        prune_baseline: bool = True
+        objective: Optional[Any] = None
+
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qLogNoisyExpectedImprovement(
+            model=self.runtime_params.model,
+            X_baseline=self.runtime_params.X_baseline,
+            sampler=self.runtime_params.sampler,
+            prune_baseline=self.runtime_params.prune_baseline,
+            objective=self.runtime_params.objective,
+        )
+
+
+# =========================
+# Multi-objective: Monte Carlo
+# =========================
+
+class qEHVIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        ref_point: torch.Tensor
+        partitioning: Any
+        sampler: Any
+        objective: Optional[Any] = None
+        constraints: Optional[List[Callable]] = None
+
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qExpectedHypervolumeImprovement(
+            model=self.runtime_params.model,
+            ref_point=self.runtime_params.ref_point,
+            partitioning=self.runtime_params.partitioning,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+            constraints=self.runtime_params.constraints,
+        )
+
+
+class qLogEHVIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        ref_point: torch.Tensor
+        partitioning: Any
+        sampler: Any
+        objective: Optional[Any] = None
+        constraints: Optional[List[Callable]] = None
+
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qLogExpectedHypervolumeImprovement(
+            model=self.runtime_params.model,
+            ref_point=self.runtime_params.ref_point,
+            partitioning=self.runtime_params.partitioning,
+            sampler=self.runtime_params.sampler,
+            objective=self.runtime_params.objective,
+            constraints=self.runtime_params.constraints,
+        )
+
+
+class qNEHVIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        ref_point: torch.Tensor
+        X_baseline: torch.Tensor
+        sampler: Any
+        prune_baseline: bool = True
+        objective: Optional[Any] = None
+        constraints: Optional[List[Callable]] = None
+
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qNoisyExpectedHypervolumeImprovement(
+            model=self.runtime_params.model,
+            ref_point=self.runtime_params.ref_point,
+            X_baseline=self.runtime_params.X_baseline,
+            sampler=self.runtime_params.sampler,
+            prune_baseline=self.runtime_params.prune_baseline,
+            objective=self.runtime_params.objective,
+            constraints=self.runtime_params.constraints,
+        )
+
+
+class qLogNEHVIBuilder(AcquisitionFunctionBuilderBase):
+    @dataclass
+    class Params:
+        model: Any
+        ref_point: torch.Tensor
+        X_baseline: torch.Tensor
+        sampler: Any
+        prune_baseline: bool = True
+        objective: Optional[Any] = None
+        constraints: Optional[List[Callable]] = None
+
+    def __init__(self):
+        super().__init__(require_sampler=True, is_analytical=False)
+
+    def build(self, runtime_params: Optional[Params] = None):
+        super().build(runtime_params)
+        return qLogNoisyExpectedHypervolumeImprovement(
+            model=self.runtime_params.model,
+            ref_point=self.runtime_params.ref_point,
+            X_baseline=self.runtime_params.X_baseline,
+            sampler=self.runtime_params.sampler,
+            prune_baseline=self.runtime_params.prune_baseline,
+            objective=self.runtime_params.objective,
+            constraints=self.runtime_params.constraints,
+        )

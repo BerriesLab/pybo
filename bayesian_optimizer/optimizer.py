@@ -22,7 +22,7 @@ from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction
 from gpytorch.constraints import GreaterThan, Interval
-from bayesian_optimizer.acquisition_function import AcquisitionRuntimeParams, AcquisitionFunctionFactory
+from bayesian_optimizer.acquisition_function import *
 from bayesian_optimizer.kernel import *
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
@@ -50,8 +50,8 @@ class BayesianOptimizer:
             Y_con_var: torch.Tensor | None = None,
             Y_track: torch.Tensor | None = None,
             Y_track_var: torch.Tensor | None = None,
-            acquisition_function_factory: AcquisitionFunctionFactory | None = None,
-            kernel_factory: KernelBuilderBase | None = None,
+            acquisition_function_builder: AcquisitionFunctionBuilderBase | None = None,
+            kernel_builder: KernelBuilderBase | None = None,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
             mc_samples: int = 256,
@@ -103,8 +103,8 @@ class BayesianOptimizer:
         self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
-        self.acquisition_function_factory = acquisition_function_factory
-        self.kernel_factory = kernel_factory
+        self.acquisition_function_factory = acquisition_function_builder
+        self.kernel_factory = kernel_builder
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
@@ -289,13 +289,13 @@ class BayesianOptimizer:
         self._Y_track_var = Y_track_var
 
     @property
-    def acquisition_function_factory(self) -> AcquisitionFunctionFactory:
+    def acquisition_function_factory(self) -> AcquisitionFunctionBuilderBase:
         return self._acquisition_function_type
 
     @acquisition_function_factory.setter
     def acquisition_function_factory(self, af_type):
-        if not isinstance(af_type, AcquisitionFunctionFactory):
-            raise ValueError("Acquisition function type must be of type AcquisitionFunctionFactory.")
+        if not isinstance(af_type, AcquisitionFunctionBuilderBase):
+            raise ValueError("Acquisition function type must be of type AcquisitionFunctionBuilder.")
         self._acquisition_function_type = af_type
 
     @property
@@ -516,14 +516,15 @@ class BayesianOptimizer:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
     def _initialize_kernel(self, verbose=True):
-        """ Initialize a kernel (or covariance module) instance using the kernel_factory.
+        """ Initialize a kernel (or covariance module) instance using the kernel_builder.
         Note that, by building a fresh covariance module for each model and for each optimization
         iteration, kernels are freshly optimized at each iteration. """
 
         if verbose:
-            print(f"Initializing kernel instance of type {self.kernel_factory.kernel_type.value}... ", end="")
+            kernel = self.kernel_factory.__class__.__name__.replace("KernelBuilder", "")
+            print(f"Initializing kernel instance of type {kernel}... ", end="")
 
-        self._kernel_instance = self._kernel_factory()
+        self._kernel_instance = self._kernel_factory.build()
 
         if verbose:
             self._print_success()
@@ -728,28 +729,32 @@ class BayesianOptimizer:
             self._print_success()
 
     def _initialize_acquisition_function(self, verbose=True):
-        """ Initialize an acquisition function instance using the acquisition_function_factory. """
+        """ Initialize an acquisition function instance using the acquisition_function_builder. """
 
         if verbose:
-            print(
-                f"Initializing acquisition function of type {self.acquisition_function_factory.acquisition_function_type.value}... ",
-                end="", flush=True)
+            name = self.acquisition_function_factory.__class__.__name__.replace("Builder", "")
+            print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
 
         with warnings.catch_warnings(record=True) as caught:
 
-            params = AcquisitionRuntimeParams(
-                model=self._model,
-                maximize=not self._objective.obj_to_minimize[0],
-                best_f=self._best_f,
-                X_baseline=self._X,
-                sampler=self._sampler_instance,
-                objective=self._objective,
-                ref_point=self._ref_point,
-                partitioning=self._partitioning,
-                constraints=self._objective.output_constraints if hasattr(self._objective,
-                                                                          'output_constraints') else None,
-            )
-            self._acquisition_function_instance = self.acquisition_function_factory(params)
+            # TODO: collect only runtime parameters required by the acqf
+            self.acquisition_function_factory.build_runtime_params_from_bo(self)
+            self._acquisition_function_instance = self.acquisition_function_factory.build_acquisition_function_instance()
+
+            # TODO: previous todo should replace this logic
+            # runtime_params = AcquisitionRuntimeParams(
+            #     model=self._model,
+            #     maximize=not self._objective.obj_to_minimize[0],
+            #     best_f=self._best_f,
+            #     X_baseline=self._X,
+            #     sampler=self._sampler_instance,
+            #     objective=self._objective,
+            #     ref_point=self._ref_point,
+            #     partitioning=self._partitioning,
+            #     constraints=self._objective.output_constraints if hasattr(self._objective,
+            #                                                               'output_constraints') else None,
+            # )
+            # self._acquisition_function_instance = self.acquisition_function_factory.build_acqf(runtime_params)
 
         self._warnings.extend(caught)
 
@@ -1438,12 +1443,3 @@ class BayesianOptimizer:
 
         with open(filepath, "rb") as f:
             return pickle.load(f)
-
-    """ ===================== """
-    """ ===== DEBUGGERS ===== """
-    """ ===================== """
-
-    def print_hyperparameters(model):
-        print(f"Lengthscale: {model.covar_module.base_kernel.lengthscale.item():.4f}")
-        print(f"Outputscale: {model.covar_module.outputscale.item():.4f}")
-        print(f"Noise: {model.likelihood.noise.item():.6f}")

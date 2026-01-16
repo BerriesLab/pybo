@@ -58,7 +58,7 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_factory=AcquisitionFunctionType.qNEHVI,
+        acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
         sampler_type=SamplerType.Sobol,
         X=X,
         Y_obj=Y_obj,

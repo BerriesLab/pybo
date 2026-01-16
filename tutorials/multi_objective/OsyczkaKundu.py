@@ -54,7 +54,7 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_factory=AcquisitionFunctionType.qNEHVI,
+        acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
         X=X,
         Y_obj=Y_obj,
         n_acqf_opt_restarts=50,

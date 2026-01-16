@@ -18,20 +18,22 @@ experimental constraints, and finding pareto-optimal solutions.
 
 ## Key Features
 
-Version 0.1 currently supports:
+Version 0.2 currently supports:
 
-- Multi-objective optimization problems for vector-valued functions $$\mathbf{f}_0: \mathbb{R}^N \to \mathbb{R}^m$$
-  where $m = 2$ or $m = 3$.
-- Batch mode (q-batch) for parallel evaluations.
+- Single-objective optimization problems for vector-valued functions $$\mathbf{f}_0: \mathbb{R}^N \to \mathbb{R}^1$$.
+- Multi-objective optimization problems for vector-valued functions $$\mathbf{f}_0: \mathbb{R}^N \to \mathbb{R}^m$$.
+- Noisy observations (variance).
+- Single and batch mode (q-batch) for parallel evaluations.
 - Linear equality constraints on the input domain (X).
 - Linear inequality constraints on the input domain (X).
 - Nonlinear inequality constraints on the input domain (X).
 - Linear and non-linear inequality constraints on the output domain (Y).
-- Observations noise (variance).
+- The following Kernels: Scale, RBF, Matern, Cosine, Periodic, RBF + Periodic, RBF x Periodic.
+- The following analytical acquisition functions: EI, LogEI,
 - The following Monte Carlo based acquisition functions: qEHVI, qLogEHVI, qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI,
   qNParEGO.
 - Easy-to-write custom objectives, including trackers and penalization.
-- Plotting of optimization results and metrics.
+- Plotters for single-objectives, multi-objectives, optimization results and metrics.
 - Pythonic integration in experimental workflows.
 - CUDA, Apple Metal Framework, and CPU.
 
