@@ -1,8 +1,11 @@
 import os
 from datetime import datetime
 import torch
+from gpytorch.kernels import ScaleKernel
+
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionFactory
-from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig
+from bayesian_optimizer.kernel import RBFKernelBuilder, CosineKernelBuilder, RBFKernelConfig, ScaleKernelConfig, \
+    CosineKernelConfig
 from objectives.single_objective.harmonic import Harmonic
 from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
@@ -27,11 +30,25 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
     )
 
-    kernel_factory = KernelFactory(
-        kernel_type=KernelType.PERIODIC,
+    kernel = RBFKernelBuilder(
         ard_num_dims=objective.num_objectives,
-        config=PeriodicConfig()
+        base_cfg=RBFKernelConfig(),
+        scale_cfg=ScaleKernelConfig()
     )
+
+    kernel = CosineKernelBuilder(
+        ard_num_dims=objective.num_objectives,
+        base_cfg=CosineKernelConfig(),
+        scale_cfg=ScaleKernelConfig()
+    )
+
+    # kernel_factory = KernelFactory(
+    #     kernel_type=KernelType.COSINE,
+    #     ard_num_dims=objective.num_objectives,
+    #     config=CosineConfig(
+    #         period_length_constraint=Interval(1 / 6 * (1 - 0.2), 1 / 6 * (1 + 0.2)),
+    #     )
+    # )
 
     """ Instantiate an acquisition function constructor"""
     acquisition_function_factory = AcquisitionFunctionFactory(
@@ -60,7 +77,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
         objective=objective,
         acquisition_function_factory=acquisition_function_factory,
-        kernel_factory=kernel_factory,
+        kernel_factory=kernel,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,

@@ -23,7 +23,7 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction
 from gpytorch.constraints import GreaterThan, Interval
 from bayesian_optimizer.acquisition_function import AcquisitionRuntimeParams, AcquisitionFunctionFactory
-from bayesian_optimizer.kernel import KernelFactory
+from bayesian_optimizer.kernel import *
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
 from gpytorch.mlls import SumMarginalLogLikelihood
@@ -51,7 +51,7 @@ class BayesianOptimizer:
             Y_track: torch.Tensor | None = None,
             Y_track_var: torch.Tensor | None = None,
             acquisition_function_factory: AcquisitionFunctionFactory | None = None,
-            kernel_factory: KernelFactory | None = None,
+            kernel_factory: KernelBuilderBase | None = None,
             sampler_type: SamplerType = SamplerType.Sobol,
             batch_size: int = 1,
             mc_samples: int = 256,
@@ -474,12 +474,12 @@ class BayesianOptimizer:
         return self._feasible_pareto_front_Y
 
     @property
-    def kernel_factory(self) -> KernelFactory:
+    def kernel_factory(self) -> KernelBuilderBase:
         return self._kernel_factory
 
     @kernel_factory.setter
-    def kernel_factory(self, kernel_factory: KernelFactory):
-        if not isinstance(kernel_factory, KernelFactory):
+    def kernel_factory(self, kernel_factory: KernelBuilderBase) -> None:
+        if not isinstance(kernel_factory, KernelBuilderBase):
             raise ValueError("kernel_type must be of type KernelType")
         self._kernel_factory = kernel_factory
 

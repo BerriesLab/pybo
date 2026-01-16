@@ -98,10 +98,6 @@ class KernelType(Enum):
         RBF: Smooth, infinitely differentiable (default)
         MATERN: Adjustable smoothness (nu=2.5 default)
         PERIODIC: For sinusoidal/seasonal patterns
-        RQ: Rational Quadratic - mixture of RBFs
-        SPECTRAL_MIXTURE: Learns periodicities from data
-        LINEAR: Linear relationships
-        POLYNOMIAL: Polynomial relationships
         COSINE: Pure cosine kernel
 
     Composite kernels:
@@ -113,10 +109,6 @@ class KernelType(Enum):
     RBF = "RBF"
     MATERN = "Matern"
     PERIODIC = "Periodic"
-    RQ = "RQ"
-    SPECTRAL_MIXTURE = "Spectral_mixture"
-    LINEAR = "Linear"
-    POLYNOMIAL = "Polynomial"
     COSINE = "Cosine"
 
     # Composite kernels
