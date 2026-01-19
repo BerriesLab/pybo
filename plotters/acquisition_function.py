@@ -29,7 +29,7 @@ class AcquisitionPlotter(PlotterBase):
         X_np = X_grid.squeeze().detach().cpu().numpy()
         acq_np = acq_values.squeeze().detach().cpu().numpy()
 
-        if self.bo.acquisition_function_factory.acquisition_function_type.is_log():
+        if self.bo.acquisition_function_factory.is_log:
             log_abs_acqf = np.log(np.abs(acq_np))
             self.ax.plot(X_np, -log_abs_acqf, color=color, linewidth=linewidth, label=label)
             self.ax.set_ylabel(r'$-\log \left( | \mathrm{Acquisition\ Value} | \right) $')

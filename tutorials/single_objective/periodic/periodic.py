@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 import torch
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionBuilder
-from bayesian_optimizer.kernel import KernelFactory, RBFConfig, PeriodicConfig
+from bayesian_optimizer.kernel_builders import KernelFactory, RBFConfig, PeriodicConfig
 from objectives.single_objective.periodic import Periodic
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter

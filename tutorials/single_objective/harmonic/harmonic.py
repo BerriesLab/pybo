@@ -1,17 +1,15 @@
 import os
 from datetime import datetime
 import torch
-from gpytorch.kernels import ScaleKernel
-from gpytorch.kernels.keops import PeriodicKernel
 
-from bayesian_optimizer.acquisition_function import *
-from bayesian_optimizer.kernel import *
+from bayesian_optimizer.kernel_builders import *
+from bayesian_optimizer.acquisition_function_builders import qNEIBuilder, qLogEIBuilder
 from objectives.single_objective.harmonic import Harmonic
-from objectives.single_objective.periodic import Periodic
+
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
-from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
+from utils.bo_types import SamplerType
 from plotters.evolution import *
 from gpytorch.constraints import Interval
 
@@ -30,8 +28,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
     )
 
-    kernel_builder = RBFKernelBuilder()
-
+    """ Instantiate a Kernel builder """
     kernel_builder = RBFKernelBuilder(
         ard_num_dims=objective.num_objectives,
         base_cfg=RBFKernelConfig(),
@@ -51,7 +48,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     # )
 
     """ Instantiate an acquisition function constructor"""
-    acqf_builder = EIBuilder()
+    acquisition_function_builder = qLogEIBuilder()
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.

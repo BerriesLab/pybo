@@ -4,7 +4,7 @@ import torch
 from sympy import GreaterThan
 
 from bayesian_optimizer.acquisition_function import AcquisitionFunctionBuilder
-from bayesian_optimizer.kernel import KernelFactory, RBFConfig
+from bayesian_optimizer.kernel_builders import KernelFactory, RBFConfig
 from objectives.single_objective.quadratic import Quadratic
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
