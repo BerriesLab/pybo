@@ -33,10 +33,8 @@ if TYPE_CHECKING:
 # =========================
 
 class AcquisitionFunctionBuilderBase(ABC):
-    """
-    Base class that automatically generates a RuntimeParams dataclass
-    by inspecting the constructor of the target acquisition function class.
-    """
+    """ Base class that automatically generates a RuntimeParams dataclass
+    by inspecting the constructor of the target acquisition function class."""
     _acq_class: Type = None
 
     def __init__(self, require_sampler: bool, is_analytical: bool, is_log: bool):
@@ -76,16 +74,18 @@ class AcquisitionFunctionBuilderBase(ABC):
                 setattr(self._runtime_params, f.name, val)
 
     def build_acquisition_function_instance(self):
-        """
-        Generic implementation that instantiates the acquisition function
-        using the stored runtime parameters.
-        """
+        """ Generic implementation that instantiates the acquisition function
+        using the stored runtime parameters. """
         if self._runtime_params is None:
             raise ValueError("Runtime parameters have not been built yet.")
 
         params_dict = {f.name: getattr(self._runtime_params, f.name)
                        for f in fields(self._runtime_params)}
         return self._acq_class(**params_dict)
+
+    @property
+    def runtime_params(self):
+        return self._runtime_params
 
     @property
     def require_sampler(self) -> bool:

@@ -59,7 +59,7 @@ class PlotterBase:
             self.cbar.set_label(self.labels[2])
 
     # TODO: extend grid generation to more than one input dimensions
-    def _generate_grid(self, n_grid_points=500) -> torch.Tensor:
+    def _generate_grid(self, n_grid_points=1000) -> torch.Tensor:
         """Generate a dense grid over the input bounds for plotting."""
         bounds = self.bo.objective.bounds
         device = self.bo.device

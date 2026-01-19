@@ -14,17 +14,17 @@ import botorch
 import gpytorch
 from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import SobolQMCNormalSampler, MCSampler
-from botorch.utils.multi_objective import is_non_dominated, Hypervolume, get_chebyshev_scalarization
+from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction
-from gpytorch.constraints import GreaterThan, Interval
+from gpytorch.constraints import GreaterThan
 
-from bayesian_optimizer.kernel_builders import *
-from bayesian_optimizer.acquisition_function_builders import AcquisitionFunctionBuilderBase
+from builders.kernel import KernelBuilderBase
+from builders.acqf import AcquisitionFunctionBuilderBase
 
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import Sampler
@@ -105,8 +105,8 @@ class BayesianOptimizer:
         self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
-        self.acquisition_function_factory = acquisition_function_builder
-        self.kernel_factory = kernel_builder
+        self.acquisition_function_builder = acquisition_function_builder
+        self.kernel_builder = kernel_builder
         self.sampler_type = sampler_type
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
@@ -296,11 +296,11 @@ class BayesianOptimizer:
         self._Y_track_var = Y_track_var
 
     @property
-    def acquisition_function_factory(self) -> AcquisitionFunctionBuilderBase:
+    def acquisition_function_builder(self) -> AcquisitionFunctionBuilderBase:
         return self._acquisition_function_type
 
-    @acquisition_function_factory.setter
-    def acquisition_function_factory(self, af_type):
+    @acquisition_function_builder.setter
+    def acquisition_function_builder(self, af_type):
         if not isinstance(af_type, AcquisitionFunctionBuilderBase):
             raise ValueError("Acquisition function type must be of type AcquisitionFunctionBuilder.")
         self._acquisition_function_type = af_type
@@ -481,14 +481,14 @@ class BayesianOptimizer:
         return self._feasible_pareto_front_Y
 
     @property
-    def kernel_factory(self) -> KernelBuilderBase:
-        return self._kernel_factory
+    def kernel_builder(self) -> KernelBuilderBase:
+        return self._kernel_builder
 
-    @kernel_factory.setter
-    def kernel_factory(self, kernel_factory: KernelBuilderBase) -> None:
-        if not isinstance(kernel_factory, KernelBuilderBase):
+    @kernel_builder.setter
+    def kernel_builder(self, kernel_builder: KernelBuilderBase) -> None:
+        if not isinstance(kernel_builder, KernelBuilderBase):
             raise ValueError("kernel_type must be of type KernelType")
-        self._kernel_factory = kernel_factory
+        self._kernel_builder = kernel_builder
 
     """ ===================== """
     """ ===== Optimizer ===== """
@@ -509,7 +509,7 @@ class BayesianOptimizer:
         self._fit_model(verbose=verbose)
 
         # === 3. Initialize acquisition function ===
-        if self.acquisition_function_factory.require_sampler:
+        if self.acquisition_function_builder.require_sampler:
             self._initialize_sampler(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
@@ -528,10 +528,10 @@ class BayesianOptimizer:
         iteration, kernels are freshly optimized at each iteration. """
 
         if verbose:
-            kernel = self.kernel_factory.__class__.__name__.replace("KernelBuilder", "")
+            kernel = self.kernel_builder.__class__.__name__.replace("KernelBuilder", "")
             print(f"Initializing kernel instance of type {kernel}... ", end="")
 
-        self._kernel = self._kernel_factory.build()
+        self._kernel = self._kernel_builder.build()
 
         if verbose:
             self._print_success()
@@ -738,30 +738,12 @@ class BayesianOptimizer:
         """ Initialize an acquisition function instance using the acquisition_function_builder. """
 
         if verbose:
-            name = self.acquisition_function_factory.__class__.__name__.replace("Builder", "")
+            name = self.acquisition_function_builder.__class__.__name__.replace("Builder", "")
             print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
 
         with warnings.catch_warnings(record=True) as caught:
-
-            # TODO: collect only runtime parameters required by the acqf
-            self.acquisition_function_factory.build_runtime_params_from_bo(self)
-            self._acquisition_function = self.acquisition_function_factory.build_acquisition_function_instance()
-
-            # TODO: previous todo should replace this logic
-            # runtime_params = AcquisitionRuntimeParams(
-            #     model=self._model,
-            #     maximize=not self._objective.obj_to_minimize[0],
-            #     best_f=self._best_f,
-            #     X_baseline=self._X,
-            #     sampler=self._sampler,
-            #     objective=self._objective,
-            #     ref_point=self._ref_point,
-            #     partitioning=self._partitioning,
-            #     constraints=self._objective.output_constraints if hasattr(self._objective,
-            #                                                               'output_constraints') else None,
-            # )
-            # self._acquisition_function = self.acquisition_function_factory.build_acqf(runtime_params)
-
+            self.acquisition_function_builder.build_runtime_params_from_bo(self)
+            self._acquisition_function = self.acquisition_function_builder.build_acquisition_function_instance()
         self._warnings.extend(caught)
 
         if verbose:

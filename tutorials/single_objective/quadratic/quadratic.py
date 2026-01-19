@@ -3,15 +3,15 @@ from datetime import datetime
 import torch
 from sympy import GreaterThan
 
-from bayesian_optimizer.acquisition_function import AcquisitionFunctionBuilder
-from bayesian_optimizer.kernel_builders import KernelFactory, RBFConfig
+from builders.acqf import *
+from builders.kernel import *
 from objectives.single_objective.quadratic import Quadratic
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
-from utils.bo_types import AcquisitionFunctionType, SamplerType, KernelType
+from utils.bo_types import SamplerType
 from plotters.evolution import *
-from gpytorch.constraints import Interval, GreaterThan
+from gpytorch.constraints import GreaterThan
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -28,20 +28,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         dtype=DTYPE,
     )
 
-    """ Instantiate a kernel constructor"""
-    kernel_factory = KernelFactory(
-        kernel_type=KernelType.RBF,
-        ard_num_dims=objective.num_objectives,
-        config=RBFConfig(
-            lengthscale_constraint=GreaterThan(0.01)
-            # lengthscale_constraint=Interval(0.01, 0.1)
-        )
-    )
+    """ Instantiate a Kernel builder """
+    kernel_builder = RBFKernelBuilder()
+    kernel_builder.base_params.ard_num_dims = objective.num_objectives
+    kernel_builder.scale_params.outputscale_constraint = GreaterThan(0.01)
 
-    """ Instantiate an acquisition function constructor"""
-    acquisition_function_factory = AcquisitionFunctionBuilder(
-        acqf_type=AcquisitionFunctionType.qLogNEI,
-    )
+    """ Instantiate an acqf builder """
+    acqf_builder = qLogNEIBuilder()
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -63,8 +56,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_builder=acquisition_function_factory,
-        kernel_builder=kernel_factory,
+        acquisition_function_builder=acqf_builder,
+        kernel_builder=kernel_builder,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,

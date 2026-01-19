@@ -2,8 +2,8 @@ import os
 from datetime import datetime
 import torch
 
-from bayesian_optimizer.kernel_builders import *
-from bayesian_optimizer.acquisition_function_builders import qNEIBuilder, qLogEIBuilder
+from builders.kernel import *
+from builders.acqf import qLogNEIBuilder
 from objectives.single_objective.harmonic import Harmonic
 
 from plotters.acquisition_function import AcquisitionPlotter
@@ -29,26 +29,20 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Instantiate a Kernel builder """
-    kernel_builder = RBFKernelBuilder(
-        ard_num_dims=objective.num_objectives,
-        base_cfg=RBFKernelConfig(),
-        scale_cfg=ScaleKernelConfig()
-    )
+    kernel_builder = RBFKernelBuilder()
+    kernel_builder.base_params.ard_num_dims = objective.num_objectives
+    kernel_builder.base_params.lengthscale_constraint = Interval(1 / 6 * 0.8, 1 / 6 * 1.2)
 
-    # kernel_builder = CosineKernelBuilder(
-    #     ard_num_dims=objective.num_objectives,
-    #     base_cfg=CosineKernelConfig(),
-    #     scale_cfg=ScaleKernelConfig()
-    # )
-    #
-    # kernel_builder = PeriodicKernelBuilder(
-    #     ard_num_dims=objective.num_objectives,
-    #     base_cfg=PeriodicKernelConfig(),
-    #     scale_cfg=ScaleKernelConfig()
-    # )
+    # kernel_builder = CosineKernelBuilder()
+    # kernel_builder.base_params.ard_num_dims = objective.num_objectives
+    # kernel_builder.base_params.period_length_constraint = Interval(1 / 12 * 0.8, 1 / 12 * 1.2)
 
-    """ Instantiate an acquisition function constructor"""
-    acquisition_function_builder = qLogEIBuilder()
+    # kernel_builder = PeriodicKernelBuilder()
+    # kernel_builder.base_params.ard_num_dims = objective.num_objectives
+    # kernel_builder.base_params.period_length_constraint = Interval(1 / 6 * 0.8, 1 / 6 * 1.2)
+
+    """ Instantiate an acqf builder """
+    acqf_builder = qLogNEIBuilder()
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -71,7 +65,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_builder=acquisition_function_builder,
+        acquisition_function_builder=acqf_builder,
         kernel_builder=kernel_builder,
         X=X,
         Y_obj=Y_obj,
