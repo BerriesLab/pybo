@@ -5,6 +5,7 @@ from plotters.base_class import PlotterBase
 import numpy as np
 
 
+# TODO: extend also to f(x,y)
 class AcquisitionPlotter(PlotterBase):
     """ A class for visualizing acquisition function values. """
 

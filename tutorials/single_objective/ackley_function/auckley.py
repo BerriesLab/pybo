@@ -69,7 +69,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         x_lims, y_lims = (-3, 3), (-2, 2)
         lims = [x_lims, y_lims]
         TwoVariablesOneObjective(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        # AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         # ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         # BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         # ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
