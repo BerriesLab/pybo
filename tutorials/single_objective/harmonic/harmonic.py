@@ -4,12 +4,13 @@ import torch
 
 from builders.kernel import *
 from builders.acqf import qLogNEIBuilder
+from builders.sampler import *
 from objectives.single_objective.harmonic import Harmonic
 
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import Sampler
-from utils.bo_types import SamplerType
+from utils.bo_types import SamplerType, AcquisitionFunctionType
 from plotters.evolution import *
 from gpytorch.constraints import Interval
 
@@ -23,10 +24,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the true_objective """
-    objective = Harmonic(
-        device=DEVICE,
-        dtype=DTYPE,
-    )
+    objective = Harmonic(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate a Kernel builder """
     kernel_builder = RBFKernelBuilder()
@@ -44,19 +42,48 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     """ Instantiate an acqf builder """
     acqf_builder = qLogNEIBuilder()
 
+    acqf = AcqfType.qEHVI
+    acqf_cfg = {}
+
+    kernel = KernelType.RBF
+    kernel_cfg = {}
+
+    sampler = SobolSampler
+    sampler_cfg = {}
+
+    """ Instantiate a sampler builder """
+    builder = SamplerBuilder(SobolSampler)
+    sampler_config = SamplerConfig(
+        n_dimensions=objective.dim,
+        device=DEVICE,
+        dtype=DTYPE,
+        bounds=objective.bounds,
+        seed=45
+    )
+    sampler = builder.build(sampler_config)
+
+    sampler_builder = SobolSamplerBuilder()
+    sampler_builder = LatinHypercubeSamplerBuilder()
+    sampler_builder.runtime_params.dimension = objective.dim
+    sampler_builder.runtime_params.scramble = True
+    sampler_builder.runtime_params.random_seed = 45
+
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
     # Compute the true objective values at the sampled points.
-    sampler = Sampler(
-        device=DEVICE,
-        dtype=DTYPE,
-        sampler_type=SamplerType.Sobol,
-        bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
-        normalize=False,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-        seed=45,
-    )
+
+    # sampler = Sampler(
+    #     device=DEVICE,
+    #     dtype=DTYPE,
+    #     sampler_type=SamplerType.Sobol,
+    #     bounds=objective.bounds,
+    #     n_dimensions=objective.num_objectives,
+    #     normalize=False,
+    #     nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
+    #     seed=45,
+    # )
+
+    sampler = sampler_builder.build()
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 

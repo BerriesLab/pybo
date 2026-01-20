@@ -742,8 +742,8 @@ class BayesianOptimizer:
             print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
 
         with warnings.catch_warnings(record=True) as caught:
-            self.acquisition_function_builder.build_runtime_params_from_bo(self)
-            self._acquisition_function = self.acquisition_function_builder.build_acquisition_function_instance()
+            self.acquisition_function_builder.build_from_bo(self)
+            self._acquisition_function = self.acquisition_function_builder.build()
         self._warnings.extend(caught)
 
         if verbose:

@@ -43,9 +43,9 @@ class AcquisitionFunctionBuilderBase(ABC):
         self._is_log = is_log
         self._runtime_params = None
 
-        self._generate_runtime_params_class()
+        self._generate_runtime_params_dataclass()
 
-    def _generate_runtime_params_class(self):
+    def _generate_runtime_params_dataclass(self):
         """Extracts the parameters from the constructor of the target class."""
         if self._acq_class is None:
             return
@@ -64,7 +64,7 @@ class AcquisitionFunctionBuilderBase(ABC):
         # Dynamically create the dataclass
         self.RuntimeParams = make_dataclass(f"{self._acq_class.__name__}Params", params)
 
-    def build_runtime_params_from_bo(self, bo: BayesianOptimizer):
+    def build_from_bo(self, bo: BayesianOptimizer):
         """Populates the dynamic dataclass with attributes from the Bayesian Optimizer."""
         self._runtime_params = self.RuntimeParams()
 
@@ -73,7 +73,7 @@ class AcquisitionFunctionBuilderBase(ABC):
                 val = getattr(bo, f.name)
                 setattr(self._runtime_params, f.name, val)
 
-    def build_acquisition_function_instance(self):
+    def build(self):
         """ Generic implementation that instantiates the acquisition function
         using the stored runtime parameters. """
         if self._runtime_params is None:
