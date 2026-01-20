@@ -2,8 +2,8 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from gpytorch.constraints import Interval
-from objectives.single_objective.harmonic import Harmonic
+from gpytorch.constraints import Interval, LessThan
+from objectives.single_objective.wave_packet import WavePacket
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import *
@@ -19,15 +19,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Harmonic(device=DEVICE, dtype=DTYPE, )
+    objective = WavePacket(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(
-        base_kernel=CosineKernel(
-            period_length_prior=None,
-            period_length_constraint=Interval(1 / 12 * 0.8, 1 / 12 * 1.2),
-        )
-    )
+    rbf = RBFKernel(ard_num_dims=objective.num_objectives, lengthscale_constraint=LessThan(1 / 8))
+    periodic = PeriodicKernel(period_length_constraint=Interval(1 / 4 * 0.8, 1 / 4 * 1.2))
+    kernel = ScaleKernel(base_kernel=rbf * periodic)
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -71,7 +68,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-3, 3), (-2, 2)
+        x_lims, y_lims = (-1, 1), (-1.5, 1.5)
         lims = [x_lims, y_lims]
         SingleObjectivePlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
         AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()

@@ -2,7 +2,7 @@ import os
 import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from samplers.samplers import Sampler
+from samplers.samplers import SamplerBase
 from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
@@ -32,7 +32,7 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Instantiate a random generator """
-    sampler = Sampler(
+    sampler = SamplerBase(
         device=DEVICE,
         dtype=DTYPE,
         sampler_type=SamplerType.Sobol,

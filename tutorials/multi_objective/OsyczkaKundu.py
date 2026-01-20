@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.multi_objective.osyczka_kundu import OsyczkaKundu
-from samplers.samplers import Sampler
+from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective import MultiObjectivePlotter
@@ -28,7 +28,7 @@ def main(n_samples=64, q: int = 1, ):
     )
 
     """ Instantiate a random generator """
-    sampler = Sampler(
+    sampler = SamplerBase(
         device=DEVICE,
         dtype=DTYPE,
         sampler_type=SamplerType.Sobol,

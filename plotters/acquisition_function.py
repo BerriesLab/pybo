@@ -18,18 +18,18 @@ class AcquisitionPlotter(PlotterBase):
     def plot_acquisition(self, color: str = 'green', linewidth: float = 1.5,
                          label: str = 'Acquisition Function'):
         """Plot the acquisition function values."""
-        if self.bo.acquisition_function_instance is None:
+        if self.bo.acqf_instance is None:
             raise ValueError("Acquisition function must be set before plotting.")
 
         X_grid = self._generate_grid()
 
         with torch.no_grad():
-            acq_values = self.bo.acquisition_function_instance(X_grid.unsqueeze(1))
+            acq_values = self.bo.acqf_instance(X_grid.unsqueeze(1))
 
         X_np = X_grid.squeeze().detach().cpu().numpy()
         acq_np = acq_values.squeeze().detach().cpu().numpy()
 
-        if self.bo.acquisition_function_builder.is_log:
+        if getattr(self.bo.acqf, "_log"):
             log_abs_acqf = np.log(np.abs(acq_np))
             self.ax.plot(X_np, -log_abs_acqf, color=color, linewidth=linewidth, label=label)
             self.ax.set_ylabel(r'$-\log \left( | \mathrm{Acquisition\ Value} | \right) $')

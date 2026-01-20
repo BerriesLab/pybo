@@ -3,7 +3,7 @@ from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
 from gpytorch.constraints import Interval
-from objectives.single_objective.harmonic import Harmonic
+from objectives.single_objective.ackley_function import Ackley
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
 from samplers.samplers import *
@@ -19,15 +19,10 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Harmonic(device=DEVICE, dtype=DTYPE, )
+    objective = Ackley(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(
-        base_kernel=CosineKernel(
-            period_length_prior=None,
-            period_length_constraint=Interval(1 / 12 * 0.8, 1 / 12 * 1.2),
-        )
-    )
+    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.

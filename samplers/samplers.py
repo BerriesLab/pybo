@@ -1,18 +1,17 @@
 import torch
 from torch import Tensor
-from scipy.stats.qmc import LatinHypercube
-from torch.quasirandom import SobolEngine
-from utils.bo_types import SamplerType
 from botorch.utils.transforms import unnormalize
 from collections.abc import Callable
+from abc import ABC, abstractmethod
+from scipy.stats.qmc import LatinHypercube
+from torch.quasirandom import SobolEngine
 
 
-class Sampler:
+class SamplerBase(ABC):
     def __init__(
             self,
             device: torch.device,
             dtype: torch.dtype,
-            sampler_type: SamplerType = SamplerType.Sobol,
             bounds: torch.Tensor | None = None,
             n_dimensions: int = 2,
             normalize: bool = True,
@@ -21,10 +20,8 @@ class Sampler:
             nonlinear_inequality_constraints: list[tuple[Callable, bool]] | None = None,
             seed: int | None = None
     ):
-
         self.device = device
         self.dtype = dtype
-        self.sampler_type = sampler_type
         self.bounds = bounds
         self.n_dimensions = n_dimensions
         self.normalize = normalize
@@ -33,116 +30,95 @@ class Sampler:
         self.nonlinear_inequality_constraints = nonlinear_inequality_constraints
         self.seed = seed
 
-    def _parse_linear_equality_constraints(self):
-        r""""
-        Parses the list of equality constraints into a single A and b tensor.
-        Each constraint is of the form (indices, coefficients, rhs) and encodes:
+    @abstractmethod
+    def _generate_base_samples(self, n: int) -> Tensor:
+        """ Must be implemented by each subclass."""
+        pass
 
-            sum( X[indices[i]] * coefficients[i] ) >= rhs
-
-        This matches the BoTorch convention.
-        """
-        num_constraints = len(self.linear_equality_constraints)
+    def _parse_constraints(self, constraint_list):
+        num_constraints = len(constraint_list)
         A = torch.zeros(num_constraints, self.n_dimensions, device=self.device, dtype=self.dtype)
         b = torch.zeros(num_constraints, device=self.device, dtype=self.dtype)
-
-        for i, (indices, coefficients, rhs) in enumerate(self.linear_equality_constraints):
-            # The constraint is `Ax <= b`, so we use the given coefficients and rhs
+        for i, (indices, coefficients, rhs) in enumerate(constraint_list):
             A[i, indices.long()] = coefficients
             b[i] = rhs
-
-        return A, b
-
-    def _parse_linear_inequality_constraints(self):
-        r""""
-        Parses the list of inequality constraints into a single A and b tensor.
-        Each constraint is of the form (indices, coefficients, rhs) and encodes:
-
-            sum( X[indices[i]] * coefficients[i] ) >= rhs
-
-        This matches the BoTorch convention.
-        """
-        num_constraints = len(self.linear_inequality_constraints)
-        A = torch.zeros(num_constraints, self.n_dimensions, device=self.device, dtype=self.dtype)
-        b = torch.zeros(num_constraints, device=self.device, dtype=self.dtype)
-
-        for i, (indices, coefficients, rhs) in enumerate(self.linear_inequality_constraints):
-            # The constraint is `Ax <= b`, so we use the given coefficients and rhs
-            A[i, indices.long()] = coefficients
-            b[i] = rhs
-
         return A, b
 
     def _project_onto_linear_equality_manifold(self, X: Tensor, A: Tensor, b: Tensor) -> Tensor:
-        """
-        Projects samples from the full space onto the linear equality hyperplane.
-                    X_proj = x - A.T * (A * A.T)^-1 * (A * x - b)
-        """
-        # Calculate the projection matrix using torch.linalg.solve for stability
-        ATA_inv = torch.linalg.solve(A @ A.T, torch.eye(A.shape[0], device=self.device, dtype=A.dtype))
-        # Calculate the error term (A*x - b) for each sample
-        error = X @ A.T - b
-        # Calculate the correction term
-        correction = error @ ATA_inv @ A
-        # Project the samples
-        X_proj = X - correction
-        return X_proj
+        error = (X @ A.T) - b
+        ATA = A @ A.T
+        correction = torch.linalg.solve(ATA, error.T).T @ A
+        return X - correction
 
     def draw_samples(self, n: int) -> torch.Tensor:
         valid_x = []
         num_attempts = 0
         max_attempts = 1000
-        n = int(n)
+        n_to_draw = int(n)
 
         while len(valid_x) < n and num_attempts < max_attempts:
             num_attempts += 1
 
-            # Draw raw samples
-            if self.sampler_type == SamplerType.LatinHypercube:
-                sampler = LatinHypercube(d=self.n_dimensions)
-                samples = sampler.random(n=n)
-                X = torch.tensor(samples, device=self.device, dtype=self.dtype)
+            # 1. Generazione (Metodo specifico della sottoclasse)
+            X = self._generate_base_samples(n_to_draw)
 
-            elif self.sampler_type == SamplerType.Sobol:
-                sampler = SobolEngine(dimension=self.n_dimensions, scramble=True, seed=self.seed)
-                X = sampler.draw(n=n).to(device=self.device, dtype=self.dtype)
-
-            else:
-                raise ValueError("Invalid sampler type.")
-
-            # Unnormalize if needed
+            # 2. Unnormalize
             if not self.normalize:
                 if self.bounds is None:
-                    raise ValueError("If normalize is True, then bounds cannot be None.")
+                    raise ValueError("If normalize is False, bounds must be provided.")
                 X = unnormalize(X, bounds=self.bounds)
 
-            # Initialize a combined constraint mask
+            # 3. Proiezione Uguaglianze
+            if self.linear_equality_constraints is not None:
+                A_eq, b_eq = self._parse_constraints(self.linear_equality_constraints)
+                X = self._project_onto_linear_equality_manifold(X, A_eq, b_eq)
+
+            # 4. Filtro Disuguaglianze e Bounds
             constraint_mask = torch.ones(X.shape[0], device=self.device, dtype=torch.bool)
 
-            # Project samples to satisfy linear equality constraints
-            if self.linear_equality_constraints is not None:
-                A, b = self._parse_linear_equality_constraints()
-                X = self._project_onto_linear_equality_manifold(X, A, b)
-
-            # Apply parsed linear inequality constraints (Ax <= b)
             if self.linear_inequality_constraints is not None:
-                A, b = self._parse_linear_inequality_constraints()
-                linear_inequality_constraint_values = X @ A.T
-                # Check if values are less than or equal to the RHS
-                linear_in_mask = (linear_inequality_constraint_values >= b).all(dim=-1)
-                constraint_mask &= linear_in_mask
+                A_in, b_in = self._parse_constraints(self.linear_inequality_constraints)
+                constraint_mask &= (X @ A_in.T >= b_in).all(dim=-1)
 
-            # Apply non-linear constraints
             if self.nonlinear_inequality_constraints:
-                for (constraint_fn, inter_flag) in self.nonlinear_inequality_constraints:
+                for (constraint_fn, _) in self.nonlinear_inequality_constraints:
                     constraint_mask &= (constraint_fn(X) >= 0)
+
+            if self.bounds is not None and not self.normalize:
+                within_bounds = (X >= self.bounds[0]).all(dim=-1) & (X <= self.bounds[1]).all(dim=-1)
+                constraint_mask &= within_bounds
 
             X = X[constraint_mask]
             if X.shape[0] > 0:
                 valid_x.append(X)
 
-        valid_samples = torch.cat(valid_x, dim=0)
-        if valid_samples.shape[0] < n:
-            raise RuntimeError(f"Only {valid_samples.shape[0]} valid samples found after {num_attempts} attempts.")
+            # Strategia adattiva: se molti campioni vengono scartati, ne generiamo di più al giro dopo
+            n_to_draw = n * 2
 
-        return valid_samples[:n]
+        if not valid_x:
+            raise RuntimeError(f"No valid samples found after {max_attempts} attempts.")
+
+        return torch.cat(valid_x, dim=0)[:n]
+
+
+class SobolSampler(SamplerBase):
+    def _generate_base_samples(self, n: int) -> torch.Tensor:
+        engine = SobolEngine(dimension=self.n_dimensions, scramble=True, seed=self.seed)
+        return engine.draw(n=n).to(device=self.device, dtype=self.dtype)
+
+
+class LatinHypercubeSampler(SamplerBase):
+    def _generate_base_samples(self, n: int) -> torch.Tensor:
+        sampler = LatinHypercube(d=self.n_dimensions, seed=self.seed)
+        samples = sampler.random(n=n)
+        return torch.tensor(samples, device=self.device, dtype=self.dtype)
+
+
+class UniformGridSampler(SamplerBase):
+    def _generate_base_samples(self, n: int) -> torch.Tensor:
+        # Genera una griglia uniforme (molto utile per basse dimensioni)
+        points_per_dim = int(n ** (1 / self.n_dimensions))
+        grid_axes = [torch.linspace(0, 1, points_per_dim, device=self.device, dtype=self.dtype)
+                     for _ in range(self.n_dimensions)]
+        grid = torch.meshgrid(*grid_axes, indexing='ij')
+        return torch.stack(grid, dim=-1).reshape(-1, self.n_dimensions)

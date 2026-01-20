@@ -1,20 +1,20 @@
-from objectives.base_class import MCSingleObjectiveBase
+from objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase
 import torch
 from torch import Tensor
 
 
-class WavePacket(MCSingleObjectiveBase):
+class Ackley(MCSingleObjectiveBase):
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=1,
+            dim=2,
             num_objectives=1,
             num_constraints=0,
             num_trackers=0,
             obj_to_minimize=[True],
-            bounds=[(-1.0, 1.0)],
-            ref_point=[0.0],
+            bounds=[(-5.0, 5.0), (-5.0, 5.0)],
+            ref_point=[-2.0],
             outcomes=[0],
             num_outcomes=1,
             gt_noise_std=0.0,
@@ -23,21 +23,22 @@ class WavePacket(MCSingleObjectiveBase):
             nonlinear_inequality_input_constraints=None,
             output_constraints=None,
             add_noise_to_gt=False,
+            best_value=0,
         )
 
-        self.p = 1 / 2
-        self.sigma = 0.4
-        self.k0 = 2 * torch.pi / self.p
-        self.x0 = 0
+    @staticmethod
+    def term1(X: Tensor) -> Tensor:
+        arg = -0.2 * torch.sqrt(0.5 * (X[:, 0] ** 2 + X[:, 1] ** 2))
+        return -20 * torch.exp(arg)
 
-    def _f1(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.exp(-0.5 * ((X - self.x0) / self.sigma) ** 2)
+    @staticmethod
+    def term2(X: Tensor) -> Tensor:
+        arg = 0.5 * (torch.cos(2 * torch.pi * X[:, 0]) + torch.cos(2 * torch.pi * X[:, 1]))
+        return - torch.exp(arg)
 
-    def _f2(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.sin(self.k0 * X)
+    @staticmethod
+    def term3() -> Tensor:
+        return torch.e + 20
 
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
-        f = f1 * f2
-        return f
+        return (self.term1(X) + self.term2(X) + self.term3()).unsqueeze(-1)

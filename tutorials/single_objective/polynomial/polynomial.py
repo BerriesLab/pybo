@@ -1,15 +1,12 @@
 import os
 from datetime import datetime
-import torch
-from builders.acqf import *
-from builders.kernel import *
+from botorch.acquisition import *
+from gpytorch.kernels import *
 from objectives.single_objective.polynomial import Polynomial
 from plotters.acquisition_function import AcquisitionPlotter
 from plotters.single_objective import SingleObjectivePlotter
-from samplers.samplers import Sampler
-from utils.bo_types import SamplerType
+from samplers.samplers import *
 from plotters.evolution import *
-from gpytorch.constraints import Interval
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -20,43 +17,34 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     run_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(run_dir)
 
-    """ Define the true_objective """
-    objective = Polynomial(
-        device=DEVICE,
-        dtype=DTYPE,
-    )
+    """ Instantiate true objective """
+    objective = Polynomial(device=DEVICE, dtype=DTYPE, )
 
-    """ Instantiate a Kernel builder """
-    kernel_builder = RBFKernelBuilder()
-    kernel_builder.base_params.ard_num_dims = objective.num_objectives
-    kernel_builder.base_params.lengthscale_constraint = Interval(0.01, 0.1)
-
-    """ Instantiate an acqf builder """
-    acqf_builder = qLogNEIBuilder()
+    """ Instantiate kernel """
+    kernel = ScaleKernel(base_kernel=RBFKernel())
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
     # Compute the true objective values at the sampled points.
-    sampler = Sampler(
+    sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
-        sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
         n_dimensions=objective.num_objectives,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-        seed=43,
+        seed=42,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
-    """ Initialize optimizer """
-    bayesian_optimizer = BayesianOptimizer(
+    """ Instantiate Bayesian optimizer """
+    bo = BayesianOptimizer(
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_builder=acqf_builder,
-        kernel_builder=kernel_builder,
+        acqf=qLogExpectedImprovement,
+        kernel=kernel,
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
@@ -67,34 +55,34 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bayesian_optimizer.is_converged(patience=10):
+        if i > 0 and bo.is_converged(patience=10):
             break
 
         print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
-        bayesian_optimizer.optimize()
+        bo.optimize()
 
         """ Plot """
         x_lims, y_lims = (-2, 2), (-2, 8)
         lims = [x_lims, y_lims]
-        SingleObjectivePlotter(bayesian_optimizer=bayesian_optimizer, lims=lims).plot().save_figure().close_figure()
-        AcquisitionPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        BestValuePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        ParameterPlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
-        ObjectivePlotter(bayesian_optimizer=bayesian_optimizer).plot().save_figure().close_figure()
+        SingleObjectivePlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
+        AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
-        new_X = bayesian_optimizer.new_X
-        bayesian_optimizer.compute_acquisition_function_value_at_X(new_X)
-        bayesian_optimizer.compute_posterior_mean_at_X(new_X)
+        new_X = bo.new_X
+        bo.compute_acquisition_function_value_at_X(new_X)
+        bo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bayesian_optimizer.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
     print("Optimization Finished.")
 

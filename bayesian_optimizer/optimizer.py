@@ -1,7 +1,8 @@
 import copy
+import inspect
 import pickle
 import warnings
-from typing import Union
+from typing import Union, Type
 import torch
 import datetime
 import time
@@ -9,9 +10,13 @@ import glob
 import os
 import pandas as pd
 from pathlib import Path
+
+from botorch.acquisition.multi_objective.parego import qLogNParEGO
 from tabulate import tabulate
 import botorch
 import gpytorch
+from gpytorch.kernels import Kernel
+
 from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import SobolQMCNormalSampler, MCSampler
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
@@ -20,14 +25,10 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.acquisition import AcquisitionFunction
+from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
 from gpytorch.constraints import GreaterThan
-
-from builders.kernel import KernelBuilderBase
-from builders.acqf import AcquisitionFunctionBuilderBase
-
 from objectives.base_class import MCObjectiveBase
-from samplers.samplers import Sampler
+from samplers.samplers import SamplerBase
 from gpytorch.mlls import SumMarginalLogLikelihood
 from utils.bo_types import *
 
@@ -52,9 +53,9 @@ class BayesianOptimizer:
             Y_con_var: torch.Tensor | None = None,
             Y_track: torch.Tensor | None = None,
             Y_track_var: torch.Tensor | None = None,
-            acquisition_function_builder: AcquisitionFunctionBuilderBase | None = None,
-            kernel_builder: KernelBuilderBase | None = None,
-            sampler_type: SamplerType = SamplerType.Sobol,
+            acqf: Type[AcquisitionFunction] | None = None,
+            kernel: Kernel | None = None,
+            sampler: SamplerBase | None = None,
             batch_size: int = 1,
             mc_samples: int = 256,
             raw_samples: int = 1024,
@@ -75,12 +76,9 @@ class BayesianOptimizer:
         self._mll: SumMarginalLogLikelihood | None = None
         self._ref_point: torch.Tensor | None = None
         self._acquisition_function_list: list[AcquisitionFunction] | None = None
+        self._acqf_instance: AcquisitionFunction | None = None
         self._partitioning: torch.Tensor | None = None
         # self._pareto_front: torch.Tensor | None = None
-
-        self._acquisition_function: AcquisitionFunction | None = None
-        self._kernel: Kernel | None = None
-        self._sampler: MCSampler | None = None
 
         self._n_initial_samples: int | None = None
         self._feasible_mask: torch.Tensor | None = None
@@ -105,9 +103,9 @@ class BayesianOptimizer:
         self.Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
-        self.acquisition_function_builder = acquisition_function_builder
-        self.kernel_builder = kernel_builder
-        self.sampler_type = sampler_type
+        self._acqf = acqf
+        self._kernel = kernel
+        self._sampler = sampler
         self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
         self.n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
@@ -296,24 +294,27 @@ class BayesianOptimizer:
         self._Y_track_var = Y_track_var
 
     @property
-    def acquisition_function_builder(self) -> AcquisitionFunctionBuilderBase:
-        return self._acquisition_function_type
+    def acqf(self) -> Type[AcquisitionFunction]:
+        return self._acqf
 
-    @acquisition_function_builder.setter
-    def acquisition_function_builder(self, af_type):
-        if not isinstance(af_type, AcquisitionFunctionBuilderBase):
-            raise ValueError("Acquisition function type must be of type AcquisitionFunctionBuilder.")
-        self._acquisition_function_type = af_type
+    @acqf.setter
+    def acqf(self, af_type):
+        if not (inspect.isclass(af_type) and issubclass(af_type, AcquisitionFunction)):
+            raise ValueError(
+                f"Acquisition function must be a class inheriting from AcquisitionFunction. "
+                f"Got {type(af_type).__name__}: {af_type}"
+            )
+        self._acqf = af_type
 
     @property
-    def sampler_type(self) -> SamplerType:
-        return self._sampler_type
+    def sampler(self) -> SamplerBase:
+        return self._sampler
 
-    @sampler_type.setter
-    def sampler_type(self, sampler_type):
-        if not isinstance(sampler_type, SamplerType):
-            raise ValueError("Sampler type must be of type SamplerType")
-        self._sampler_type = sampler_type
+    @sampler.setter
+    def sampler(self, sampler):
+        if not isinstance(sampler, SamplerBase):
+            raise ValueError("SamplerBase type must be of type SamplerType")
+        self._sampler = sampler
 
     @property
     def n_acqf_opt_iter(self) -> int:
@@ -431,16 +432,10 @@ class BayesianOptimizer:
         return self._elapsed_time
 
     @property
-    def acquisition_function_instance(self) -> AcquisitionFunction | None:
-        if self._acquisition_function is None:
-            print("An acquisition function has not been initialized yet.")
-        return self._acquisition_function
-
-    @property
-    def sampler(self) -> MCSampler | None:
-        if self._sampler is None:
-            print("A sampler has not been initialized yet.")
-        return self._sampler
+    def acqf_instance(self) -> AcquisitionFunction | None:
+        if self._acqf_instance is None:
+            print("An acquisition function has not been instantiated yet.")
+        return self._acqf_instance
 
     @property
     def n_initial_samples(self) -> int:
@@ -481,14 +476,14 @@ class BayesianOptimizer:
         return self._feasible_pareto_front_Y
 
     @property
-    def kernel_builder(self) -> KernelBuilderBase:
-        return self._kernel_builder
+    def kernel(self) -> Kernel:
+        return self._kernel
 
-    @kernel_builder.setter
-    def kernel_builder(self, kernel_builder: KernelBuilderBase) -> None:
-        if not isinstance(kernel_builder, KernelBuilderBase):
-            raise ValueError("kernel_type must be of type KernelType")
-        self._kernel_builder = kernel_builder
+    @kernel.setter
+    def kernel(self, kernel: Kernel) -> None:
+        if not isinstance(kernel, Kernel):
+            raise ValueError("kernel_type must be of type Kernel.")
+        self._kernel = kernel
 
     """ ===================== """
     """ ===== Optimizer ===== """
@@ -500,20 +495,22 @@ class BayesianOptimizer:
 
         # === 1. Compute metrics on current data ===
         self._compute_feasibility_mask(verbose=verbose)
-        self._compute_acquisition_function_reference(verbose=verbose)  # best_f or ref_point + pareto
-        self._compute_metrics(verbose=verbose)  # HV or best_value → appends to history
+        self._compute_acquisition_function_reference(verbose=verbose)
+        self._compute_metrics(verbose=verbose)
 
-        # === 2. Initialize model ===
-        self._initialize_kernel(verbose=verbose)
+        # === 2. Initialize Kernel ===
+        # self._initialize_kernel(verbose=verbose)
+
+        # === 3. Initialize and fit Model ===
         self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
-        # === 3. Initialize acquisition function ===
-        if self.acquisition_function_builder.require_sampler:
+        # === 4. Initialize acquisition function ===
+        if issubclass(self._acqf, MCAcquisitionFunction):
             self._initialize_sampler(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
-        # === 3. Optimize ===
+        # === 5. Optimize ===
         self._optimize_acquisition_function(verbose=verbose)
 
         t1 = time.monotonic()
@@ -522,19 +519,20 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
-    def _initialize_kernel(self, verbose=True):
-        """ Initialize a kernel (or covariance module) instance using the kernel_builder.
-        Note that, by building a fresh covariance module for each model and for each optimization
-        iteration, kernels are freshly optimized at each iteration. """
-
-        if verbose:
-            kernel = self.kernel_builder.__class__.__name__.replace("KernelBuilder", "")
-            print(f"Initializing kernel instance of type {kernel}... ", end="")
-
-        self._kernel = self._kernel_builder.build()
-
-        if verbose:
-            self._print_success()
+    #
+    # def _initialize_kernel(self, verbose=True):
+    #     """ Initialize a kernel (or covariance module) instance using the kernel.
+    #     Note that, by building a fresh covariance module for each model and for each optimization
+    #     iteration, kernels are freshly optimized at each iteration. """
+    #
+    #     if verbose:
+    #         kernel = self.kernel.__class__.__name__.replace("KernelBuilder", "")
+    #         print(f"Initializing kernel instance of type {kernel}... ", end="")
+    #
+    #     self._kernel = self._kernel_builder.build()
+    #
+    #     if verbose:
+    #         self._print_success()
 
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
@@ -617,13 +615,7 @@ class BayesianOptimizer:
         if verbose:
             print("Initializing sampler... ", end="")
 
-        # Skip for analytical acquisition functions
-        if self._sampler_type.name == SamplerType.Sobol.name:
-            self._sampler = SobolQMCNormalSampler(
-                torch.Size([self._num_mc_samples])
-            )
-        else:
-            raise ValueError("Only Sobol Sampler is currently supported.")
+        self._sampler = SobolQMCNormalSampler(torch.Size([self._num_mc_samples]))
 
         if verbose:
             print("✓")
@@ -735,15 +727,28 @@ class BayesianOptimizer:
             self._print_success()
 
     def _initialize_acquisition_function(self, verbose=True):
-        """ Initialize an acquisition function instance using the acquisition_function_builder. """
+        """ Initialize an acquisition function instance using the acqf. """
 
         if verbose:
-            name = self.acquisition_function_builder.__class__.__name__.replace("Builder", "")
+            name = self.acqf.__name__
             print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
 
         with warnings.catch_warnings(record=True) as caught:
-            self.acquisition_function_builder.build_from_bo(self)
-            self._acquisition_function = self.acquisition_function_builder.build()
+
+            sig = inspect.signature(self.acqf.__init__)
+            kwargs = {}
+
+            for name, param in sig.parameters.items():
+                if name in ('self', 'args', 'kwargs'):
+                    continue
+
+                if hasattr(self, name):
+                    kwargs[name] = getattr(self, name)
+                elif param.default is not inspect.Parameter.empty:
+                    kwargs[name] = param.default
+
+            self._acqf_instance = self.acqf(**kwargs)
+
         self._warnings.extend(caught)
 
         if verbose:
@@ -824,8 +829,8 @@ class BayesianOptimizer:
                     print(f"Reinitializing and retrying... "
                           f"(Attempt {restart_count}/{self._n_model_fit_restarts})")  #
 
-                self._initialize_kernel(verbose=verbose)
-                self._initialize_model(verbose=verbose)
+                # self._initialize_kernel(verbose=verbose)
+                # self._initialize_model(verbose=verbose)
                 # self._randomize_hyperparameters(issues)
 
     # def _randomize_hyperparameters_bak(self):
@@ -1071,10 +1076,8 @@ class BayesianOptimizer:
             print(f"Optimizing acquisition function... ", end="")
 
         with warnings.catch_warnings(record=True) as caught:
-            # # record=True replaces the warning printer, so they won't spam stdout
-            # warnings.simplefilter("always")
 
-            if self._acquisition_function_type == AcquisitionFunctionType.qNParEGO:
+            if isinstance(self._acqf_instance, qLogNParEGO):
                 self._new_X, _ = optimize_acqf_list(
                     acq_function_list=self._acquisition_function_list,
                     bounds=self._objective.bounds,
@@ -1087,7 +1090,7 @@ class BayesianOptimizer:
                 # generator that selects "num_restarts" points. These points are distributed according to
                 # "fraction_of_previous_X" between the current pareto front and randomly generated points.
                 self._new_X, _ = optimize_acqf(
-                    acq_function=self._acquisition_function,
+                    acq_function=self._acqf_instance,
                     bounds=self._objective.bounds,
                     q=self._batch_size,
                     num_restarts=self._n_acqf_opt_restarts,
@@ -1162,7 +1165,7 @@ class BayesianOptimizer:
         noise_scale = kwargs.get("noise_scale", 0.0)
 
         # Instantiate a constraint-aware sampler
-        sampler = Sampler(
+        sampler = SamplerBase(
             device=self._device,
             dtype=self.dtype,
             sampler_type=SamplerType.Sobol,
@@ -1216,7 +1219,7 @@ class BayesianOptimizer:
     def compute_acquisition_function_value_at_X(self, X: torch.Tensor, verbose=True):
         if not isinstance(X, torch.Tensor):
             raise ValueError("X must be of type torch.Tensor.")
-        acq_val = self._acquisition_function(X)
+        acq_val = self._acqf_instance(X)
         if verbose:
             print(f"Acquisition function value at {X.detach().cpu().numpy()}: {acq_val.detach().cpu().numpy()}")
 
