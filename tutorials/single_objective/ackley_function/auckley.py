@@ -5,7 +5,7 @@ from gpytorch.kernels import *
 from gpytorch.constraints import Interval
 from objectives.single_objective.ackley_function import Ackley
 from plotters.acquisition_function import AcquisitionPlotter
-from plotters.single_objective import SingleObjectivePlotter
+from plotters.single_objective import *
 from samplers.samplers import *
 from plotters.evolution import *
 
@@ -31,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
+        n_dimensions=objective.dim,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
         seed=45,
@@ -68,12 +68,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         """ Plot """
         x_lims, y_lims = (-3, 3), (-2, 2)
         lims = [x_lims, y_lims]
-        SingleObjectivePlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        TwoVariablesOneObjective(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
+        # AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        # ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        # BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        # ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        # ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

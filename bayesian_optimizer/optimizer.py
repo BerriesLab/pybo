@@ -62,8 +62,6 @@ class BayesianOptimizer:
             n_acqf_opt_max_iter: int = 250,
             n_acqf_opt_restarts: int = 20,
             n_model_fit_restarts: int = 20,
-            ucb_beta: float = 2.0,
-
     ):
 
         # === Device Attributes ===
@@ -94,25 +92,26 @@ class BayesianOptimizer:
         # === Experiment Attributes ===
         self._datetime = datetime.datetime.now()
         self.objective = objective
-        self.X: torch.Tensor = X
-        self.Y_obj: torch.Tensor = Y_obj
-        self.Y_obj_var: torch.Tensor = Y_obj_var
-        self.Y_con: torch.Tensor = Y_con
-        self.Y_con_var: torch.Tensor = Y_con_var
-        self.Y_track: torch.Tensor = Y_track
-        self.Y_track_var: torch.Tensor = Y_track_var
+        self._X: torch.Tensor = X
+        if self._X is not None:
+            self._n_initial_samples = self._X.shape[0]
+        self._Y_obj: torch.Tensor = Y_obj
+        self._Y_obj_var: torch.Tensor = Y_obj_var
+        self._Y_con: torch.Tensor = Y_con
+        self._Y_con_var: torch.Tensor = Y_con_var
+        self._Y_track: torch.Tensor = Y_track
+        self._Y_track_var: torch.Tensor = Y_track_var
 
         # === Optimization attributes ===
         self._acqf = acqf
         self._kernel = kernel
         self._sampler = sampler
-        self.n_acqf_opt_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
-        self.n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
-        self.n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
-        self.batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
-        self.num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
-        self.num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
-        self.ucb_beta = ucb_beta
+        self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
+        self._n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
+        self._n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
+        self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
+        self._num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
+        self._num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
 
         # === Metrics ===
         self._hypervolume: list[float] = []  # for multi-objective
@@ -201,15 +200,75 @@ class BayesianOptimizer:
     def objective(self) -> Union[MCObjectiveBase,]:
         return self._objective
 
+    @property
+    def X(self) -> torch.Tensor | None:
+        return self._X
+
+    @property
+    def X_baseline(self):
+        return self.X  # This is required for dynamic instantiation of acqf.
+
+    @property
+    def Y_obj(self) -> torch.Tensor | None:
+        return self._Y_obj
+
+    @property
+    def Y_obj_var(self) -> torch.Tensor | None:
+        return self._Y_obj_var
+
+    @property
+    def Y_con(self) -> torch.Tensor | None:
+        return self._Y_con
+
+    @property
+    def Y_con_var(self) -> torch.Tensor | None:
+        return self._Y_con_var
+
+    @property
+    def Y_track(self) -> torch.Tensor | None:
+        return self._Y_track
+
+    @property
+    def Y_track_var(self) -> torch.Tensor | None:
+        return self._Y_track_var
+
+    @property
+    def acqf(self) -> Type[AcquisitionFunction]:
+        return self._acqf
+
+    @property
+    def sampler(self) -> SamplerBase:
+        return self._sampler
+
+    @property
+    def n_acqf_opt_iter(self) -> int:
+        return self._n_acqf_opt_max_iter
+
+    @property
+    def n_acqf_opt_restarts(self) -> int:
+        return self._n_acqf_opt_restarts
+
+    @property
+    def n_model_fit_restarts(self) -> int:
+        return self._n_model_fit_restarts
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
+    @property
+    def num_mc_samples(self):
+        return self._num_mc_samples
+
+    @property
+    def num_raw_samples(self):
+        return self._num_raw_samples
+
     @objective.setter
     def objective(self, objective: Union[MCObjectiveBase]):
         if not isinstance(objective, Union[MCObjectiveBase]):
             raise ValueError("Objective is not compatible.")
         self._objective = objective
-
-    @property
-    def X(self):
-        return self._X
 
     @X.setter
     def X(self, X: torch.Tensor):
@@ -217,17 +276,9 @@ class BayesianOptimizer:
             raise ValueError("X must a torch.Tensor.")
         if X.shape[-1] != self.objective.dim:
             raise ValueError("X must have the same number of dimensions as objective.")
+        if self._X is None:
+            self._n_initial_samples = X.shape[0]
         self._X = X.to(self._device, self._dtype)
-        self.n_initial_samples = self._X.shape[0]
-
-    @property
-    def X_baseline(self):
-        """ This required for the acqf builder. """
-        return self.X
-
-    @property
-    def Y_obj(self) -> torch.Tensor | None:
-        return self._Y_obj
 
     @Y_obj.setter
     def Y_obj(self, Y_obj: torch.Tensor):
@@ -237,10 +288,6 @@ class BayesianOptimizer:
             raise ValueError("Y_obj must have the same number of dimensions as objective.")
         self._Y_obj = Y_obj.to(self._device, self._dtype) if Y_obj is not None else None
 
-    @property
-    def Y_obj_var(self) -> torch.Tensor | None:
-        return self._Y_obj_var
-
     @Y_obj_var.setter
     def Y_obj_var(self, Y_obj_var: torch.Tensor | None = None):
         if not isinstance(Y_obj_var, Union[torch.Tensor, None]):
@@ -248,10 +295,6 @@ class BayesianOptimizer:
         if Y_obj_var is not None and Y_obj_var.shape[-1] != self.objective.num_objectives:
             raise ValueError("Y_obj_var must have the same number of dimensions as objective.")
         self._Y_obj_var = Y_obj_var.to(self._device, self._dtype) if Y_obj_var is not None else None
-
-    @property
-    def Y_con(self) -> torch.Tensor | None:
-        return self._Y_con
 
     @Y_con.setter
     def Y_con(self, Y_con: torch.Tensor | None):
@@ -261,10 +304,6 @@ class BayesianOptimizer:
             raise ValueError("Y_con must have the same number of constraints as objective.")
         self._Y_con = Y_con.to(self._device, self._dtype) if Y_con is not None else None
 
-    @property
-    def Y_con_var(self) -> torch.Tensor | None:
-        return self._Y_con_var
-
     @Y_con_var.setter
     def Y_con_var(self, Y_con_var: torch.Tensor | None = None):
         if not isinstance(Y_con_var, Union[torch.Tensor, None]):
@@ -273,29 +312,17 @@ class BayesianOptimizer:
             raise ValueError("Y_con_var must have the same number of constraints as objective.")
         self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
 
-    @property
-    def Y_track(self) -> torch.Tensor | None:
-        return self._Y_track
-
     @Y_track.setter
     def Y_track(self, Y_track: torch.Tensor | None):
         if not isinstance(Y_track, torch.Tensor | None):
             raise ValueError("Y_track must be of type torch.Tensor or None.")
         self._Y_track = Y_track
 
-    @property
-    def Y_track_var(self) -> torch.Tensor | None:
-        return self._Y_track_var
-
     @Y_track_var.setter
     def Y_track_var(self, Y_track_var: torch.Tensor | None):
         if not isinstance(Y_track_var, torch.Tensor | None):
             raise ValueError("Y_track_var must be of type torch.Tensor or None.")
         self._Y_track_var = Y_track_var
-
-    @property
-    def acqf(self) -> Type[AcquisitionFunction]:
-        return self._acqf
 
     @acqf.setter
     def acqf(self, af_type):
@@ -306,19 +333,11 @@ class BayesianOptimizer:
             )
         self._acqf = af_type
 
-    @property
-    def sampler(self) -> SamplerBase:
-        return self._sampler
-
     @sampler.setter
     def sampler(self, sampler):
         if not isinstance(sampler, SamplerBase):
             raise ValueError("SamplerBase type must be of type SamplerType")
         self._sampler = sampler
-
-    @property
-    def n_acqf_opt_iter(self) -> int:
-        return self._n_acqf_opt_max_iter
 
     @n_acqf_opt_iter.setter
     def n_acqf_opt_iter(self, n_acqf_opt_iter):
@@ -326,19 +345,11 @@ class BayesianOptimizer:
             raise ValueError("n_acqf_opt_max_iter must be of type int")
         self._n_acqf_opt_max_iter = n_acqf_opt_iter
 
-    @property
-    def n_acqf_opt_restarts(self) -> int:
-        return self._n_acqf_opt_restarts
-
     @n_acqf_opt_restarts.setter
     def n_acqf_opt_restarts(self, value: int):
         if not isinstance(value, int):
             raise ValueError("n_acqf_opt_restarts must be of type int")
         self._n_acqf_opt_restarts = value
-
-    @property
-    def n_model_fit_restarts(self) -> int:
-        return self._n_model_fit_restarts
 
     @n_model_fit_restarts.setter
     def n_model_fit_restarts(self, value: int):
@@ -346,29 +357,17 @@ class BayesianOptimizer:
             raise ValueError("n_model_fit_restarts must be of type int")
         self._n_model_fit_restarts = value
 
-    @property
-    def batch_size(self) -> int:
-        return self._batch_size
-
     @batch_size.setter
     def batch_size(self, batch_size: int):
         if not isinstance(batch_size, int):
             raise ValueError("batch_size must be of type int")
         self._batch_size = batch_size
 
-    @property
-    def num_mc_samples(self):
-        return self._num_mc_samples
-
     @num_mc_samples.setter
     def num_mc_samples(self, mc_samples: int):
         if not isinstance(mc_samples, int):
             raise ValueError("num_mc_samples must be of type int")
         self._num_mc_samples = mc_samples
-
-    @property
-    def num_raw_samples(self):
-        return self._num_raw_samples
 
     @num_raw_samples.setter
     def num_raw_samples(self, raw_samples: int):
@@ -591,7 +590,7 @@ class BayesianOptimizer:
             - Concatenates any available constraints to the outputs.
             - Concatenates variances for both objectives and constraints if available, else None."""
 
-        train_x = self._X.clone()
+        train_x = self.X.clone()
         train_y = self._Y_obj.clone()
 
         # Concatenate constraints if available (not None)
@@ -715,7 +714,7 @@ class BayesianOptimizer:
                 Y_obj_maximized[self._feasible_mask]
             )
 
-            self._feasible_pareto_front_X = self._X[feasible_pareto_mask]
+            self._feasible_pareto_front_X = self.X[feasible_pareto_mask]
             self._feasible_pareto_front_Y = self._Y_obj[feasible_pareto_mask]
 
         else:
@@ -759,7 +758,7 @@ class BayesianOptimizer:
 
     def _initialize_partitioning(self):
         # Compute posterior mean of objectives
-        prediction = self._model.posterior(self._X).mean
+        prediction = self._model.posterior(self.X).mean
 
         # Filter feasible points if constraints exist
         if self._objective.output_constraints is None:
@@ -1164,7 +1163,7 @@ class BayesianOptimizer:
         frac_prev = kwargs.get("fraction_of_previous_X", 0.5)
         noise_scale = kwargs.get("noise_scale", 0.0)
 
-        # Instantiate a constraint-aware sampler
+        # TODO: Instantiate a constraint-aware sampler
         sampler = SamplerBase(
             device=self._device,
             dtype=self.dtype,
@@ -1178,11 +1177,11 @@ class BayesianOptimizer:
         )
 
         # Determine number of points from previous Pareto front
-        if self._X is not None and self._Y_obj is not None:
+        if self.X is not None and self._Y_obj is not None:
             Y_obj_for_pareto = self._Y_obj.clone()
             Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
             pareto_mask = is_non_dominated(Y_obj_for_pareto)
-            X_pareto = self._X[pareto_mask]
+            X_pareto = self.X[pareto_mask]
             n_pareto = int(frac_prev * num_restarts)
             if X_pareto.shape[0] > 0:
                 # Randomly select n_pareto points
@@ -1283,7 +1282,7 @@ class BayesianOptimizer:
             )
 
         if self._feasible_mask.any():
-            feasible_X = self._X[self._feasible_mask].clone()
+            feasible_X = self.X[self._feasible_mask].clone()
             feasible_Y = self._Y_obj[self._feasible_mask].clone()
         else:
             feasible_X = None
@@ -1312,7 +1311,7 @@ class BayesianOptimizer:
 
         infeasible_mask = torch.logical_not(self._feasible_mask)
         if infeasible_mask.any():
-            infeasible_X = self._X[infeasible_mask].clone()
+            infeasible_X = self.X[infeasible_mask].clone()
             infeasible_Y = self._Y_obj[infeasible_mask].clone()
         else:
             infeasible_X = None
@@ -1381,7 +1380,7 @@ class BayesianOptimizer:
     def update_X(self, new_X: torch.Tensor):
         if new_X is not None:
             new_X = new_X.to(self._device, self._dtype)
-            self._X = torch.cat([self._X, new_X], dim=0)
+            self.X = torch.cat([self.X, new_X], dim=0)
 
     def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None):
         if new_Y_obj is not None:
