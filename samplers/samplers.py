@@ -59,7 +59,7 @@ class SamplerBase(ABC):
         while len(valid_x) < n and num_attempts < max_attempts:
             num_attempts += 1
 
-            # 1. Generazione (Metodo specifico della sottoclasse)
+            # 1. Generate samples
             X = self._generate_base_samples(n_to_draw)
 
             # 2. Unnormalize
@@ -68,12 +68,12 @@ class SamplerBase(ABC):
                     raise ValueError("If normalize is False, bounds must be provided.")
                 X = unnormalize(X, bounds=self.bounds)
 
-            # 3. Proiezione Uguaglianze
+            # 3. Project
             if self.linear_equality_constraints is not None:
                 A_eq, b_eq = self._parse_constraints(self.linear_equality_constraints)
                 X = self._project_onto_linear_equality_manifold(X, A_eq, b_eq)
 
-            # 4. Filtro Disuguaglianze e Bounds
+            # 4. Filter linear and non-linear inequalities
             constraint_mask = torch.ones(X.shape[0], device=self.device, dtype=torch.bool)
 
             if self.linear_inequality_constraints is not None:
@@ -92,7 +92,8 @@ class SamplerBase(ABC):
             if X.shape[0] > 0:
                 valid_x.append(X)
 
-            # Strategia adattiva: se molti campioni vengono scartati, ne generiamo di più al giro dopo
+            # Adaptive strategy: if the number of valid samples is smaller than the minimum number required,
+            # increase the number of drawn samples for the next iteration
             n_to_draw = n * 2
 
         if not valid_x:
@@ -116,7 +117,6 @@ class LatinHypercubeSampler(SamplerBase):
 
 class UniformGridSampler(SamplerBase):
     def _generate_base_samples(self, n: int) -> torch.Tensor:
-        # Genera una griglia uniforme (molto utile per basse dimensioni)
         points_per_dim = int(n ** (1 / self.n_dimensions))
         grid_axes = [torch.linspace(0, 1, points_per_dim, device=self.device, dtype=self.dtype)
                      for _ in range(self.n_dimensions)]

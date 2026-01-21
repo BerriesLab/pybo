@@ -1,28 +1,50 @@
-from typing import List
 import torch
+from typing import List
+from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 
+style_arrow_future = dict(
+    arrowstyle='->',
+    color='red',
+    lw=1.5,
+    alpha=0.8,
+    shrinkA=3,
+    shrinkB=3,
+    connectionstyle="arc3,rad=0.1",
+    ls='--'
+)
 
-class SingleObjectivePlotter(PlotterBase):
+style_arrow_past = dict(
+    arrowstyle='->',
+    color='white',
+    lw=1.5,
+    alpha=0.8,
+    shrinkA=3,
+    shrinkB=3,
+    connectionstyle="arc3,rad=0.1",
+)
+
+
+class Experiment1DPlotter(PlotterBase):
     """
     Visualiser for single-objective optimization problems (1D).
     It handles ground truth, GP posterior, and experimental observations.
     """
 
-    def __init__(
-            self,
-            bayesian_optimizer: BayesianOptimizer,
-            lims: List[tuple[float, float]] | None = None,
-            labels: list[str] | None = (r"$x$", r"$f(x)$"),
-    ):
-        super().__init__(bayesian_optimizer=bayesian_optimizer, lims=lims, labels=labels)
-        self.n_grid_points = 500  # High resolution for smooth plotting
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, lims: List[tuple[float, float]] or None = None):
+        super().__init__(
+            bayesian_optimizer=bayesian_optimizer,
+            lims=lims,
+            labels=(r"$x$", r"$f(x)$"),
+            # title="Experiment"
+        )
+        self.n_grid_points = 100
 
     def plot_ground_truth(self, zorder: int = 1):
         """Plots the true objective function as a dashed red line."""
         # Generate 1D grid using the base class method
-        X_grid = self._generate_grid(n_grid_points=self.n_grid_points)
+        X_grid = self._generate_uniform_grid(n_points_per_dim=self.n_grid_points)
 
         # Evaluate the true objective function
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
@@ -44,7 +66,7 @@ class SingleObjectivePlotter(PlotterBase):
         if self.bo.model is None:
             return self
 
-        X_grid = self._generate_grid(n_grid_points=self.n_grid_points)
+        X_grid = self._generate_uniform_grid(n_points_per_dim=self.n_grid_points)
 
         with torch.no_grad():
             # Get posterior distribution from the GP model
@@ -142,34 +164,36 @@ class SingleObjectivePlotter(PlotterBase):
         self.plot_observations()
         self.plot_optimum()
         self.plot_next_X()
-
-        # Strictly lock legend to the upper right corner
         self.ax.legend(loc='upper right', fontsize='small', frameon=True)
         return self
 
+    def save_figure(self, filename: str | Path | None = None):
+        filename = filename or "experiment.png"
+        return super().save_figure(filename=filename)
 
-class TwoVariablesOneObjective(PlotterBase):
-    """
-    2D Plotter that handles initial random sampling batches.
-    It shows all initial points pointing towards the first Bayesian-suggested point,
-    then follows a sequential trajectory.
-    """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class Experiment2DPlotter(PlotterBase):
+
+    def __init__(self, bayesian_optimizer: BayesianOptimizer, lims: List[tuple[float, float]] or None = None):
+        super().__init__(
+            bo=bayesian_optimizer,
+            lims=lims,
+            labels=(r"$x_1$", r"$x_2$"),
+            # title="Experiment"
+        )
         self.n_grid_points = 100
 
-    def _generate_grid(self, n_grid_points=100) -> torch.Tensor:
+    def _generate_uniform_grid(self, n_points_per_dim=100) -> torch.Tensor:
         """Generate a 2D grid for the background contour plot."""
         bounds = self.bo.objective.bounds
-        x = torch.linspace(bounds[0, 0], bounds[1, 0], n_grid_points, device=self.bo.device)
-        y = torch.linspace(bounds[0, 1], bounds[1, 1], n_grid_points, device=self.bo.device)
+        x = torch.linspace(bounds[0, 0], bounds[1, 0], n_points_per_dim, device=self.bo.device)
+        y = torch.linspace(bounds[0, 1], bounds[1, 1], n_points_per_dim, device=self.bo.device)
         xx, yy = torch.meshgrid(x, y, indexing='ij')
         return torch.stack([xx.reshape(-1), yy.reshape(-1)], dim=-1)
 
     def plot_objective(self):
         """Plot the ground truth surface."""
-        X_grid = self._generate_grid(self.n_grid_points)
+        X_grid = self._generate_uniform_grid(self.n_grid_points)
         Y_obj = self.bo.objective.evaluate_true_objective(X_grid)
         N = self.n_grid_points
         X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
@@ -185,74 +209,131 @@ class TwoVariablesOneObjective(PlotterBase):
         """Plot static experimental points."""
         X_f, _ = self.bo.compute_feasible_XY()
         if X_f is not None:
-            self.ax.scatter(X_f[:, 0].cpu(), X_f[:, 1].cpu(), c='white',
-                            edgecolors='black', s=40, label='Feasible', zorder=zorder)
+            self.ax.scatter(
+                x=X_f[:, 0].cpu(),
+                y=X_f[:, 1].cpu(),
+                c='white',
+                edgecolors='black',
+                s=40,
+                label='Feasible',
+                zorder=zorder
+            )
         X_i, _ = self.bo.compute_infeasible_XY()
+
         if X_i is not None:
-            self.ax.scatter(X_i[:, 0].cpu(), X_i[:, 1].cpu(), c='red',
-                            marker='x', s=40, label='Infeasible', zorder=zorder)
+            self.ax.scatter(
+                x=X_i[:, 0].cpu(),
+                y=X_i[:, 1].cpu(),
+                c='red',
+                marker='x',
+                s=40,
+                label='Infeasible',
+                zorder=zorder
+            )
         return self
+
+    def plot_new_X(self, zorder: int = 4):
+        X_new = self.bo.new_X.detach().cpu().numpy()
+        if X_new is not None:
+            self.ax.scatter(
+                x=X_new[:, 0],
+                y=X_new[:, 1],
+                c='red',
+                marker='*',
+                s=150,
+                edgecolors='black',
+                label='Next Candidate',
+                zorder=zorder + 3,
+                alpha=0.8
+            )
 
     def plot_trajectory(self, zorder: int = 3):
         """
-        Logic:
-        1. All initial random points point to the 1st Bayesian point.
-        2. Following points connect sequentially.
+        Batch-aware trajectory:
+          - init -> first BO batch (n_init x q)
+          - BO batch i -> BO batch i+1 (q x q), for all adjacent observed batches
+          - last observed batch -> pending new_X (q x q) as "future"
         """
-        X = self.bo.X
-        if X is None or X.shape[0] < 2:
+        X_np = self.bo.X.detach().cpu().numpy()
+        n_pts = X_np.shape[0]
+        n_init = self.bo.n_initial_samples
+        q = self.bo.batch_size
+        X_new = self.bo.new_X.detach().cpu().numpy()  # returns (q,2) or None
+
+        # If X includes only the initial dataset, connect all X to New_X.
+        if n_pts == n_init:
+            for i in range(n_init):
+                for j in range(len(X_new)):
+                    self.ax.annotate(
+                        text="",
+                        xy=(X_new[j, 0], X_new[j, 1]),
+                        xytext=(X_np[i, 0], X_np[i, 1]),
+                        zorder=zorder,
+                        arrowprops=style_arrow_future,
+                    )
             return self
 
-        X_np = X.detach().cpu().numpy()
-        # n_init is the number of random samples (preliminary data)
-        n_init = getattr(self.bo, '_n_initial_samples', None)
+        # If X includes also Bayesian optimized points, connect the initial dataset
+        # to the first q-batch (1), then connect iteratively the k-th batch to
+        # the k-th + 1 batch, and finally connect the last observed batch to the New_X.
+        n_bo_obs = n_pts - n_init
+        n_batches = int(n_bo_obs / q)
+        batches = []
+        for b in range(n_batches):
+            s = n_init + b * q
+            e = s + q
+            batches.append(X_np[s:e])
 
-        # --- STEP 1: Preliminary data arrows ---
-        # If we have at least one Bayesian point (index n_init)
-        if len(X_np) > n_init:
-            first_bo_point = X_np[n_init]
-            for i in range(n_init):
-                start = X_np[i]
+        # 1) init -> first observed batch
+        first_batch = batches[0]
+        for i in range(n_init):
+            for j in range(first_batch.shape[0]):
                 self.ax.annotate(
-                    '', xy=first_bo_point, xytext=start,
-                    arrowprops=dict(arrowstyle='->', color='white', lw=1, alpha=0.5,
-                                    shrinkA=3, shrinkB=3),
-                    zorder=zorder
+                    text="",
+                    xy=(first_batch[j, 0], first_batch[j, 1]),
+                    xytext=(X_np[i, 0], X_np[i, 1]),
+                    zorder=zorder,
+                    arrowprops=style_arrow_past,
                 )
 
-        # --- STEP 2: Sequential BO trajectory ---
-        # Start arrows from the first BO point onwards
-        for i in range(n_init, len(X_np) - 1):
-            self.ax.annotate(
-                '', xy=X_np[i + 1], xytext=X_np[i],
-                arrowprops=dict(arrowstyle='->', color='white', lw=1.5, alpha=0.8,
-                                shrinkA=3, shrinkB=3, connectionstyle="arc3,rad=0.1"),
-                zorder=zorder
-            )
+        # 2) connect observed batch k -> batch k+1 (fully connected)
+        for k in range(len(batches) - 1):
+            A = batches[k]
+            B = batches[k + 1]
+            for i in range(A.shape[0]):
+                for j in range(B.shape[0]):
+                    self.ax.annotate(
+                        text="",
+                        xy=(float(B[j, 0]), float(B[j, 1])),
+                        xytext=(float(A[i, 0]), float(A[i, 1])),
+                        zorder=zorder,
+                        arrowprops=style_arrow_past,
+                    )
 
-        # --- STEP 3: Candidate Point (The Future) ---
-        if self.bo.new_X is not None:
-            new_x_np = self.bo.new_X.detach().cpu().numpy()
-            last_obs = X_np[-1]
-            for nx in new_x_np:
-                self.ax.annotate(
-                    '', xy=nx, xytext=last_obs,
-                    arrowprops=dict(arrowstyle='->', color='lime', lw=2, ls=':'),
-                    zorder=zorder + 2
-                )
-                self.ax.scatter(nx[0], nx[1], c='lime', marker='*', s=150,
-                                edgecolors='black', label='Next Candidate', zorder=zorder + 3)
+        # 3) last observed batch -> pending new_X (fully connected "future")
+        if X_new is not None and len(X_new) > 0:
+            last_batch = batches[-1]
+            for i in range(last_batch.shape[0]):
+                for j in range(len(X_new)):
+                    self.ax.annotate(
+                        text="",
+                        xy=(float(X_new[j, 0]), float(X_new[j, 1])),
+                        xytext=(float(last_batch[i, 0]), float(last_batch[i, 1])),
+                        zorder=zorder + 2,
+                        arrowprops=style_arrow_future,
+                    )
 
-        # Ensure arrows stay inside the axes
-        bounds = self.bo.objective.bounds.cpu().numpy()
-        self.ax.set_xlim(bounds[0, 0], bounds[1, 0])
-        self.ax.set_ylim(bounds[0, 1], bounds[1, 1])
         return self
 
     def plot(self):
         """Main plotting pipeline."""
         self.plot_objective()
+        self.plot_new_X()
         self.plot_trajectory()
         self.plot_observations()
         self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
         return self
+
+    def save_figure(self, filename: str | Path | None = None):
+        filename = filename or "experiment.png"
+        return super().save_figure(filename=filename)

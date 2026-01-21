@@ -6,7 +6,7 @@ from samplers.samplers import SamplerBase
 from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective import MultiObjectivePlotter
+from plotters.multi_objective_experiment import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
     ConstraintPlotter, TrackerPlotter, ObjectivePlotter
 

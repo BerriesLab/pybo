@@ -1,58 +1,50 @@
 from pathlib import Path
 import numpy as np
+from matplotlib import pyplot as plt
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.base_class import MCSingleObjectiveBase
+from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from plotters.base_class import PlotterBase
-from plotters.utils import xy_plot_kwargs, line2d_plot_kwargs
+from plotters.styles import xy_plot_kwargs, line2d_plot_kwargs
 
 
 class BestValuePlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title="Best Value",
-            labels=[
-                "Number of observations (beyond initial points)",
-                "Best Value",
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
 
-        if not isinstance(bayesian_optimizer.objective, MCSingleObjectiveBase):
+        if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
-    def plot(self):
-        best_values = self.bo.best_values
-        best_values = np.array(best_values)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel("Best value")
 
+    def plot(self):
+        best_values = np.array(self.bo.best_values)
         x = self.bo.n_initial_samples + np.arange(len(best_values)) * self.bo.batch_size
         self.ax.plot(x, best_values, **line2d_plot_kwargs)
 
-        if self.bo._objective.best_value is not None:
-            self.ax.axhline(y=self.bo._objective.best_value, linestyle='--', color='black', label='Max HV')
+        if self.bo.objective.best_value is not None:
+            self.ax.axhline(y=self.bo.objective.best_value, linestyle='--', color='black', label='Max HV')
         return self
 
-    def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
+    def save_figure(self, filename="best_value.png"):
         return super().save_figure(filename=filename)
 
 
 class HypervolumePlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title="Hypervolume",
-            labels=[
-                "Number of observations (beyond initial points)",
-                "Hypervolume",
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
+
+        if not isinstance(bo.objective, MCMultiObjectiveBase):
+            raise TypeError("Objective must be of type MCMultiObjectiveBase")
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel("Hypervolume")
 
     def plot(self):
-        hv = self.bo.hypervolume
-
-        hv = np.array(hv)
-
-        # X-axis: number of observations beyond initial front
+        hv = np.array(self.bo.hypervolume)
+        # X-axis: number of observations beyond the initial front
         x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
 
         self.ax.plot(x, hv, **line2d_plot_kwargs)
@@ -61,51 +53,48 @@ class HypervolumePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"hv.png"
         return super().save_figure(filename=filename)
 
 
 class HypervolumeImprovementPlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title="Hypervolume Improvement",
-            labels=[
-                "Number of observations (beyond initial points)",
-                r"$\log_{10}(\mathrm{HVI})$"
-            ]
-        )
+    def __init__(self, b0: BayesianOptimizer):
+        super().__init__(bo=bo)
+
+        if not isinstance(b0.objective, MCMultiObjectiveBase):
+            raise TypeError("Objective must be of type MCMultiObjectiveBase")
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel(r"$\log_{10}(\mathrm{HVI})$")
 
     def plot(self, epsilon: float = 1e-6):
         hv = self.bo.hypervolume
 
         hv = np.array(hv)
-        hvi = np.diff(hv, prepend=np.nan)  # first element has no diff
+        hvi = np.diff(hv, prepend=np.nan)  # the first element has no diff
 
         # Clip small values to avoid log10(0)
         hvi_log = np.log10(np.clip(hvi, epsilon, None))
 
-        # X-axis: number of observations beyond initial front
+        # X-axis: number of observations beyond the initial front
         x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
         mask = ~np.isnan(hvi_log)
         self.ax.plot(x[mask], hvi_log[mask], **line2d_plot_kwargs)
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"hvi.png"
         return super().save_figure(filename=filename)
 
 
 class ElapsedTimePlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title="Elapsed Time",
-            labels=[
-                "Number of observations (beyond initial points)",
-                "Elapsed Time (s)"
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel("Elapsed Time")
 
     def plot(self):
         elapsed_time = self.bo.elapsed_time
@@ -114,26 +103,19 @@ class ElapsedTimePlotter(PlotterBase):
         self.ax.plot(x, y, **line2d_plot_kwargs)
         return self
 
-    def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_metric_{self.title.replace(" ", "_").lower()}.png"
+    def save_figure(self, filename="elapsed_time.png"):
         return super().save_figure(filename=filename)
 
 
 class ParameterPlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title=f"{bayesian_optimizer.objective.parameter_names[idx]}"
-            if bayesian_optimizer.objective.parameter_names
-            else f"parameter {idx}",
-            labels=[
-                "Number of observations (beyond initial points)",
-                bayesian_optimizer.objective.parameter_names[idx]
-                if bayesian_optimizer.objective.parameter_names
-                else f"parameter {idx}"
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer, idx: int):
+        super().__init__(bo=bo)
+
         self.idx = idx
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel(
+            bo.objective.parameter_names[idx] if bo.objective.parameter_names else f"Parameter {idx:02d}")
 
     def plot(self):
         n_iter, x_all, y_all = self._prepare_xy()
@@ -142,7 +124,7 @@ class ParameterPlotter(PlotterBase):
                         **xy_plot_kwargs,
                         label=self.bo.objective.parameter_names[self.idx]
                         if self.bo.objective.parameter_names
-                        else f"parameter {self.idx}")
+                        else f"parameter {self.idx:02d}")
         self.ax.axhline(y=self.bo.objective.bounds[0][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
         self.ax.axhline(y=self.bo.objective.bounds[1][self.idx].detach().cpu().numpy(), linestyle='--', color='black')
         self.ax.axvline(x=self.bo.n_initial_samples, linestyle='--', color='black')
@@ -196,25 +178,19 @@ class ParameterPlotter(PlotterBase):
         return n_iter, x_all, y_all
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_parameter_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"parameter_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
 
 class ObjectivePlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title=bayesian_optimizer.objective.objective_names[idx]
-            if bayesian_optimizer.objective.objective_names is not None
-            else f"objective {idx}",
-            labels=[
-                "Number of observations (beyond initial points)",
-                bayesian_optimizer.objective.objective_names[idx]
-                if bayesian_optimizer.objective.objective_names
-                else f"objective {idx}"
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer, idx: int = 0):
+        super().__init__(bo=bo)
+
         self.idx = idx
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel(
+            bo.objective.objective_names[idx] if bo.objective.objective_names else f"Objective {idx:02d}")
 
     def plot(self):
         n_iter, x_all, y_all = self._prepare_xy()
@@ -229,7 +205,7 @@ class ObjectivePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_objective_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"objective_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):
@@ -281,20 +257,14 @@ class ObjectivePlotter(PlotterBase):
 
 
 class ConstraintPlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title=bayesian_optimizer.objective.constraint_names[idx]
-            if bayesian_optimizer.objective.constraint_names
-            else f"constraint {idx}",
-            labels=[
-                "Number of observations (beyond initial points)",
-                bayesian_optimizer.objective.constraint_names[idx]
-                if bayesian_optimizer.objective.constraint_names
-                else f"constraint {idx}"
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer, idx: int = 0):
+        super().__init__(bo=bo)
+
         self.idx = idx
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel(
+            bo.objective.objective_names[idx] if bo.objective.objective_names else f"Constraint {idx:02d}")
 
     def plot(self):
         n_iter, x_all, y_all = self._prepare_xy()
@@ -310,7 +280,7 @@ class ConstraintPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_constraint_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"constraint_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):
@@ -362,20 +332,14 @@ class ConstraintPlotter(PlotterBase):
 
 
 class TrackerPlotter(PlotterBase):
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, idx: int = 0):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            title=bayesian_optimizer.objective.tracker_names[idx]
-            if bayesian_optimizer.objective.tracker_names
-            else f"tracker {idx}",
-            labels=[
-                "Number of observations (beyond initial points)",
-                bayesian_optimizer.objective.tracker_names[idx]
-                if bayesian_optimizer.objective.tracker_names
-                else f"tracker {idx}"
-            ]
-        )
+    def __init__(self, bo: BayesianOptimizer, idx: int = 0):
+        super().__init__(bo=bo)
+
         self.idx = idx
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_ylabel(
+            bo.objective.objective_names[idx] if bo.objective.objective_names else f"Tracker {idx:02d}")
 
     def plot(self):
         n_iter, x_all, y_all = self._prepare_xy()
@@ -389,7 +353,7 @@ class TrackerPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"trajectory_tracker_{self.title.replace(" ", "_").lower()}.png"
+        filename = f"tracker_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):

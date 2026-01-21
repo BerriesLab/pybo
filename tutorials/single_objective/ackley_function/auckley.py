@@ -4,8 +4,8 @@ from botorch.acquisition import *
 from gpytorch.kernels import *
 from gpytorch.constraints import Interval
 from objectives.single_objective.ackley_function import Ackley
-from plotters.acquisition_function import AcquisitionPlotter
-from plotters.single_objective import *
+from plotters.acqf import *
+from plotters.single_objective_experiment import *
 from samplers.samplers import *
 from plotters.evolution import *
 
@@ -36,7 +36,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
         seed=45,
     )
-    X = sampler.draw_samples(n=2 * (objective.dim + 1))
+    X = sampler.draw_samples(n=3 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -66,14 +66,16 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-3, 3), (-2, 2)
+        x_lims, y_lims = (-5, 5), (-5, 5)
         lims = [x_lims, y_lims]
-        TwoVariablesOneObjective(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        # ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        # BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        # ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        # ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        # Experiment2DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
+        # Acqf2DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+        for idx in range(bo.objective.dim):
+            ParameterPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_objectives):
+            ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
@@ -94,6 +96,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1]
+    batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)

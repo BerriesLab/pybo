@@ -4,7 +4,7 @@ from bayesian_optimizer.optimizer import BayesianOptimizer
 from matplotlib.lines import Line2D
 from botorch.utils.multi_objective import is_non_dominated
 from plotters.base_class import PlotterBase
-from plotters.utils import *
+from plotters.styles import *
 
 
 class MultiObjectivePlotter(PlotterBase):

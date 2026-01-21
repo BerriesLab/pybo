@@ -4,8 +4,8 @@ from botorch.acquisition import *
 from gpytorch.kernels import *
 from gpytorch.constraints import Interval, LessThan
 from objectives.single_objective.wave_packet import WavePacket
-from plotters.acquisition_function import AcquisitionPlotter
-from plotters.single_objective import SingleObjectivePlotter
+from plotters.acqf import Acqf1DPlotter
+from plotters.single_objective_experiment import Experiment1DPlotter
 from samplers.samplers import *
 from plotters.evolution import *
 
@@ -70,8 +70,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         """ Plot """
         x_lims, y_lims = (-1, 1), (-1.5, 1.5)
         lims = [x_lims, y_lims]
-        SingleObjectivePlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        AcquisitionPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        Experiment1DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
+        Acqf1DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
         ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()

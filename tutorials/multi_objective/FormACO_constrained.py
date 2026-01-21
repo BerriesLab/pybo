@@ -6,10 +6,10 @@ from objectives.multi_objective.formaco import FormACOMCMultiOutputConstrainedOb
 from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective import MultiObjectivePlotter
+from plotters.multi_objective_experiment import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
     ObjectivePlotter, TrackerPlotter, ConstraintPlotter
-from plotters.utils import make_grid
+from plotters.styles import make_grid
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
