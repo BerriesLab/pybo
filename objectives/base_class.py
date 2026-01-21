@@ -61,7 +61,7 @@ class MCObjectiveBase(ABC):
         self.linear_equality_input_constraints = linear_equality_input_constraints
         self.linear_inequality_input_constraints = linear_inequality_input_constraints
         self.nonlinear_inequality_input_constraints = nonlinear_inequality_input_constraints
-        self.output_constraints = output_constraints
+        self.constraints = output_constraints
 
     # === CUDA Properties ===
     @property
@@ -344,14 +344,14 @@ class MCObjectiveBase(ABC):
 
     # === Output Constraints ===
     @property
-    def output_constraints(self):
+    def constraints(self):
         return self._output_constraints
 
-    @output_constraints.setter
-    def output_constraints(self, value):
+    @constraints.setter
+    def constraints(self, value):
         if value is not None:
             if not isinstance(value, list):
-                raise TypeError("output_constraints must be a list of Callables")
+                raise TypeError("constraints must be a list of Callables")
             for item in value:
                 if not callable(item):
                     raise TypeError("Each output_constraint must be callable")

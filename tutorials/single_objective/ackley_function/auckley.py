@@ -5,7 +5,7 @@ from gpytorch.kernels import *
 from gpytorch.constraints import Interval
 from objectives.single_objective.ackley_function import Ackley
 from plotters.acqf import *
-from plotters.single_objective_experiment import *
+from plotters.experiment import *
 from samplers.samplers import *
 from plotters.evolution import *
 
@@ -66,10 +66,15 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-5, 5), (-5, 5)
-        lims = [x_lims, y_lims]
-        # Experiment2DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        # Acqf2DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        x1_lim, x2_lim = (-5, 5), (-5, 5)
+        experiment_plot = Experiment2DPlotter(bo=bo)
+        experiment_plot.ax.set_xlim(x1_lim)
+        experiment_plot.ax.set_ylim(x2_lim)
+        experiment_plot.plot().save_figure().close_figure()
+        # acqf_plot = Acqf2DPlotter(bo=bo)
+        # acqf_plot.ax.set_xlim(x1_lim)
+        # acqf_plot.ax.set_ylim(x2_lim)
+        # acqf_plot.plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         for idx in range(bo.objective.dim):

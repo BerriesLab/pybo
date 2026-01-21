@@ -5,7 +5,7 @@ from gpytorch.kernels import *
 from gpytorch.constraints import Interval
 from objectives.single_objective.periodic import Periodic
 from plotters.acqf import Acqf1DPlotter
-from plotters.single_objective_experiment import Experiment1DPlotter
+from plotters.experiment import Experiment1DPlotter
 from samplers.samplers import *
 from plotters.evolution import *
 

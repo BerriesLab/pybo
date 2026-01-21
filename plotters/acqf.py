@@ -9,12 +9,8 @@ import matplotlib.pyplot as plt
 class Acqf1DPlotter(PlotterBase):
     """ A class for visualizing acquisition function values. """
 
-    def __init__(
-            self,
-            bayesian_optimizer: BayesianOptimizer,
-            lims: list[tuple[float, float]] | None = None,
-    ):
-        super().__init__(bayesian_optimizer=bayesian_optimizer, lims=lims)
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
 
     def plot_acquisition(self, color: str = 'green', linewidth: float = 1.5,
                          label: str = 'Acquisition Function', n_points=1000):
@@ -22,7 +18,7 @@ class Acqf1DPlotter(PlotterBase):
         if self.bo.acqf_instance is None:
             raise ValueError("Acquisition function must be set before plotting.")
 
-        X_grid = self._generate_uniform_grid(n_points_per_dim=n_points)
+        X_grid = self._generate_uniform_grid()
 
         with torch.no_grad():
             acq_values = self.bo.acqf_instance(X_grid.unsqueeze(1))
@@ -72,14 +68,9 @@ class Acqf1DPlotter(PlotterBase):
 
 
 class Acqf2DPlotter(PlotterBase):
-    """ Visualisation of acquisition functions for 2D input spaces (f(x,y)). """
 
-    def __init__(
-            self,
-            bayesian_optimizer: BayesianOptimizer,
-            lims: list[tuple[float, float]] | None = None,
-    ):
-        super().__init__(bayesian_optimizer=bayesian_optimizer, lims=lims)
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
 
     def plot_acquisition(self, n_grid_points: int = 50, cmap: str = 'viridis', levels: int = 50):
         """Plot the acquisition landscape using filled contours."""

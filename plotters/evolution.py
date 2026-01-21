@@ -1,3 +1,4 @@
+from fileinput import filename
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
@@ -27,7 +28,8 @@ class BestValuePlotter(PlotterBase):
             self.ax.axhline(y=self.bo.objective.best_value, linestyle='--', color='black', label='Max HV')
         return self
 
-    def save_figure(self, filename="best_value.png"):
+    def save_figure(self, filename: str | Path | None = None):
+        filename = filename or "best_value.png"
         return super().save_figure(filename=filename)
 
 
@@ -53,7 +55,7 @@ class HypervolumePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"hv.png"
+        filename = filename or f"hv.png"
         return super().save_figure(filename=filename)
 
 
@@ -84,7 +86,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"hvi.png"
+        filename = filename or f"hvi.png"
         return super().save_figure(filename=filename)
 
 
@@ -103,7 +105,8 @@ class ElapsedTimePlotter(PlotterBase):
         self.ax.plot(x, y, **line2d_plot_kwargs)
         return self
 
-    def save_figure(self, filename="elapsed_time.png"):
+    def save_figure(self, filename: str | Path | None = None):
+        filename = filename or "elapsed_time.png"
         return super().save_figure(filename=filename)
 
 
@@ -178,7 +181,7 @@ class ParameterPlotter(PlotterBase):
         return n_iter, x_all, y_all
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"parameter_{self.idx:02d}.png"
+        filename = filename or f"parameter_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
 
@@ -205,7 +208,7 @@ class ObjectivePlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"objective_{self.idx:02d}.png"
+        filename = filename or f"objective_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):
@@ -280,7 +283,7 @@ class ConstraintPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"constraint_{self.idx:02d}.png"
+        filename = filename or f"constraint_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):
@@ -353,7 +356,7 @@ class TrackerPlotter(PlotterBase):
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = f"tracker_{self.idx:02d}.png"
+        filename = filename or f"tracker_{self.idx:02d}.png"
         return super().save_figure(filename=filename)
 
     def _connect_subsequent_batches(self, n_iter, x_all, y_all):

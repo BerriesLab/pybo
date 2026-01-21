@@ -1,51 +1,33 @@
 import torch
+from matplotlib import pyplot as plt
 from typing import List
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
-
-style_arrow_future = dict(
-    arrowstyle='->',
-    color='red',
-    lw=1.5,
-    alpha=0.8,
-    shrinkA=3,
-    shrinkB=3,
-    connectionstyle="arc3,rad=0.1",
-    ls='--'
-)
-
-style_arrow_past = dict(
-    arrowstyle='->',
-    color='white',
-    lw=1.5,
-    alpha=0.8,
-    shrinkA=3,
-    shrinkB=3,
-    connectionstyle="arc3,rad=0.1",
-)
+from plotters.styles import *
+from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 
 class Experiment1DPlotter(PlotterBase):
-    """
-    Visualiser for single-objective optimization problems (1D).
-    It handles ground truth, GP posterior, and experimental observations.
-    """
 
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, lims: List[tuple[float, float]] or None = None):
-        super().__init__(
-            bayesian_optimizer=bayesian_optimizer,
-            lims=lims,
-            labels=(r"$x$", r"$f(x)$"),
-            # title="Experiment"
-        )
-        self.n_grid_points = 100
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
+
+        if not isinstance(bo.objective, MCSingleObjectiveBase):
+            raise TypeError("Objective must be of type MCSingleObjectiveBase")
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel(bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x$")
+        self.ax.set_ylabel(bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$f(x)$")
+
+    # TODO: def plot_feasible_ground_truth(self):
+
+    # TODO: def plot_infeasible_ground_truth(self):
 
     def plot_ground_truth(self, zorder: int = 1):
         """Plots the true objective function as a dashed red line."""
         # Generate 1D grid using the base class method
-        X_grid = self._generate_uniform_grid(n_points_per_dim=self.n_grid_points)
-
+        X_grid = self._generate_uniform_grid()
         # Evaluate the true objective function
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
 
@@ -53,11 +35,8 @@ class Experiment1DPlotter(PlotterBase):
             self.ax.plot(
                 X_grid.detach().cpu().numpy(),
                 Y_obj_gt.detach().cpu().numpy(),
-                color='red',
-                linestyle='--',
-                linewidth=1.5,
-                label="Ground Truth",
                 zorder=zorder,
+                **feasible_ground_truth
             )
         return self
 
@@ -66,13 +45,14 @@ class Experiment1DPlotter(PlotterBase):
         if self.bo.model is None:
             return self
 
-        X_grid = self._generate_uniform_grid(n_points_per_dim=self.n_grid_points)
+        X_grid = self._generate_uniform_grid()
 
         with torch.no_grad():
             # Get posterior distribution from the GP model
             posterior = self.bo.model.posterior(X_grid)
-            mean = posterior.mean.squeeze(-1)
-            std = posterior.variance.sqrt().squeeze(-1)
+            mean = posterior.mean[..., self.bo.objective.outcomes].squeeze(-1)
+            std = posterior.variance.sqrt()[..., self.bo.objective.outcomes].squeeze(-1)
+            # Note that we kept only the posterior associated with the objective outcomes
 
         X_np = X_grid.squeeze().cpu().numpy()
         mean_np = mean.cpu().numpy()
@@ -93,31 +73,24 @@ class Experiment1DPlotter(PlotterBase):
         )
         return self
 
-    def plot_observations(self, zorder: int = 3):
-        """Plots sampled points, distinguishing between feasible and infeasible ones."""
-        # 1. Feasible Observations (Black circles)
+    def plot_feasible_observations(self, zorder: int = 3):
         X_f, Y_f = self.bo.compute_feasible_XY()
         if X_f is not None:
             self.ax.scatter(
                 X_f.detach().cpu().numpy(),
                 Y_f.detach().cpu().numpy(),
-                color='black',
-                marker='o',
-                facecolors='none',
-                label="Feasible Obs.",
                 zorder=zorder,
+                **feasible_observations
             )
 
-        # 2. Infeasible Observations (Red crosses - violated constraints)
+    def plot_infeasible_observations(self, zorder: int = 3):
         X_i, Y_i = self.bo.compute_infeasible_XY()
         if X_i is not None:
             self.ax.scatter(
                 X_i.detach().cpu().numpy(),
                 Y_i.detach().cpu().numpy(),
-                color='red',
-                marker='x',
-                label="Infeasible (Violated)",
                 zorder=zorder,
+                **infeasible_observations
             )
         return self
 
@@ -161,7 +134,8 @@ class Experiment1DPlotter(PlotterBase):
         """Executes the full 1D plotting pipeline with legend locked at top-right."""
         self.plot_gp_posterior()
         self.plot_ground_truth()
-        self.plot_observations()
+        self.plot_feasible_observations()
+        self.plot_infeasible_observations()
         self.plot_optimum()
         self.plot_next_X()
         self.ax.legend(loc='upper right', fontsize='small', frameon=True)
@@ -174,36 +148,31 @@ class Experiment1DPlotter(PlotterBase):
 
 class Experiment2DPlotter(PlotterBase):
 
-    def __init__(self, bayesian_optimizer: BayesianOptimizer, lims: List[tuple[float, float]] or None = None):
-        super().__init__(
-            bo=bayesian_optimizer,
-            lims=lims,
-            labels=(r"$x_1$", r"$x_2$"),
-            # title="Experiment"
-        )
-        self.n_grid_points = 100
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
 
-    def _generate_uniform_grid(self, n_points_per_dim=100) -> torch.Tensor:
-        """Generate a 2D grid for the background contour plot."""
-        bounds = self.bo.objective.bounds
-        x = torch.linspace(bounds[0, 0], bounds[1, 0], n_points_per_dim, device=self.bo.device)
-        y = torch.linspace(bounds[0, 1], bounds[1, 1], n_points_per_dim, device=self.bo.device)
-        xx, yy = torch.meshgrid(x, y, indexing='ij')
-        return torch.stack([xx.reshape(-1), yy.reshape(-1)], dim=-1)
+        if not isinstance(bo.objective, MCSingleObjectiveBase):
+            raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
-    def plot_objective(self):
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel(bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
+        self.ax.set_ylabel(bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
+
+    def plot_ground_truth(self):
         """Plot the ground truth surface."""
-        X_grid = self._generate_uniform_grid(self.n_grid_points)
+        X_grid = self._generate_uniform_grid()
         Y_obj = self.bo.objective.evaluate_true_objective(X_grid)
         N = self.n_grid_points
         X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
         Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
         Z_np = Y_obj.reshape(N, N).cpu().numpy()
-
         cp = self.ax.contourf(X_np, Y_np, Z_np, levels=50, cmap='viridis', alpha=0.8)
-        if self.cbar is None:
-            self.cbar = self.fig.colorbar(cp, ax=self.ax)
+        self.fig.colorbar(cp, ax=self.ax)
         return self
+
+    # TODO
+    def plot_constraints(self):
+        raise NotImplementedError()
 
     def plot_observations(self, zorder: int = 4):
         """Plot static experimental points."""
@@ -274,7 +243,7 @@ class Experiment2DPlotter(PlotterBase):
             return self
 
         # If X includes also Bayesian optimized points, connect the initial dataset
-        # to the first q-batch (1), then connect iteratively the k-th batch to
+        # to the first q-batch (1), then iteratively connect the k-th batch to
         # the k-th + 1 batch, and finally connect the last observed batch to the New_X.
         n_bo_obs = n_pts - n_init
         n_batches = int(n_bo_obs / q)
@@ -327,7 +296,7 @@ class Experiment2DPlotter(PlotterBase):
 
     def plot(self):
         """Main plotting pipeline."""
-        self.plot_objective()
+        self.plot_ground_truth()
         self.plot_new_X()
         self.plot_trajectory()
         self.plot_observations()

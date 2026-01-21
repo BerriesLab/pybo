@@ -497,19 +497,16 @@ class BayesianOptimizer:
         self._compute_acquisition_function_reference(verbose=verbose)
         self._compute_metrics(verbose=verbose)
 
-        # === 2. Initialize Kernel ===
-        # self._initialize_kernel(verbose=verbose)
-
-        # === 3. Initialize and fit Model ===
+        # === 2. Initialize and fit Model ===
         self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
-        # === 4. Initialize acquisition function ===
+        # === 3. Initialize acquisition function ===
         if issubclass(self._acqf, MCAcquisitionFunction):
             self._initialize_sampler(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
-        # === 5. Optimize ===
+        # === 4. Optimize ===
         self._optimize_acquisition_function(verbose=verbose)
 
         t1 = time.monotonic()
@@ -617,7 +614,7 @@ class BayesianOptimizer:
         self._sampler = SobolQMCNormalSampler(torch.Size([self._num_mc_samples]))
 
         if verbose:
-            print("✓")
+            self._print_success()
 
     def _compute_acquisition_function_reference(self, verbose=True):
         """Compute reference values needed for acquisition function initialization.
@@ -658,7 +655,7 @@ class BayesianOptimizer:
             # self._best_values.append(best_value)
 
             if verbose:
-                self._print_success(msg=f"{self._best_feasible_Y.item():.4f} in max. space.")
+                self._print_success(msg=f"({self._best_feasible_Y.item():.4f} in max. space)")
 
         else:
             self._best_feasible_Y = None
@@ -743,6 +740,8 @@ class BayesianOptimizer:
 
                 if hasattr(self, name):
                     kwargs[name] = getattr(self, name)
+                elif hasattr(self.objective, name):
+                    kwargs[name] = getattr(self.objective, name)
                 elif param.default is not inspect.Parameter.empty:
                     kwargs[name] = param.default
 
@@ -761,10 +760,10 @@ class BayesianOptimizer:
         prediction = self._model.posterior(self.X).mean
 
         # Filter feasible points if constraints exist
-        if self._objective.output_constraints is None:
+        if self._objective.constraints is None:
             feasible_Y = prediction
         else:
-            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.output_constraints]).all(dim=0)
+            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.constraints]).all(dim=0)
             feasible_Y = prediction[feasible_maks]
 
         # Cast feasible points in maximization space
@@ -1251,14 +1250,14 @@ class BayesianOptimizer:
 
         n_points = self._Y_obj.shape[0]
 
-        if self._objective.output_constraints is None:
+        if self._objective.constraints is None:
             # No constraints — all points feasible
             self._feasible_mask = torch.ones(n_points, dtype=torch.bool, device=self._device)
         else:
             # Concatenate objectives and constraints, check all constraints ≤ 0
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
             self._feasible_mask = torch.stack(
-                [c(Y_full) <= 0 for c in self._objective.output_constraints]
+                [c(Y_full) <= 0 for c in self._objective.constraints]
             ).all(dim=0).squeeze()  # (n_constraints, n_points) -> (n_points,)
 
         if verbose:
@@ -1366,7 +1365,7 @@ class BayesianOptimizer:
         self._best_values.append(best_value)
 
         if verbose:
-            self._print_success(msg=f"{self._best_feasible_Y.item():.4f})")
+            self._print_success(msg=f"({best_value:.4f})")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,

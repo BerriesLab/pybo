@@ -77,6 +77,48 @@ line2d_plot_kwargs = {
     'linestyle': '-',
 }
 
+style_arrow_future = dict(
+    arrowstyle='->',
+    color='red',
+    lw=1.5,
+    alpha=0.8,
+    shrinkA=3,
+    shrinkB=3,
+    connectionstyle="arc3,rad=0.1",
+    ls='--'
+)
+
+style_arrow_past = dict(
+    arrowstyle='->',
+    color='white',
+    lw=1.5,
+    alpha=0.8,
+    shrinkA=3,
+    shrinkB=3,
+    connectionstyle="arc3,rad=0.1",
+)
+
+infeasible_observations = dict(
+    color='red',
+    marker='x',
+    facecolors='none',
+    label="Infeasible (Violated)",
+)
+
+feasible_observations = dict(
+    color='black',
+    marker='o',
+    facecolors='none',
+    label="Feasible Obs.",
+)
+
+feasible_ground_truth = dict(
+    color='red',
+    linestyle='--',
+    linewidth=1.5,
+    label="Infeasible Obs.",
+)
+
 
 def make_grid(size: int, bounds: torch.Tensor, dtype=torch.float64, device='cpu'):
     """

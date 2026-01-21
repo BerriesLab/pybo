@@ -22,7 +22,7 @@ class LowerBound:
 
 
 class Identity:
-    def __init__(self, index):
+    def __init__(self, index: int = -1):
         self.index = index
 
     def __call__(self, Z):

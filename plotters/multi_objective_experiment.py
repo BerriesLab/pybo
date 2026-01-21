@@ -141,7 +141,7 @@ class MultiObjectivePlotter(PlotterBase):
                 dim=-1
             )
             self.feasible_obj_mask = torch.stack(
-                [c(Y_full) <= 0 for c in self.bayesian_optimizer.objective.output_constraints]
+                [c(Y_full) <= 0 for c in self.bayesian_optimizer.objective.constraints]
             ).all(dim=-2)
 
     def _compute_feasible_ground_truth_mask(self):
@@ -151,7 +151,7 @@ class MultiObjectivePlotter(PlotterBase):
         else:
             Y_full = torch.cat([self.Y_obj_gt, self.Y_con_gt], dim=-1)
             self.feasible_gt_mask = torch.stack(
-                [c(Y_full) <= 0 for c in self.bayesian_optimizer.objective.output_constraints]).all(
+                [c(Y_full) <= 0 for c in self.bayesian_optimizer.objective.constraints]).all(
                 dim=-2)
 
     def _compute_infeasible_objectives_mask(self):
