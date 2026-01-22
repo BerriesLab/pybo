@@ -13,7 +13,7 @@ class RosenbrockConstrained(MCSingleObjectiveBase):
             num_constraints=0,
             num_trackers=0,
             obj_to_minimize=[True],
-            bounds=[(-2.0, 2.0), (-1.0, 3.0)],
+            bounds=[(-1, 1), (-1, 1)],
             ref_point=None,
             outcomes=[0],
             num_outcomes=1,
@@ -39,4 +39,4 @@ class RosenbrockConstrained(MCSingleObjectiveBase):
     @staticmethod
     def disk_constraint(X: Tensor) -> Tensor:
         # (x^2 + y^2) <= 2
-        return 2.0 - (X[..., 0] ** 2 + X[..., 1] ** 2)
+        return (X[..., 0] ** 2 + X[..., 1] ** 2) - 2.0

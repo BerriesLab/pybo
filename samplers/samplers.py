@@ -50,6 +50,7 @@ class SamplerBase(ABC):
         correction = torch.linalg.solve(ATA, error.T).T @ A
         return X - correction
 
+    # TODO: fix feasibility check using objective
     def draw_samples(self, n: int) -> torch.Tensor:
         valid_x = []
         num_attempts = 0
@@ -63,10 +64,7 @@ class SamplerBase(ABC):
             X = self._generate_base_samples(n_to_draw)
 
             # 2. Unnormalize
-            if not self.normalize:
-                if self.bounds is None:
-                    raise ValueError("If normalize is False, bounds must be provided.")
-                X = unnormalize(X, bounds=self.bounds)
+            # X = unnormalize(X, bounds=self.bounds)
 
             # 3. Project
             if self.linear_equality_constraints is not None:
@@ -82,11 +80,13 @@ class SamplerBase(ABC):
 
             if self.nonlinear_inequality_constraints:
                 for (constraint_fn, _) in self.nonlinear_inequality_constraints:
-                    constraint_mask &= (constraint_fn(X) >= 0)
+                    constraint_mask &= (constraint_fn(X) <= 0)
 
             if self.bounds is not None and not self.normalize:
                 within_bounds = (X >= self.bounds[0]).all(dim=-1) & (X <= self.bounds[1]).all(dim=-1)
                 constraint_mask &= within_bounds
+
+            # TODO: normalize now?!
 
             X = X[constraint_mask]
             if X.shape[0] > 0:

@@ -494,7 +494,10 @@ class BayesianOptimizer:
         # === 1. Compute metrics on current data ===
         self._compute_feasibility_mask(verbose=verbose)
         self._compute_acquisition_function_reference(verbose=verbose)
-        self._compute_metrics(verbose=verbose)
+        if self._objective.num_objectives == 1:
+            self._compute_best_value(verbose=verbose)
+        else:
+            self._compute_hypervolume(verbose=verbose)
 
         # === 2. Initialize and fit Model ===
         self._initialize_model(verbose=verbose)
@@ -634,9 +637,6 @@ class BayesianOptimizer:
             self._best_feasible_X = feasible_X[best_idx]
             self._best_feasible_Y = feasible_Y[best_idx]
             self._best_f = feasible_Y_max[best_idx]
-
-            # best_value = feasible_Y[best_idx].squeeze().item()
-            # self._best_values.append(best_value)
 
             if verbose:
                 self._print_success(msg=f"({self._best_feasible_Y.item():.4f} in max. space)")
@@ -1157,57 +1157,38 @@ class BayesianOptimizer:
             nonlinear_inequality_constraints=self.objective.nonlinear_inequality_input_constraints,
         )
 
-        # Identify previous points to exploit
-        n_prev_requested = int(frac_prev * num_restarts)
-        Y_obj = self._Y_obj.clone()
-        # Adjust for minimization (BoTorch assumes maximization)
-        Y_obj[..., self.objective.obj_to_minimize] *= -1
+        X_feas, Y_feas = self.compute_feasible_XY()
+        Y = Y_feas.clone()
+        X = X_feas.clone()
 
-        # LOGIC SPLIT: Multi-Objective vs Single-Objective
-        if self.objective.num_objectives > 1:
-            # Multi-objective: use Pareto front
-            mask = is_non_dominated(Y_obj)
-            X_candidates = self.X[mask]
-            # Shuffle to get a random spread of the frontier
-            idx = torch.randperm(X_candidates.shape[0])[:n_prev_requested]
-            prev_points = X_candidates[idx]
+        if X_feas.shape[0] > 0:
+            # Adjust for minimization (BoTorch assumes maximization)
+            Y[..., self.objective.obj_to_minimize] *= -1
+
+            n_requested = int(frac_prev * num_restarts)
+
+            # LOGIC SPLIT: Multi-Objective vs Single-Objective
+            if self.objective.num_objectives > 1:
+                # Multi-objective: use Pareto front
+                mask = is_non_dominated(Y)
+                X_candidates = X[mask]
+                n_to_take = min(int(frac_prev * num_restarts), X_candidates.shape[0])
+                idx = torch.randperm(X_candidates.shape[0])[:n_to_take]
+                prev_points = X_candidates[idx]
+            else:
+                # Single-objective: use feasible top performing points
+                _, indices = torch.sort(Y.squeeze(-1), descending=True)
+                n_to_take = min(n_requested, indices.shape[0])
+                prev_points = X[indices[:n_to_take]]
+                shuffle_idx = torch.randperm(prev_points.shape[0])
+                prev_points = prev_points[shuffle_idx]
         else:
-            # Single-objective: use top performing points
-            _, indices = torch.sort(Y_obj.squeeze(-1), descending=True)
-            # Take the top N requested points first
-            prev_points = self.X[indices[:n_prev_requested]]
-            # Optional: shuffle these top points if you want the optimizer
-            # to start in a random order
-            shuffle_idx = torch.randperm(prev_points.shape[0])
-            prev_points = prev_points[shuffle_idx]
+            # No feasible points found in history yet
+            prev_points = torch.empty(0, self.objective.dim, device=self._device)
 
         # 2. Generate new points (Exploration)
         n_new = max(0, num_restarts - prev_points.shape[0])
         raw_X = sampler.draw_samples(n=raw_samples)
-
-        # Determine number of points from previous Pareto front
-        # if self.X is not None and self._Y_obj is not None:
-        #     Y_obj_for_pareto = self._Y_obj.clone()
-        #     Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
-        #     pareto_mask = is_non_dominated(Y_obj_for_pareto)
-        #     X_pareto = self.X[pareto_mask]
-        #     n_pareto = int(frac_prev * num_restarts)
-        #     if X_pareto.shape[0] > 0:
-        #         # Randomly select n_pareto points
-        #         indices = torch.randperm(X_pareto.shape[0])[:n_pareto]
-        #         prev_points = X_pareto[indices]
-        #     else:
-        #         prev_points = torch.empty(0, bounds.shape[1], device=self._device)
-        #         n_pareto = 0
-        # else:
-        #     prev_points = torch.empty(0, bounds.shape[1], device=self._device)
-        #     n_pareto = 0
-        #
-        # # Determine number of previous and new points
-        # n_new = num_restarts - n_pareto
-        #
-        # # Draw raw samples for new points
-        # raw_X = sampler.draw_samples(n=raw_samples)
 
         if n_new > raw_X.shape[0]:
             raise RuntimeError(
@@ -1248,7 +1229,7 @@ class BayesianOptimizer:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
 
-    def _compute_feasibility_mask(self, verbose=True):
+    def _compute_feasibility_mask_bak(self, verbose=True):
         """ Compute feasibility mask on the original, non maximized, Y.
         If the objective is unconstrained, all observations are feasible.
         Otherwise, concatenate objectives and constraints along the last
@@ -1265,13 +1246,39 @@ class BayesianOptimizer:
             # No constraints — all points feasible
             self._feasible_mask = torch.ones(n_points, dtype=torch.bool, device=self._device)
         else:
-            # Concatenate objectives and constraints, check all constraints ≤ 0
+            # Concatenate objectives and constraints, check all constraints ≤ 0 (use 1e-6 for stability)
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
             self._feasible_mask = torch.stack(
-                [c(Y_full) <= 0 for c in self._objective.constraints]
+                [c(Y_full) <= 1e-6 for c in self._objective.constraints]
             ).all(dim=0).squeeze()  # (n_constraints, n_points) -> (n_points,)
 
         if verbose:
+            n_feasible = self._feasible_mask.sum().item()
+            self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
+
+    def _compute_feasibility_mask(self, verbose=True):
+        """ Computes a combined feasibility mask for all observed data.
+        A point is feasible only if it satisfies both Input and Output constraints. """
+        """ Compute feasibility mask on the original, non maximized, Y.
+        If the objective is unconstrained, all observations are feasible.
+        Otherwise, concatenate objectives and constraints along the last
+        dimension, then compute the feasibility mask: a point is feasible
+        only if all constraints are ≤ 0.
+        Handles arbitrary batch shapes: (..., n_points, n_outputs) -> (..., n_points) """
+
+        if verbose:
+            print("Computing feasibility mask... ", end="")
+
+        X_feasible = self.objective.is_input_feasible(self.X)
+        if self.objective.constraints is None:
+            Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
+        else:
+            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
+            Y_feasible = self.objective.is_output_feasible(Y_full)
+        self._feasible_mask = X_feasible & Y_feasible
+
+        if verbose:
+            n_points = self.X.shape[0]
             n_feasible = self._feasible_mask.sum().item()
             self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
 
@@ -1304,7 +1311,7 @@ class BayesianOptimizer:
         return feasible_X, feasible_Y
 
     def compute_infeasible_XY(self, verbose=False):
-        """ Computes infeasibile X and Y. This method assumes maximization,
+        """ Computes infeasible X and Y. This method assumes maximization,
         therefore, the Y must be cast into a maximization problem. """
 
         if verbose:
@@ -1331,13 +1338,6 @@ class BayesianOptimizer:
             print("✓")
 
         return infeasible_X, infeasible_Y
-
-    def _compute_metrics(self, verbose=True):
-        """Compute and store the appropriate metric based on problem type."""
-        if self._objective.num_objectives == 1:
-            self._compute_best_value(verbose=verbose)
-        else:
-            self._compute_hypervolume(verbose=verbose)
 
     def _compute_hypervolume(self, verbose=True):
         """ Compute the hypervolume metric. It assumes maximization. """

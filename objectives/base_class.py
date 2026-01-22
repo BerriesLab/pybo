@@ -36,6 +36,8 @@ class MCObjectiveBase(ABC):
     ):
         super().__init__()
 
+        """ Non-linear inequality constraints are satisfied if f(x) <= 0. """
+
         # === CUDA attributes ===
         self.device = device
         self.dtype = dtype
@@ -412,6 +414,59 @@ class MCObjectiveBase(ABC):
             raise ValueError("noise_std is required to add_noise.")
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
+
+    # === FEASIBILITY ===
+
+    def is_input_feasible(self, X: torch.Tensor) -> torch.Tensor:
+        """ Checks if input points X satisfy all input constraints (linear and nonlinear).
+        Returns a boolean mask of shape (batch_size,). """
+
+        # Start with a mask of all True
+        feasible_mask = torch.ones(X.shape[:-1], dtype=torch.bool, device=X.device)
+
+        # Check bounds
+        lower = self.bounds[0]
+        upper = self.bounds[1]
+        in_bounds = (X >= lower).all(dim=-1) & (X <= upper).all(dim=-1)
+        feasible_mask &= in_bounds
+
+        # Check linear equality input constraints
+        lin_eq = self.linear_equality_input_constraints
+        if lin_eq is not None:
+            A_eq, b_eq = lin_eq
+            # Check |A*x - b| < tolerance
+            res_eq = (X @ A_eq.T) - b_eq.T
+            feasible_mask &= (res_eq.abs() <= 1e-6).all(dim=-1)
+
+        # Check linear inequality input constraints (A*x <= b)
+        lin_ineq = self.linear_inequality_input_constraints
+        if lin_ineq is not None:
+            A_ineq, b_ineq = lin_ineq
+            res_ineq = (X @ A_ineq.T) - b_ineq.T
+            feasible_mask &= (res_ineq <= 1e-6).all(dim=-1)
+
+        # Check nonlinear inequality input constraints (c(x) <= 0)
+        nonlin_ineq = self.nonlinear_inequality_input_constraints
+        if nonlin_ineq is not None:
+            for c_func, _ in nonlin_ineq:
+                feasible_mask &= (c_func(X) <= 1e-6).squeeze(-1)
+
+        return feasible_mask
+
+    def is_output_feasible(self, Y: Tensor) -> Tensor:
+        """ Checks if the objective/constraint outputs Y satisfy the performance constraints.
+            Y is expected to be [batch_shape, num_objectives + num_constraints]. """
+
+        if not hasattr(self, 'constraints') or self.constraints is None:
+            return torch.ones(Y.shape[:-1], dtype=torch.bool, device=Y.device)
+
+        # Each c in self.constraints is a callable that returns <= 0 for feasible
+        # We stack them and check if all are satisfied
+        feasible_mask = torch.stack(
+            [c(Y) <= 1e-6 for c in self.constraints]
+        ).all(dim=0).squeeze(-1)
+
+        return feasible_mask
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):

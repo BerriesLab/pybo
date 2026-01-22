@@ -18,7 +18,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = RosenbrockConstrained(device=DEVICE, dtype=DTYPE, )
+    objective = RosenbrockConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
@@ -26,6 +26,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
     # Compute the true objective values at the sampled points.
+    # TODO: fix feasibility check using objective
     sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
