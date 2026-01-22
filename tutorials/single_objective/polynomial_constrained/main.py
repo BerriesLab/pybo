@@ -2,8 +2,9 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from objectives.single_objective.polynomial import Polynomial
+
 from plotters.acqf import Acqf1DPlotter
+from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
 from plotters.experiment import Experiment1DPlotter
 from samplers.samplers import *
 from plotters.evolution import *
@@ -18,7 +19,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Polynomial(device=DEVICE, dtype=DTYPE, )
+    objective = PolynomialConstrained(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
     kernel = ScaleKernel(base_kernel=RBFKernel())
@@ -37,6 +38,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
+    Y_con = objective.evaluate_true_constraint(X)
 
     """ Instantiate Bayesian optimizer """
     bo = BayesianOptimizer(
@@ -48,14 +50,14 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
-        Y_con=None,
+        Y_con=Y_con,
         Y_con_var=None,
         batch_size=q,
     )
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bo.is_converged(patience=10):
+        if i > 0 and bo.is_converged(patience=20):
             break
 
         print("\n\n")
@@ -65,14 +67,18 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-2, 2), (-2, 8)
-        lims = [x_lims, y_lims]
-        Experiment1DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        Acqf1DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        x_lim, y_lim = (0, 1), (-0.2, 0.5)
+        experiment_plotter = Experiment1DPlotter(bo=bo)
+        experiment_plotter.ax.set_xlim(x_lim)
+        experiment_plotter.ax.set_ylim(y_lim)
+        experiment_plotter.plot().save_figure().close_figure()
+        acqf_plotter = Acqf1DPlotter(bo=bo)
+        acqf_plotter.ax.set_xlim(x_lim)
+        acqf_plotter.plot().save_figure().close_figure()
+        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+        ParameterPlotter(bo=bo).plot().save_figure().close_figure()
+        ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
@@ -81,8 +87,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_con = objective.evaluate_true_constraint(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
 
     print("Optimization Finished.")
 
@@ -93,6 +100,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2]
+    batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
-        main(n_samples=16, q=batch_size, output_dir=main_path)
+        main(n_samples=32, q=batch_size, output_dir=main_path)

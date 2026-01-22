@@ -1,11 +1,10 @@
 import torch
 from matplotlib import pyplot as plt
-from typing import List
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 from plotters.styles import *
-from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from objectives.base_class import MCSingleObjectiveBase
 
 
 class Experiment1DPlotter(PlotterBase):
@@ -20,71 +19,107 @@ class Experiment1DPlotter(PlotterBase):
         self.ax.set_xlabel(bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x$")
         self.ax.set_ylabel(bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$f(x)$")
 
-    # TODO: def plot_feasible_ground_truth(self):
-
-    # TODO: def plot_infeasible_ground_truth(self):
-
-    def plot_ground_truth(self, zorder: int = 1):
-        """Plots the true objective function as a dashed red line."""
-        # Generate 1D grid using the base class method
-        X_grid = self._generate_uniform_grid()
-        # Evaluate the true objective function
-        Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
-
-        if X_grid is not None and Y_obj_gt is not None:
-            self.ax.plot(
-                X_grid.detach().cpu().numpy(),
-                Y_obj_gt.detach().cpu().numpy(),
-                zorder=zorder,
-                **feasible_ground_truth
-            )
-        return self
-
-    def plot_gp_posterior(self, sigma: float = 2.0, zorder: int = 2):
-        """Plots the GP mean and the confidence interval (uncertainty)."""
+    def plot_gp_posterior(self, zorder: int = 0):
         if self.bo.model is None:
             return self
 
         X_grid = self._generate_uniform_grid()
 
         with torch.no_grad():
-            # Get posterior distribution from the GP model
+            # Note: model.posterior() returns a value for each GP model, including those associated with
+            # the constraints. Therefore, here we keep only the posterior associated with the objective outcomes.
             posterior = self.bo.model.posterior(X_grid)
             mean = posterior.mean[..., self.bo.objective.outcomes].squeeze(-1)
             std = posterior.variance.sqrt()[..., self.bo.objective.outcomes].squeeze(-1)
-            # Note that we kept only the posterior associated with the objective outcomes
 
         X_np = X_grid.squeeze().cpu().numpy()
         mean_np = mean.cpu().numpy()
         std_np = std.cpu().numpy()
 
         # Plot GP Mean
-        self.ax.plot(X_np, mean_np, color='blue', label='GP Mean', zorder=zorder)
+        self.ax.plot(
+            X_np,
+            mean_np,
+            zorder=zorder,
+            **gp_mean
+        )
 
-        # Plot Confidence Interval (shaded area)
+        # Plot Confidence Intervals (shaded area)
         self.ax.fill_between(
             X_np,
-            mean_np - sigma * std_np,
-            mean_np + sigma * std_np,
-            color='blue',
-            alpha=0.2,
-            label=f'Confidence ±{sigma}σ',
-            zorder=zorder - 1
+            mean_np - std_np,
+            mean_np + std_np,
+            zorder=zorder,
+            **gp_confidence_interval_1sigma
         )
+        self.ax.fill_between(
+            X_np,
+            mean_np - 2 * std_np,
+            mean_np + 2 * std_np,
+            zorder=zorder,
+            **gp_confidence_interval_2sigma
+        )
+        self.ax.fill_between(
+            X_np,
+            mean_np - 3 * std_np,
+            mean_np + 3 * std_np,
+            zorder=zorder,
+            **gp_confidence_interval_3sigma
+        )
+
         return self
 
-    def plot_feasible_observations(self, zorder: int = 3):
-        X_f, Y_f = self.bo.compute_feasible_XY()
-        if X_f is not None:
+    def plot_ground_truth(self, zorder: int = 1):
+        X_grid = self._generate_uniform_grid()
+        Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
+        Y_con_gt = self.bo.objective.evaluate_true_constraint(X_grid)
+        Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
+        feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
+        if feasible_mask.any():
+            feasible_X = X_grid[feasible_mask]
+            feasible_Y = Y_obj_gt[feasible_mask]
             self.ax.scatter(
-                X_f.detach().cpu().numpy(),
-                Y_f.detach().cpu().numpy(),
+                x=feasible_X.detach().cpu().numpy(),
+                y=feasible_Y.detach().cpu().numpy(),
+                zorder=zorder,
+                **feasible_ground_truth
+            )
+        infeasible_mask = torch.logical_not(feasible_mask)
+        if infeasible_mask.any():
+            infeasible_X = X_grid[infeasible_mask]
+            infeasible_Y = Y_obj_gt[infeasible_mask]
+            self.ax.scatter(
+                x=infeasible_X.detach().cpu().numpy(),
+                y=infeasible_Y.detach().cpu().numpy(),
+                zorder=zorder,
+                **infeasible_ground_truth
+            )
+
+        return self
+
+    def plot_observations(self, zorder: int = 2):
+        # Note: scatter plots are used as feasible and infeasible regions may lead to discontinuities.
+        X_best, Y_best = self.bo.best_feasible_X, self.bo.best_feasible_Y
+        X_f, Y_f = self.bo.compute_feasible_XY()
+        X_i, Y_i = self.bo.compute_infeasible_XY()
+
+        X_f_plot, Y_f_plot = X_f, Y_f
+        if X_f is not None and X_best is not None:
+            # Create a mask for all points that are NOT the current best
+            # This assumes X_f and X_best are torch tensors; use np.equal for numpy
+            mask = torch.logical_not(X_f == X_best).all(dim=-1)
+            X_f_plot, Y_f_plot = X_f[mask], Y_f[mask]
+
+        # Plot feasible observations (excluding the optimum)
+        if X_f_plot is not None and X_f_plot.nelement() > 0:
+            self.ax.scatter(
+                X_f_plot.detach().cpu().numpy(),
+                Y_f_plot.detach().cpu().numpy(),
                 zorder=zorder,
                 **feasible_observations
             )
 
-    def plot_infeasible_observations(self, zorder: int = 3):
-        X_i, Y_i = self.bo.compute_infeasible_XY()
+        # Plot infeasible observations
         if X_i is not None:
             self.ax.scatter(
                 X_i.detach().cpu().numpy(),
@@ -92,10 +127,19 @@ class Experiment1DPlotter(PlotterBase):
                 zorder=zorder,
                 **infeasible_observations
             )
+
+        # Plot optimum
+        if X_best is not None:
+            self.ax.scatter(
+                X_best.detach().cpu().numpy(),
+                Y_best.detach().cpu().numpy(),
+                zorder=zorder,
+                **optimum,
+            )
+
         return self
 
-    def plot_next_X(self, zorder: int = 5):
-        """ Draws vertical lines at the coordinates suggested for the next iteration. """
+    def plot_next_X(self, zorder: int = 4):
         new_x = self.bo.new_X
 
         if new_x is not None:
@@ -103,40 +147,17 @@ class Experiment1DPlotter(PlotterBase):
             new_x_np = new_x.detach().cpu().numpy().flatten()
 
             for i, x in enumerate(new_x_np):
-                label = "Next Sample (New X)" if i == 0 else None
                 self.ax.axvline(
                     x=x,
-                    color='green',  # Using green to distinguish from red ground truth
-                    linestyle=':',
-                    linewidth=2,
-                    label=label,
-                    zorder=zorder
+                    zorder=zorder,
+                    **new_X_1d
                 )
         return self
 
-    def plot_optimum(self, zorder: int = 4):
-        """Highlights the best feasible solution found so far."""
-        X_best, Y_best = self.bo.best_feasible_X, self.bo.best_feasible_Y
-        if X_best is not None:
-            self.ax.scatter(
-                X_best.detach().cpu().numpy(),
-                Y_best.detach().cpu().numpy(),
-                color='orange',
-                marker='D',
-                s=50,
-                edgecolors='black',
-                label="Best Found",
-                zorder=zorder,
-            )
-        return self
-
     def plot(self):
-        """Executes the full 1D plotting pipeline with legend locked at top-right."""
         self.plot_gp_posterior()
         self.plot_ground_truth()
-        self.plot_feasible_observations()
-        self.plot_infeasible_observations()
-        self.plot_optimum()
+        self.plot_observations()
         self.plot_next_X()
         self.ax.legend(loc='upper right', fontsize='small', frameon=True)
         return self

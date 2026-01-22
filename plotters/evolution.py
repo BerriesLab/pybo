@@ -60,10 +60,10 @@ class HypervolumePlotter(PlotterBase):
 
 
 class HypervolumeImprovementPlotter(PlotterBase):
-    def __init__(self, b0: BayesianOptimizer):
+    def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
-        if not isinstance(b0.objective, MCMultiObjectiveBase):
+        if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
@@ -111,7 +111,7 @@ class ElapsedTimePlotter(PlotterBase):
 
 
 class ParameterPlotter(PlotterBase):
-    def __init__(self, bo: BayesianOptimizer, idx: int):
+    def __init__(self, bo: BayesianOptimizer, idx: int = 0):
         super().__init__(bo=bo)
 
         self.idx = idx

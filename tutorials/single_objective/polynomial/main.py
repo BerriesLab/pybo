@@ -2,8 +2,7 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from gpytorch.constraints import Interval
-from objectives.single_objective.periodic import Periodic
+from tutorials.single_objective.polynomial.objective import Polynomial
 from plotters.acqf import Acqf1DPlotter
 from plotters.experiment import Experiment1DPlotter
 from samplers.samplers import *
@@ -19,15 +18,10 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Periodic(device=DEVICE, dtype=DTYPE, )
+    objective = Polynomial(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(
-        base_kernel=PeriodicKernel(
-            period_length_prior=None,
-            period_length_constraint=Interval(1 / 12 * 0.8, 1 / 12 * 1.2),
-        )
-    )
+    kernel = ScaleKernel(base_kernel=RBFKernel())
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -39,7 +33,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         n_dimensions=objective.num_objectives,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-        seed=45,
+        seed=42,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
@@ -61,7 +55,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bo.is_converged(patience=32):
+        if i > 0 and bo.is_converged(patience=10):
             break
 
         print("\n\n")
@@ -71,7 +65,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-3, 3), (-2, 2)
+        x_lims, y_lims = (-2, 2), (-2, 8)
         lims = [x_lims, y_lims]
         Experiment1DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
         Acqf1DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
@@ -99,6 +93,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1]
+    batch_sizes = [1, 2]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_samples=16, q=batch_size, output_dir=main_path)

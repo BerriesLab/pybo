@@ -2,32 +2,33 @@ import os
 import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.multi_objective.linear_inequality_test import LinearInequalityTestProblem
+from tutorials.multi_objective.formaco.objective import FormACOMCMultiOutputConstrainedObjective
 from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective_experiment import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
     ObjectivePlotter, TrackerPlotter, ConstraintPlotter
+from plotters.styles import make_grid
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples: int = 64, q: int = 1, ):
+def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"linear_inequality_test"
+    experiment_name = f"formaco_constrained"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = LinearInequalityTestProblem(
+    objective = FormACOMCMultiOutputConstrainedObjective(
         device=DEVICE,
         dtype=DTYPE,
     )
 
-    """ Instantiate a random generator """
+    """ Generate initial dataset """
     sampler = SamplerBase(
         device=DEVICE,
         dtype=DTYPE,
@@ -35,17 +36,21 @@ def main(n_samples: int = 64, q: int = 1, ):
         bounds=objective.bounds,
         n_dimensions=objective.dim,
         normalize=False,
-        linear_inequality_constraints=objective.linear_inequality_input_constraints,
     )
-
-    """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true_objective(X)
+    Y_obj = objective.evaluate_true_objective(X=X)
+    Y_track = objective.evaluate_trackers(X=X)
+    Y_con = objective.evaluate_true_constraint(X=X)
 
-    """ Generate samples for ground truth evaluation """
-    # If constraints apply to X, use a random generator for the ground truth,
-    # since make_grid cannot handle constraints.
-    X_gt = sampler.draw_samples(n=1000)
+    """ Generate samples for ground truth evaluation - random sampler or grid """
+    # This is done before the optimization loop to show the same ground truth
+    # in each iteration step's figure.
+    gnd_truth_X = make_grid(
+        size=20,
+        bounds=objective.bounds,
+        device=DEVICE,
+        dtype=DTYPE
+    )
 
     """ Instantiate a Mobo object """
     mobo = BayesianOptimizer(
@@ -54,8 +59,11 @@ def main(n_samples: int = 64, q: int = 1, ):
         dtype=DTYPE,
         objective=objective,
         acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
+        sampler_type=SamplerType.Sobol,
         X=X,
         Y_obj=Y_obj,
+        Y_con=Y_con,
+        Y_track=Y_track,
         batch_size=q,
     )
 
@@ -70,13 +78,17 @@ def main(n_samples: int = 64, q: int = 1, ):
         print(f"New X: {new_X.detach().cpu().numpy()}")
 
         """ Evaluate posterior and acquisition function at new X """
-        mobo.compute_acquisition_function_value_at_X(new_X)
-        mobo.compute_posterior_mean_at_X(new_X)
+        mobo.compute_acquisition_function_value_at_X(X=new_X)
+        mobo.compute_posterior_mean_at_X(X=new_X)
 
         """ Simulate experiment at new X """
-        new_Yobj = objective.evaluate_true_objective(new_X)
-        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
+        new_Y_obj = objective.evaluate_true_objective(X=new_X)
+        new_Y_track = objective.evaluate_trackers(X=new_X)
+        new_Y_con = objective.evaluate_true_constraint(X=new_X)
+        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
+        print(f"New Y_track: {new_Y_track.detach().cpu().numpy()}")
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con, new_Y_track=new_Y_track)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()
@@ -87,14 +99,11 @@ def main(n_samples: int = 64, q: int = 1, ):
 
         """ Plots """
         multi_objective_plotter = MultiObjectivePlotter(
-            title="Pareto Front",
             bayesian_optimizer=mobo,
-            X_gt=X_gt,
+            X_gt=gnd_truth_X,
             idx_x=0,
             idx_y=1,
-            idx_color=None,
-            use_tracker=True,
-            pareto_idxs=[0, 1],
+            pareto_idxs=[0, 1]
         )
         multi_objective_plotter.plot_ground_truth()
         multi_objective_plotter.plot_objectives()

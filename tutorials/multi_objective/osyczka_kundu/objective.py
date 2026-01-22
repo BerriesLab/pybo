@@ -2,17 +2,13 @@ import os
 import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
+from tutorials.multi_objective.osyczka_kundu.main import OsyczkaKundu
 from samplers.samplers import SamplerBase
-from objectives.multi_objective.c2dtlz2 import C2DTLZ2MCMultiOutputObjective
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective_experiment import MultiObjectivePlotter
 from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
-    ConstraintPlotter, TrackerPlotter, ObjectivePlotter
-
-""" Note: the ground truth of a C2DTLZ2 problem is hard to represent with Sobol sampling. Please
-refer to https://botorch.org/docs/tutorials/constrained_multi_objective_bo/ to compare the results
-obtained with this script against the official BoTorch tutorial. """
+    ObjectivePlotter, TrackerPlotter, ConstraintPlotter
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -21,12 +17,12 @@ DTYPE = torch.float64
 def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"c2dtlz2"
+    experiment_name = f"osyczka_kundu"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = C2DTLZ2MCMultiOutputObjective(
+    objective = OsyczkaKundu(
         device=DEVICE,
         dtype=DTYPE,
     )
@@ -39,17 +35,18 @@ def main(n_samples=64, q: int = 1, ):
         bounds=objective.bounds,
         n_dimensions=objective.dim,
         normalize=False,
+        linear_inequality_constraints=objective.linear_inequality_input_constraints,
+        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
     )
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
-    Y_con = objective.evaluate_true_slack(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
-    # This is done before the optimization loop to show the same ground truth
-    # in each iteration step's figure.
-    X_gt = sampler.draw_samples(n=10000)
+    # When constraints apply to the input X, build the ground truth by using
+    # a random generator subject to constraints
+    X_gt = sampler.draw_samples(n=10_000)
 
     """ Instantiate a Mobo object """
     mobo = BayesianOptimizer(
@@ -58,12 +55,10 @@ def main(n_samples=64, q: int = 1, ):
         dtype=DTYPE,
         objective=objective,
         acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
-        sampler_type=SamplerType.Sobol,
         X=X,
         Y_obj=Y_obj,
-        Y_obj_var=None,
-        Y_con=Y_con,
-        Y_con_var=None,
+        n_acqf_opt_restarts=50,
+        raw_samples=1024,
         batch_size=q,
     )
 
@@ -82,11 +77,9 @@ def main(n_samples=64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true_objective(new_X)
-        new_Y_con = objective.evaluate_true_slack(new_X)
-        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
+        new_Yobj = objective.evaluate_true_objective(new_X)
+        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
 
         """ Compute pareto front and hypervolume """
         mobo.compute_pareto_front()

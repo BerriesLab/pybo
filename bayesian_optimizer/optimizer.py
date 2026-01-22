@@ -515,21 +515,6 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
-    #
-    # def _initialize_kernel(self, verbose=True):
-    #     """ Initialize a kernel (or covariance module) instance using the kernel.
-    #     Note that, by building a fresh covariance module for each model and for each optimization
-    #     iteration, kernels are freshly optimized at each iteration. """
-    #
-    #     if verbose:
-    #         kernel = self.kernel.__class__.__name__.replace("KernelBuilder", "")
-    #         print(f"Initializing kernel instance of type {kernel}... ", end="")
-    #
-    #     self._kernel = self._kernel_builder.build()
-    #
-    #     if verbose:
-    #         self._print_success()
-
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
 

@@ -1,9 +1,10 @@
 from pathlib import Path
-import torch
 from bayesian_optimizer.optimizer import BayesianOptimizer
+from objectives.base_class import MCSingleObjectiveBase
 from plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
+from plotters.styles import *
 
 
 class Acqf1DPlotter(PlotterBase):
@@ -12,9 +13,14 @@ class Acqf1DPlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
-    def plot_acquisition(self, color: str = 'green', linewidth: float = 1.5,
-                         label: str = 'Acquisition Function', n_points=1000):
-        """Plot the acquisition function values."""
+        if not isinstance(bo.objective, MCSingleObjectiveBase):
+            raise TypeError("Objective must be of type MCSingleObjectiveBase")
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel(bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x$")
+        self.ax.set_ylabel(bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$f(x)$")
+
+    def plot_acquisition(self):
         if self.bo.acqf_instance is None:
             raise ValueError("Acquisition function must be set before plotting.")
 
@@ -28,42 +34,31 @@ class Acqf1DPlotter(PlotterBase):
 
         if getattr(self.bo.acqf, "_log"):
             log_abs_acqf = np.log(np.abs(acq_np))
-            self.ax.plot(X_np, -log_abs_acqf, color=color, linewidth=linewidth, label=label)
+            self.ax.plot(X_np, -log_abs_acqf, **acqf_1d)
             self.ax.set_ylabel(r'$-\log \left( | \mathrm{Acquisition\ Value} | \right) $')
         else:
-            self.ax.plot(X_np, acq_np, color=color, linewidth=linewidth, label=label)
+            self.ax.plot(X_np, acq_np, **acqf_1d)
             self.ax.set_ylabel(r'$\mathrm{Acquisition\ Value}$')
 
         return self
 
     def plot_next_X(self):
-        """Mark the next suggested point."""
         X = self.bo.new_X.detach().cpu().numpy()
         if X is not None:
             if X.ndim == 0:
                 X = [X.item()]
             for i, x in enumerate(X):
-                self.ax.axvline(
-                    x=x,
-                    linestyle='--',
-                    color='red',
-                    alpha=0.7,
-                    label="Next X" if i == 0 else None
-                )
-        return self
-
-    def plot_legend(self, loc: str = "best"):
-        self.ax.legend(loc=loc)
+                self.ax.axvline(x=x, **new_X_1d)
         return self
 
     def plot(self):
         self.plot_acquisition()
         self.plot_next_X()
-        self.plot_legend()
+        self.ax.legend(loc='upper right', fontsize='small', frameon=True)
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = filename or "acquisition.png"
+        filename = filename or "acqf.png"
         return super().save_figure(filename=filename)
 
 

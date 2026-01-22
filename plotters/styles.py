@@ -1,6 +1,8 @@
 import torch
 
-ms = 7
+ms = 8
+ms_gt = ms / 2
+
 feasible_pareto_objectives_kwargs = {
     'color': 'tab:orange',
     'marker': 'D',
@@ -76,48 +78,98 @@ line2d_plot_kwargs = {
     'alpha': 1,
     'linestyle': '-',
 }
+style_arrow_future = {
+    'arrowstyle': '->',
+    'color': 'red',
+    'lw': 1.5,
+    'alpha': 0.8,
+    'shrinkA': 3,
+    'shrinkB': 3,
+    'connectionstyle': "arc3,rad=0.1",
+    'ls': '--'
+}
+style_arrow_past = {
+    'arrowstyle': '->',
+    'color': 'white',
+    'lw': 1.5,
+    'alpha': 0.8,
+    'shrinkA': 3,
+    'shrinkB': 3,
+    'connectionstyle': "arc3,rad=0.1",
+}
+infeasible_observations = {
+    'facecolor': 'red',
+    'edgecolor': 'black',
+    'marker': 'X',
+    's': ms ** 2,
+    'label': "Infeasible Obs.",
+    'alpha': 0.8,
+}
+feasible_observations = {
+    'facecolor': 'white',
+    'edgecolor': 'black',
+    'marker': 'o',
+    's': ms ** 2,
+    'label': "Feasible Obs.",
+    'alpha': 0.8,
+}
+feasible_ground_truth = {
+    'color': 'black',
+    'marker': ".",
+    's': ms_gt ** 2,
+    'facecolors': 'none',
+    'label': "Feasible GT.",
+}
+infeasible_ground_truth = {
+    'color': 'red',
+    'marker': ".",
+    's': ms_gt ** 2,
+    'facecolors': 'none',
+    'label': "Infeasible GT.",
+}
 
-style_arrow_future = dict(
-    arrowstyle='->',
-    color='red',
-    lw=1.5,
-    alpha=0.8,
-    shrinkA=3,
-    shrinkB=3,
-    connectionstyle="arc3,rad=0.1",
-    ls='--'
-)
+# ===== 1D Experiments =====
 
-style_arrow_past = dict(
-    arrowstyle='->',
-    color='white',
-    lw=1.5,
-    alpha=0.8,
-    shrinkA=3,
-    shrinkB=3,
-    connectionstyle="arc3,rad=0.1",
-)
+gp_mean = {
+    'color': 'blue',
+    'label': r'GP $\mu$',
+}
+gp_confidence_interval_1sigma = {
+    'color': 'blue',
+    'alpha': 0.1,
+    'label': r'GP $\pm 1 \sigma$',
+}
+gp_confidence_interval_2sigma = {
+    'color': 'blue',
+    'alpha': 0.05,
+    'label': r'GP $\pm 2 \sigma$',
+}
+gp_confidence_interval_3sigma = {
+    'color': 'blue',
+    'alpha': 0.02,
+    'label': r'GP $\pm 3 \sigma$',
+}
+new_X_1d = {
+    'color': 'green',
+    'linestyle': ':',
+    'linewidth': 2,
+    'label': r"New $X$",
+}
+optimum = {
+    'color': 'orange',
+    'marker': 'D',
+    's': ms ** 2,
+    'edgecolors': 'black',
+    'label': "Optimum",
+}
+acqf_1d = {
+    'color': 'black',
+    'linewidth': 1.5,
+    'label': 'Acqf.'
+}
 
-infeasible_observations = dict(
-    color='red',
-    marker='x',
-    facecolors='none',
-    label="Infeasible (Violated)",
-)
 
-feasible_observations = dict(
-    color='black',
-    marker='o',
-    facecolors='none',
-    label="Feasible Obs.",
-)
-
-feasible_ground_truth = dict(
-    color='red',
-    linestyle='--',
-    linewidth=1.5,
-    label="Infeasible Obs.",
-)
+# ===== 2D Experiments =====
 
 
 def make_grid(size: int, bounds: torch.Tensor, dtype=torch.float64, device='cpu'):

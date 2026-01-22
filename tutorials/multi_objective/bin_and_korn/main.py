@@ -6,24 +6,23 @@ from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective_experiment import MultiObjectivePlotter
-from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
-    ObjectivePlotter, TrackerPlotter, ConstraintPlotter
-from plotters.styles import make_grid
-from objectives.multi_objective.branin_currin import BraninCurrinMCMultiOutputObjective
+from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
+    ConstraintPlotter, TrackerPlotter, ParameterPlotter
+from tutorials.multi_objective.bin_and_korn.objective import BinhAndKornMCMultiOutputObjective
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples: int = 64, q: int = 1, ):
+def main(n_samples=64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"branincurrin"
+    experiment_name = f"binh_and_korn"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
-    """ Define the objective """
-    objective = BraninCurrinMCMultiOutputObjective(
+    """ Define the true_objective """
+    objective = BinhAndKornMCMultiOutputObjective(
         device=DEVICE,
         dtype=DTYPE,
     )
@@ -34,8 +33,9 @@ def main(n_samples: int = 64, q: int = 1, ):
         dtype=DTYPE,
         sampler_type=SamplerType.Sobol,
         bounds=objective.bounds,
-        n_dimensions=objective.dim,
-        normalize=False
+        n_dimensions=objective.num_objectives,
+        normalize=False,
+        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
     )
 
     """ Generate initial dataset """
@@ -43,30 +43,29 @@ def main(n_samples: int = 64, q: int = 1, ):
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
-    # This is done before the optimization loop to show the same ground truth
-    # in each iteration step's figure.
-    X_gt = make_grid(
-        device=DEVICE,
-        dtype=DTYPE,
-        size=100,
-        bounds=objective.bounds,
-    )
+    # When constraints apply to the input X, build the ground truth by using
+    # a random generator subject to constraints
+    X_gt = sampler.draw_samples(n=1000)
 
-    """ Instantiate a Mobo object """
+    """ Main optimization loop """
     mobo = BayesianOptimizer(
         experiment_name=experiment_name,
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_builder=AcquisitionFunctionType.qLogEHVI,
+        acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
         X=X,
         Y_obj=Y_obj,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
         batch_size=q,
+
     )
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        print("\n")
+        print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
@@ -79,18 +78,16 @@ def main(n_samples: int = 64, q: int = 1, ):
         mobo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Yobj = objective.evaluate_true_objective(new_X)
-        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        mobo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Compute pareto front and hypervolume """
+        mobo._compute_feasibility_mask()
         mobo.compute_pareto_front()
         mobo.compute_hypervolume()
 
         """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"bayesian_optimizer.dat")
-
-        """ Plots """
         multi_objective_plotter = MultiObjectivePlotter(
             title="Pareto Front",
             bayesian_optimizer=mobo,
@@ -103,7 +100,7 @@ def main(n_samples: int = 64, q: int = 1, ):
         )
         multi_objective_plotter.plot_ground_truth()
         multi_objective_plotter.plot_objectives()
-        multi_objective_plotter.save_figure().close_figure()
+        multi_objective_plotter.save_figure()
         ElapsedTimePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
         HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()

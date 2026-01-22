@@ -2,9 +2,8 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from objectives.single_objective.quadratic import Quadratic
-from plotters.acqf import Acqf1DPlotter
-from plotters.experiment import Experiment1DPlotter
+from tutorials.single_objective.ackley_function.objective import Ackley
+from plotters.experiment import *
 from samplers.samplers import *
 from plotters.evolution import *
 
@@ -18,10 +17,10 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Quadratic(device=DEVICE, dtype=DTYPE, )
+    objective = Ackley(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel())
+    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
 
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
@@ -30,12 +29,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
+        n_dimensions=objective.dim,
         normalize=False,
         nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-        seed=42,
+        seed=45,
     )
-    X = sampler.draw_samples(n=2 * (objective.dim + 1))
+    X = sampler.draw_samples(n=3 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -55,7 +54,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bo.is_converged(patience=10):
+        if i > 0 and bo.is_converged(patience=32):
             break
 
         print("\n\n")
@@ -65,14 +64,21 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-1, 5), (-1, 10)
-        lims = [x_lims, y_lims]
-        Experiment1DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        Acqf1DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        x1_lim, x2_lim = (-5, 5), (-5, 5)
+        experiment_plot = Experiment2DPlotter(bo=bo)
+        experiment_plot.ax.set_xlim(x1_lim)
+        experiment_plot.ax.set_ylim(x2_lim)
+        experiment_plot.plot().save_figure().close_figure()
+        # acqf_plot = Acqf2DPlotter(bo=bo)
+        # acqf_plot.ax.set_xlim(x1_lim)
+        # acqf_plot.ax.set_ylim(x2_lim)
+        # acqf_plot.plot().save_figure().close_figure()
+        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+        for idx in range(bo.objective.dim):
+            ParameterPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_objectives):
+            ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
@@ -93,6 +99,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2]
+    batch_sizes = [1, 2, 4, 8]
     for batch_size in batch_sizes:
-        main(n_samples=8, q=batch_size, output_dir=main_path)
+        main(n_samples=32, q=batch_size, output_dir=main_path)

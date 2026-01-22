@@ -2,7 +2,7 @@ import os
 import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.multi_objective.osyczka_kundu import OsyczkaKundu
+from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTestProblem
 from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
@@ -14,15 +14,15 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples=64, q: int = 1, ):
+def main(n_samples: int = 64, q: int = 1, ):
     data_path = main_path / "data"
     data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"osyczka_kundu"
+    experiment_name = f"linear_inequality_test"
     directory = create_experiment_directory(data_path, experiment_name)
     os.chdir(directory)
 
     """ Define the objective """
-    objective = OsyczkaKundu(
+    objective = LinearInequalityTestProblem(
         device=DEVICE,
         dtype=DTYPE,
     )
@@ -36,17 +36,16 @@ def main(n_samples=64, q: int = 1, ):
         n_dimensions=objective.dim,
         normalize=False,
         linear_inequality_constraints=objective.linear_inequality_input_constraints,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
     )
 
     """ Generate initial dataset """
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
-    """ Generate samples for ground truth evaluation - random sampler or grid """
-    # When constraints apply to the input X, build the ground truth by using
-    # a random generator subject to constraints
-    X_gt = sampler.draw_samples(n=10_000)
+    """ Generate samples for ground truth evaluation """
+    # If constraints apply to X, use a random generator for the ground truth,
+    # since make_grid cannot handle constraints.
+    X_gt = sampler.draw_samples(n=1000)
 
     """ Instantiate a Mobo object """
     mobo = BayesianOptimizer(
@@ -57,8 +56,6 @@ def main(n_samples=64, q: int = 1, ):
         acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
         X=X,
         Y_obj=Y_obj,
-        n_acqf_opt_restarts=50,
-        raw_samples=1024,
         batch_size=q,
     )
 

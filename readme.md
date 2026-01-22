@@ -149,17 +149,17 @@ The current version of `pyBO` provides built-in tools to visualize:
 Explore the following examples to learn how to use `pyBO`, and make sure to
 review the corresponding objective definitions.
 
-- [Branin-Currin](tutorials/multi_objective/BraninCurrin.py): An unconstrained
+- [Branin-Currin](tutorials/multi_objective/branin_currin/main.py): An unconstrained
   bi-objective optimization problem.
-- [Linear Equality Test](tutorials/multi_objective/linear_equality_test.py): A
+- [Linear Equality Test](tutorials/multi_objective/linear_equality/main.py): A
   linear equality input constrained bi-objective optimization problem.
-- [Linear Inequality Test](tutorials/multi_objective/linear_inequality_test.py):
+- [Linear Inequality Test](tutorials/multi_objective/linear_inequality/main.py):
   A linear inequality input constrained bi-objective optimization problem.
-- [Binh and Korn](tutorials/multi_objective/BinhKorn.py): A nonlinear inequality
+- [Binh and Korn](tutorials/multi_objective/bin_and_korn/main.py): A nonlinear inequality
   input constrained bi-objective optimization problem.
-- [Osyczka-Kundu](tutorials/multi_objective/OsyczkaKundu.py): A liner and
+- [Osyczka-Kundu](tutorials/multi_objective/osyczka_kundu/objective.py): A liner and
   nonlinear inequality input constrained bi-objective optimization problem.
-- [C2DTLZ2](tutorials/multi_objective/C2DTLZ2.py): An output constrained
+- [C2DTLZ2](tutorials/multi_objective/c2dtlz2/main.py): An output constrained
   bi-objective optimization problem.
 
 ## Notes
