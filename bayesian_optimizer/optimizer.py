@@ -28,7 +28,7 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
 from gpytorch.constraints import GreaterThan
 from objectives.base_class import MCObjectiveBase
-from samplers.samplers import SamplerBase
+from samplers.samplers import SamplerBase, SobolSampler
 from gpytorch.mlls import SumMarginalLogLikelihood
 from utils.bo_types import *
 
@@ -55,7 +55,6 @@ class BayesianOptimizer:
             Y_track_var: torch.Tensor | None = None,
             acqf: Type[AcquisitionFunction] | None = None,
             kernel: Kernel | None = None,
-            sampler: SamplerBase | None = None,
             batch_size: int = 1,
             mc_samples: int = 256,
             raw_samples: int = 1024,
@@ -105,7 +104,7 @@ class BayesianOptimizer:
         # === Optimization attributes ===
         self._acqf = acqf
         self._kernel = kernel
-        self._sampler = sampler
+        self._sampler = None
         self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self._n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
         self._n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
@@ -875,183 +874,183 @@ class BayesianOptimizer:
     #                 print(
     #                     f"Randomized {full_name}: raw mean {old_raw.mean().item():.3e} → {raw_param.mean().item():.3e}")
 
-    def _validate_models(self, verbose=False):
-        """ Collect and validate the model parameters in the transformed space. """
-        for model in self._model.models:
-            transformed_params = self._extract_transformed_params(model)
-            self._validate_transformed_params(params=transformed_params)
-            if verbose:
-                self._print_params(transformed_params)
-
-    @staticmethod
-    def _extract_transformed_params(model):
-        params = {}
-        for name, raw_param in model.named_parameters():
-            constraint = model.constraint_for_parameter_name(name)
-            if constraint is not None:
-                param_val = constraint.transform(raw_param).detach()
-                params[name] = param_val
-        return params
-
-    @staticmethod
-    def _print_params(params):
-        rows = []
-        for key, val in params.items():
-            row = {"Parameter": key, "Value": val}
-            rows.append(row)
-        df = pd.DataFrame(rows)
-
-        print(
-            tabulate(
-                df,
-                headers="keys",
-                tablefmt="grid",  # nice ASCII box with edges
-                showindex=False
-            ),
-        )
-
-    @staticmethod
-    def _group_params_by_type(kernel_params: dict):
-        """ Group hyperparameters by type for targeted validation.
-        Returns dict with keys:
-        - variance: These parameters control the output magnitude of the kernel — how much the GP function
-        can deviate from the mean. For example, the outputscale of the ScaleKernel is the variance of the
-        GP, since k(x, x) = sigma_f^2 = Var(f(x)).
-        - lengthscale: These parameters control the characteristic length of the kernel.
-        - period: These parameters control the period length of the kernel.
-        - mixture: These parameters control the mixture parameters of the kernel.
-        - other: Everything else.
-        """
-        groups = {
-            "variance": {},  # outputscale, variance, constant
-            "lengthscale": {},
-            "period": {},
-            "mixture": {},  # spectral mixture params
-            "other": {},
-        }
-
-        for key, val in kernel_params.items():
-            k = key.lower()
-            if "lengthscale" in k:
-                groups["lengthscale"][key] = val
-            elif "outputscale" in k or "variance" in k:
-                groups["variance"][key] = val
-            elif "period" in k:
-                groups["period"][key] = val
-            elif "mixture" in k:
-                groups["mixture"][key] = val
-            else:
-                groups["other"][key] = val
-
-        return groups
-
-    def _validate_transformed_params(self, params: dict):
-        """Hard check: ensure hyperparameters and noise are finite."""
-        for param in params.items():
-            if "noise" in param[0]:
-                self._validate_transformed_noise(param)
-            elif "outputscale" in param[0]:
-                x = "likelihood.noise_covar.raw_noise"
-                noise = next((k, v) for k, v in params.items() if x in k)
-                self._validate_transformed_variance(param, noise)
-            elif "lengthscale" in param[0]:
-                self._validate_transformed_lengthscale(param)
-            elif "period" in param[0]:
-                self._validate_transformed_period(param)
-            elif "mixture" in param[0]:
-                self._validate_transformed_mixture(param)
-            else:
-                continue
-
-    def _validate_transformed_noise(self, param: tuple[str, torch.Tensor]):
-        key, val = param
-        # issues = []
-        if not torch.isfinite(val).all():
-            msg = f"{key} is not finite: {val}"
-            warnings.warn(msg, RuntimeWarning)
-        # return issues
-
-    # TODO: fix extraction of noise
-    @staticmethod
-    def _validate_transformed_variance(param: tuple[str, torch.Tensor], noise: torch.Tensor):
-        """ Validate variance/outputscale parameters. Specifically, checks whether the
-        model outputscale is not smaller than the noise.
-        Core principle: signal variance should exceed noise variance,
-        otherwise the GP is noise-dominated and predictions collapse to mean.
-        With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
-        key, val = param
-        n_key, n_val = noise
-        # issues = []
-        if val < n_val:
-            msg = f"{key} ({val.item():.2e}) < noise ({n_val.item():.2e})"
-            warnings.warn(msg, RuntimeWarning)
-            # issues.append(key)
-            # warnings.warn(msg, RuntimeWarning)
-        # return issues
-
-    @staticmethod
-    def _validate_transformed_lengthscale(param: tuple[str, torch.Tensor]):
-        """ Validate lenghtscale/domain range. Specifically, checks whether the
-         lengthscale is larger than 100x the corresponding domain size. This method
-         assumes that the input domain is normalized between 0 and 1. """
-        # issues = []
-        key, val = param
-        if val > 100:
-            msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val > 10:
-            msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val < 0.0001:
-            msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val < 0.01:
-            msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        # return issues
-
-    @staticmethod
-    def _validate_transformed_period(param: tuple[str, torch.Tensor]):
-        """ Validate period parameters. With standardized inputs in [0, 1]:
-        - period = 1.0 means one full cycle in domain
-        - Too small → high frequency, overfitting
-        - Too large → effectively non-periodic. """
-        # issues = []
-        key, val = param
-        if val > 10:
-            msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val > 5:
-            msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val < 0.05:
-            msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
-            # issues.appendæ(key)
-            warnings.warn(msg, RuntimeWarning)
-        elif val < 0.1:
-            msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
-            # issues.append(key)
-            warnings.warn(msg, RuntimeWarning)
-        # return issues
-
-    @staticmethod
-    def _validate_transformed_mixture(params):
-        """
-        Validate spectral mixture parameters.
-
-        Checks:
-        - Degenerate weights (all near zero)
-        - Single component dominance (wasted complexity)
-        """
-        issues = []
-        # Check on the mixture in not implemented yet.
-        return issues
+    # def _validate_models(self, verbose=False):
+    #     """ Collect and validate the model parameters in the transformed space. """
+    #     for model in self._model.models:
+    #         transformed_params = self._extract_transformed_params(model)
+    #         self._validate_transformed_params(params=transformed_params)
+    #         if verbose:
+    #             self._print_params(transformed_params)
+    #
+    # @staticmethod
+    # def _extract_transformed_params(model):
+    #     params = {}
+    #     for name, raw_param in model.named_parameters():
+    #         constraint = model.constraint_for_parameter_name(name)
+    #         if constraint is not None:
+    #             param_val = constraint.transform(raw_param).detach()
+    #             params[name] = param_val
+    #     return params
+    #
+    # @staticmethod
+    # def _print_params(params):
+    #     rows = []
+    #     for key, val in params.items():
+    #         row = {"Parameter": key, "Value": val}
+    #         rows.append(row)
+    #     df = pd.DataFrame(rows)
+    #
+    #     print(
+    #         tabulate(
+    #             df,
+    #             headers="keys",
+    #             tablefmt="grid",  # nice ASCII box with edges
+    #             showindex=False
+    #         ),
+    #     )
+    #
+    # @staticmethod
+    # def _group_params_by_type(kernel_params: dict):
+    #     """ Group hyperparameters by type for targeted validation.
+    #     Returns dict with keys:
+    #     - variance: These parameters control the output magnitude of the kernel — how much the GP function
+    #     can deviate from the mean. For example, the outputscale of the ScaleKernel is the variance of the
+    #     GP, since k(x, x) = sigma_f^2 = Var(f(x)).
+    #     - lengthscale: These parameters control the characteristic length of the kernel.
+    #     - period: These parameters control the period length of the kernel.
+    #     - mixture: These parameters control the mixture parameters of the kernel.
+    #     - other: Everything else.
+    #     """
+    #     groups = {
+    #         "variance": {},  # outputscale, variance, constant
+    #         "lengthscale": {},
+    #         "period": {},
+    #         "mixture": {},  # spectral mixture params
+    #         "other": {},
+    #     }
+    #
+    #     for key, val in kernel_params.items():
+    #         k = key.lower()
+    #         if "lengthscale" in k:
+    #             groups["lengthscale"][key] = val
+    #         elif "outputscale" in k or "variance" in k:
+    #             groups["variance"][key] = val
+    #         elif "period" in k:
+    #             groups["period"][key] = val
+    #         elif "mixture" in k:
+    #             groups["mixture"][key] = val
+    #         else:
+    #             groups["other"][key] = val
+    #
+    #     return groups
+    #
+    # def _validate_transformed_params(self, params: dict):
+    #     """Hard check: ensure hyperparameters and noise are finite."""
+    #     for param in params.items():
+    #         if "noise" in param[0]:
+    #             self._validate_transformed_noise(param)
+    #         elif "outputscale" in param[0]:
+    #             x = "likelihood.noise_covar.raw_noise"
+    #             noise = next((k, v) for k, v in params.items() if x in k)
+    #             self._validate_transformed_variance(param, noise)
+    #         elif "lengthscale" in param[0]:
+    #             self._validate_transformed_lengthscale(param)
+    #         elif "period" in param[0]:
+    #             self._validate_transformed_period(param)
+    #         elif "mixture" in param[0]:
+    #             self._validate_transformed_mixture(param)
+    #         else:
+    #             continue
+    #
+    # def _validate_transformed_noise(self, param: tuple[str, torch.Tensor]):
+    #     key, val = param
+    #     # issues = []
+    #     if not torch.isfinite(val).all():
+    #         msg = f"{key} is not finite: {val}"
+    #         warnings.warn(msg, RuntimeWarning)
+    #     # return issues
+    #
+    # # TODO: fix extraction of noise
+    # @staticmethod
+    # def _validate_transformed_variance(param: tuple[str, torch.Tensor], noise: torch.Tensor):
+    #     """ Validate variance/outputscale parameters. Specifically, checks whether the
+    #     model outputscale is not smaller than the noise.
+    #     Core principle: signal variance should exceed noise variance,
+    #     otherwise the GP is noise-dominated and predictions collapse to mean.
+    #     With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
+    #     key, val = param
+    #     n_key, n_val = noise
+    #     # issues = []
+    #     if val < n_val:
+    #         msg = f"{key} ({val.item():.2e}) < noise ({n_val.item():.2e})"
+    #         warnings.warn(msg, RuntimeWarning)
+    #         # issues.append(key)
+    #         # warnings.warn(msg, RuntimeWarning)
+    #     # return issues
+    #
+    # @staticmethod
+    # def _validate_transformed_lengthscale(param: tuple[str, torch.Tensor]):
+    #     """ Validate lenghtscale/domain range. Specifically, checks whether the
+    #      lengthscale is larger than 100x the corresponding domain size. This method
+    #      assumes that the input domain is normalized between 0 and 1. """
+    #     # issues = []
+    #     key, val = param
+    #     if val > 100:
+    #         msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val > 10:
+    #         msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val < 0.0001:
+    #         msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val < 0.01:
+    #         msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     # return issues
+    #
+    # @staticmethod
+    # def _validate_transformed_period(param: tuple[str, torch.Tensor]):
+    #     """ Validate period parameters. With standardized inputs in [0, 1]:
+    #     - period = 1.0 means one full cycle in domain
+    #     - Too small → high frequency, overfitting
+    #     - Too large → effectively non-periodic. """
+    #     # issues = []
+    #     key, val = param
+    #     if val > 10:
+    #         msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val > 5:
+    #         msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val < 0.05:
+    #         msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
+    #         # issues.appendæ(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     elif val < 0.1:
+    #         msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
+    #         # issues.append(key)
+    #         warnings.warn(msg, RuntimeWarning)
+    #     # return issues
+    #
+    # @staticmethod
+    # def _validate_transformed_mixture(params):
+    #     """
+    #     Validate spectral mixture parameters.
+    #
+    #     Checks:
+    #     - Degenerate weights (all near zero)
+    #     - Single component dominance (wasted complexity)
+    #     """
+    #     issues = []
+    #     # Check on the mixture in not implemented yet.
+    #     return issues
 
     def _optimize_acquisition_function(self, verbose=True):
 
@@ -1069,7 +1068,7 @@ class BayesianOptimizer:
                     options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
                 )
             else:
-                # If nonlinear inequality input constraints are provided, use a custom initial condition
+                # If nonlinear inequality **input** constraints are provided, use a custom initial condition
                 # generator that selects "num_restarts" points. These points are distributed according to
                 # "fraction_of_previous_X" between the current pareto front and randomly generated points.
                 self._new_X, _ = optimize_acqf(
@@ -1147,11 +1146,9 @@ class BayesianOptimizer:
         frac_prev = kwargs.get("fraction_of_previous_X", 0.5)
         noise_scale = kwargs.get("noise_scale", 0.0)
 
-        # TODO: Instantiate a constraint-aware sampler
-        sampler = SamplerBase(
+        sampler = SobolSampler(
             device=self._device,
             dtype=self.dtype,
-            sampler_type=SamplerType.Sobol,
             bounds=bounds,
             n_dimensions=self.objective.dim,
             normalize=False,
@@ -1160,29 +1157,58 @@ class BayesianOptimizer:
             nonlinear_inequality_constraints=self.objective.nonlinear_inequality_input_constraints,
         )
 
-        # Determine number of points from previous Pareto front
-        if self.X is not None and self._Y_obj is not None:
-            Y_obj_for_pareto = self._Y_obj.clone()
-            Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
-            pareto_mask = is_non_dominated(Y_obj_for_pareto)
-            X_pareto = self.X[pareto_mask]
-            n_pareto = int(frac_prev * num_restarts)
-            if X_pareto.shape[0] > 0:
-                # Randomly select n_pareto points
-                indices = torch.randperm(X_pareto.shape[0])[:n_pareto]
-                prev_points = X_pareto[indices]
-            else:
-                prev_points = torch.empty(0, bounds.shape[1], device=self._device)
-                n_pareto = 0
+        # Identify previous points to exploit
+        n_prev_requested = int(frac_prev * num_restarts)
+        Y_obj = self._Y_obj.clone()
+        # Adjust for minimization (BoTorch assumes maximization)
+        Y_obj[..., self.objective.obj_to_minimize] *= -1
+
+        # LOGIC SPLIT: Multi-Objective vs Single-Objective
+        if self.objective.num_objectives > 1:
+            # Multi-objective: use Pareto front
+            mask = is_non_dominated(Y_obj)
+            X_candidates = self.X[mask]
+            # Shuffle to get a random spread of the frontier
+            idx = torch.randperm(X_candidates.shape[0])[:n_prev_requested]
+            prev_points = X_candidates[idx]
         else:
-            prev_points = torch.empty(0, bounds.shape[1], device=self._device)
-            n_pareto = 0
+            # Single-objective: use top performing points
+            _, indices = torch.sort(Y_obj.squeeze(-1), descending=True)
+            # Take the top N requested points first
+            prev_points = self.X[indices[:n_prev_requested]]
+            # Optional: shuffle these top points if you want the optimizer
+            # to start in a random order
+            shuffle_idx = torch.randperm(prev_points.shape[0])
+            prev_points = prev_points[shuffle_idx]
 
-        # Determine number of previous and new points
-        n_new = num_restarts - n_pareto
-
-        # Draw raw samples for new points
+        # 2. Generate new points (Exploration)
+        n_new = max(0, num_restarts - prev_points.shape[0])
         raw_X = sampler.draw_samples(n=raw_samples)
+
+        # Determine number of points from previous Pareto front
+        # if self.X is not None and self._Y_obj is not None:
+        #     Y_obj_for_pareto = self._Y_obj.clone()
+        #     Y_obj_for_pareto[..., self._objective.obj_to_minimize] *= -1
+        #     pareto_mask = is_non_dominated(Y_obj_for_pareto)
+        #     X_pareto = self.X[pareto_mask]
+        #     n_pareto = int(frac_prev * num_restarts)
+        #     if X_pareto.shape[0] > 0:
+        #         # Randomly select n_pareto points
+        #         indices = torch.randperm(X_pareto.shape[0])[:n_pareto]
+        #         prev_points = X_pareto[indices]
+        #     else:
+        #         prev_points = torch.empty(0, bounds.shape[1], device=self._device)
+        #         n_pareto = 0
+        # else:
+        #     prev_points = torch.empty(0, bounds.shape[1], device=self._device)
+        #     n_pareto = 0
+        #
+        # # Determine number of previous and new points
+        # n_new = num_restarts - n_pareto
+        #
+        # # Draw raw samples for new points
+        # raw_X = sampler.draw_samples(n=raw_samples)
+
         if n_new > raw_X.shape[0]:
             raise RuntimeError(
                 f"Requested {n_new} new points, but only {raw_X.shape[0]} feasible raw samples available.")
@@ -1193,7 +1219,7 @@ class BayesianOptimizer:
         if noise_scale > 0:
             new_points += noise_scale * torch.randn_like(new_points)
 
-        # Combine previous points and new points
+        # 3. Combine previous points and new points
         combined = torch.cat([prev_points, new_points], dim=0)
 
         # Ensure proper shape for BoTorch: (num_restarts, q, d)

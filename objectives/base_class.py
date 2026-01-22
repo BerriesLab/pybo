@@ -20,7 +20,7 @@ class MCObjectiveBase(ABC):
             num_trackers: int,
             obj_to_minimize: torch.Tensor | list[bool],
             bounds: torch.Tensor | list[float],
-            ref_point: torch.Tensor | list[float],
+            ref_point: torch.Tensor | list[float] | None,
             outcomes: list[int],
             num_outcomes: int,
             linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
@@ -143,12 +143,12 @@ class MCObjectiveBase(ABC):
             if len(value) != self.num_objectives:
                 raise ValueError("The number of objectives must match the dimensions of the reference point.")
             value = torch.tensor(value, dtype=self.dtype, device=self.device)
-        elif isinstance(value, torch.Tensor):
+        if isinstance(value, torch.Tensor):
             if value.shape[0] != self.num_objectives:
                 raise ValueError("The number of objectives must match the dimensions of the reference point.")
             value = value.to(self.device, dtype=self.dtype)
-        else:
-            raise TypeError("ref_point must be a list of floats or a torch.Tensor")
+        # else:
+        #     raise TypeError("ref_point must be a list of floats or a torch.Tensor")
         self._ref_point = value
 
     @property

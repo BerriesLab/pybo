@@ -78,55 +78,6 @@ line2d_plot_kwargs = {
     'alpha': 1,
     'linestyle': '-',
 }
-style_arrow_future = {
-    'arrowstyle': '->',
-    'color': 'red',
-    'lw': 1.5,
-    'alpha': 0.8,
-    'shrinkA': 3,
-    'shrinkB': 3,
-    'connectionstyle': "arc3,rad=0.1",
-    'ls': '--'
-}
-style_arrow_past = {
-    'arrowstyle': '->',
-    'color': 'white',
-    'lw': 1.5,
-    'alpha': 0.8,
-    'shrinkA': 3,
-    'shrinkB': 3,
-    'connectionstyle': "arc3,rad=0.1",
-}
-infeasible_observations = {
-    'facecolor': 'red',
-    'edgecolor': 'black',
-    'marker': 'X',
-    's': ms ** 2,
-    'label': "Infeasible obs.",
-    'alpha': 0.8,
-}
-feasible_observations = {
-    'facecolor': 'white',
-    'edgecolor': 'black',
-    'marker': 'o',
-    's': ms ** 2,
-    'label': "Feasible obs.",
-    'alpha': 0.8,
-}
-feasible_ground_truth = {
-    'color': 'black',
-    'marker': ".",
-    's': ms_gt ** 2,
-    'facecolors': 'none',
-    'label': "Feasible GT",
-}
-infeasible_ground_truth = {
-    'color': 'red',
-    'marker': ".",
-    's': ms_gt ** 2,
-    'facecolors': 'none',
-    'label': "Infeasible GT",
-}
 
 # ===== 1D Experiments =====
 
@@ -166,6 +117,65 @@ acqf_1d = {
     'color': 'black',
     'linewidth': 1.5,
     'label': 'Acqf.'
+}
+arrow_future = {
+    'arrowstyle': '->',
+    'color': 'red',
+    'lw': 1.5,
+    'alpha': 0.8,
+    'shrinkA': 3,
+    'shrinkB': 3,
+    'connectionstyle': "arc3,rad=0.1",
+    'ls': '--'
+}
+arrow_past = {
+    'arrowstyle': '->',
+    'color': 'white',
+    'lw': 1.5,
+    'alpha': 0.8,
+    'shrinkA': 3,
+    'shrinkB': 3,
+    'connectionstyle': "arc3,rad=0.1",
+}
+scatter_observations_infeasible = {
+    'facecolor': 'red',
+    'edgecolor': 'black',
+    'marker': 'X',
+    's': ms ** 2,
+    'label': "Infeasible obs.",
+    'alpha': 0.8,
+}
+scatter_observations_feasible = {
+    'facecolor': 'white',
+    'edgecolor': 'black',
+    'marker': 'o',
+    's': ms ** 2,
+    'label': "Feasible obs.",
+    'alpha': 0.8,
+}
+scatter_gnd_truth_feasible = {
+    'color': 'black',
+    'marker': ".",
+    's': ms_gt ** 2,
+    'facecolors': 'none',
+    'label': "Feasible GT",
+}
+scatter_gnd_truth_infeasible = {
+    'color': 'red',
+    'marker': ".",
+    's': ms_gt ** 2,
+    'facecolors': 'none',
+    'label': "Infeasible GT",
+}
+contour_gnd_truth = {
+    "levels": 50,
+    "cmap": 'viridis',
+    "alpha": 0.8
+}
+contour_gnd_truth_infeasible = {
+    "levels": [0.5, 1.0],  # Shades areas where value is between 0.5 and 1.0
+    "colors": ['red'],
+    "alpha": 0.3,  # Transparency for the "shaded" look
 }
 
 

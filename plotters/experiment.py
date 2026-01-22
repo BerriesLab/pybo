@@ -1,4 +1,3 @@
-import torch
 from matplotlib import pyplot as plt
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
@@ -73,6 +72,7 @@ class Experiment1DPlotter(PlotterBase):
         X_grid = self._generate_uniform_grid()
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
         Y_con_gt = self.bo.objective.evaluate_true_constraint(X_grid)
+
         if Y_con_gt is not None:
             Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
             feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
@@ -86,7 +86,7 @@ class Experiment1DPlotter(PlotterBase):
                 x=feasible_X.detach().cpu().numpy(),
                 y=feasible_Y.detach().cpu().numpy(),
                 zorder=zorder,
-                **feasible_ground_truth
+                **scatter_gnd_truth_feasible
             )
         infeasible_mask = torch.logical_not(feasible_mask)
         if infeasible_mask.any():
@@ -96,13 +96,13 @@ class Experiment1DPlotter(PlotterBase):
                 x=infeasible_X.detach().cpu().numpy(),
                 y=infeasible_Y.detach().cpu().numpy(),
                 zorder=zorder,
-                **infeasible_ground_truth
+                **scatter_gnd_truth_infeasible
             )
 
         return self
 
     def plot_observations(self, zorder: int = 2):
-        # Note: scatter plots are used as feasible and infeasible regions may lead to discontinuities.
+        # Note: scatter plots are used as infeasible regions may lead to discontinuities.
         X_best, Y_best = self.bo.best_feasible_X, self.bo.best_feasible_Y
         X_f, Y_f = self.bo.compute_feasible_XY()
         X_i, Y_i = self.bo.compute_infeasible_XY()
@@ -120,7 +120,7 @@ class Experiment1DPlotter(PlotterBase):
                 X_f_plot.detach().cpu().numpy(),
                 Y_f_plot.detach().cpu().numpy(),
                 zorder=zorder,
-                **feasible_observations
+                **scatter_observations_feasible
             )
 
         # Plot infeasible observations
@@ -129,7 +129,7 @@ class Experiment1DPlotter(PlotterBase):
                 X_i.detach().cpu().numpy(),
                 Y_i.detach().cpu().numpy(),
                 zorder=zorder,
-                **infeasible_observations
+                **scatter_observations_infeasible
             )
 
         # Plot optimum
@@ -180,53 +180,95 @@ class Experiment2DPlotter(PlotterBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel(bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
-        self.ax.set_ylabel(bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
+        self.ax.set_xlabel(
+            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
+        self.ax.set_ylabel(
+            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
+        self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
+        self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
 
-    def plot_ground_truth(self):
-        """Plot the ground truth surface."""
-        X_grid = self._generate_uniform_grid()
-        Y_obj = self.bo.objective.evaluate_true_objective(X_grid)
+    # TODO: implement input constraints
+    def plot_ground_truth(self, zorder: int = 0):
         N = self.n_grid_points
+        X_grid = self._generate_uniform_grid()
+        Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
+        Y_con_gt = self.bo.objective.evaluate_true_constraint(X_grid)
         X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
         Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
-        Z_np = Y_obj.reshape(N, N).cpu().numpy()
-        cp = self.ax.contourf(X_np, Y_np, Z_np, levels=50, cmap='viridis', alpha=0.8)
-        self.fig.colorbar(cp, ax=self.ax)
+        Z_np = Y_obj_gt.reshape(N, N).cpu().numpy()
+
+        if Y_con_gt is not None:
+            Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
+        else:
+            feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
+        infeasible_mask = torch.logical_not(feasible_mask)
+
+        cp = self.ax.contourf(
+            X_np,
+            Y_np,
+            Z_np,
+            zorder=zorder,
+            **contour_gnd_truth
+        )
+        self.fig.colorbar(
+            cp,
+            ax=self.ax
+        )
+
+        if infeasible_mask.any():
+            self.ax.contourf(
+                X_np,
+                Y_np,
+                infeasible_mask.cpu().numpy(),
+                zorder=zorder,
+                **contour_gnd_truth_infeasible
+            )
+
         return self
 
-    # TODO
-    def plot_constraints(self):
-        raise NotImplementedError()
+    def plot_observations(self, zorder: int = 1):
+        X_best, Y_best = self.bo.best_feasible_X, self.bo.best_feasible_Y
+        X_f, Y_f = self.bo.compute_feasible_XY()
+        X_i, Y_i = self.bo.compute_infeasible_XY()
 
-    def plot_observations(self, zorder: int = 4):
-        """Plot static experimental points."""
-        X_f, _ = self.bo.compute_feasible_XY()
-        if X_f is not None:
+        X_f_plot, Y_f_plot = X_f, Y_f
+        if X_f is not None and X_best is not None:
+            # Create a mask for all points that are NOT the current best
+            # This assumes X_f and X_best are torch tensors; use np.equal for numpy
+            mask = torch.logical_not(X_f == X_best).all(dim=-1)
+            X_f_plot, Y_f_plot = X_f[mask], Y_f[mask]
+
+        # Plot feasible observations (excluding the optimum)
+        if X_f_plot is not None and X_f_plot.nelement() > 0:
             self.ax.scatter(
-                x=X_f[:, 0].cpu(),
-                y=X_f[:, 1].cpu(),
-                c='white',
-                edgecolors='black',
-                s=40,
-                label='Feasible',
-                zorder=zorder
+                X_f_plot[..., 0].detach().cpu().numpy(),
+                X_f_plot[..., 1].detach().cpu().numpy(),
+                zorder=zorder,
+                **scatter_observations_feasible
             )
-        X_i, _ = self.bo.compute_infeasible_XY()
 
+        # Plot infeasible observations
         if X_i is not None:
             self.ax.scatter(
-                x=X_i[:, 0].cpu(),
-                y=X_i[:, 1].cpu(),
-                c='red',
-                marker='x',
-                s=40,
-                label='Infeasible',
-                zorder=zorder
+                X_i[..., 0].detach().cpu().numpy(),
+                X_i[..., 1].detach().cpu().numpy(),
+                zorder=zorder,
+                **scatter_observations_infeasible
             )
+
+        # Plot optimum
+        if X_best is not None:
+            self.ax.scatter(
+                X_best[..., 0].detach().cpu().numpy(),
+                X_best[..., 1].detach().cpu().numpy(),
+                zorder=zorder,
+                **optimum,
+            )
+
         return self
 
-    def plot_new_X(self, zorder: int = 4):
+    def plot_new_X(self, zorder: int = 2):
         X_new = self.bo.new_X.detach().cpu().numpy()
         if X_new is not None:
             self.ax.scatter(
@@ -263,7 +305,7 @@ class Experiment2DPlotter(PlotterBase):
                         xy=(X_new[j, 0], X_new[j, 1]),
                         xytext=(X_np[i, 0], X_np[i, 1]),
                         zorder=zorder,
-                        arrowprops=style_arrow_future,
+                        arrowprops=arrow_future,
                     )
             return self
 
@@ -287,7 +329,7 @@ class Experiment2DPlotter(PlotterBase):
                     xy=(first_batch[j, 0], first_batch[j, 1]),
                     xytext=(X_np[i, 0], X_np[i, 1]),
                     zorder=zorder,
-                    arrowprops=style_arrow_past,
+                    arrowprops=arrow_past,
                 )
 
         # 2) connect observed batch k -> batch k+1 (fully connected)
@@ -301,7 +343,7 @@ class Experiment2DPlotter(PlotterBase):
                         xy=(float(B[j, 0]), float(B[j, 1])),
                         xytext=(float(A[i, 0]), float(A[i, 1])),
                         zorder=zorder,
-                        arrowprops=style_arrow_past,
+                        arrowprops=arrow_past,
                     )
 
         # 3) last observed batch -> pending new_X (fully connected "future")
@@ -314,7 +356,7 @@ class Experiment2DPlotter(PlotterBase):
                         xy=(float(X_new[j, 0]), float(X_new[j, 1])),
                         xytext=(float(last_batch[i, 0]), float(last_batch[i, 1])),
                         zorder=zorder + 2,
-                        arrowprops=style_arrow_future,
+                        arrowprops=arrow_future,
                     )
 
         return self

@@ -2,10 +2,11 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from tutorials.single_objective.ackley_function.objective import Ackley
+from plotters.acqf import Acqf2DPlotter
 from plotters.experiment import *
 from samplers.samplers import *
 from plotters.evolution import *
+from tutorials.single_objective.rosenbrock_constrained.objective import RosenbrockConstrained
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -17,7 +18,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Ackley(device=DEVICE, dtype=DTYPE, )
+    objective = RosenbrockConstrained(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
     kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
@@ -64,15 +65,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x1_lim, x2_lim = (-5, 5), (-5, 5)
-        experiment_plot = Experiment2DPlotter(bo=bo)
-        experiment_plot.ax.set_xlim(x1_lim)
-        experiment_plot.ax.set_ylim(x2_lim)
-        experiment_plot.plot().save_figure().close_figure()
-        # acqf_plot = Acqf2DPlotter(bo=bo)
-        # acqf_plot.ax.set_xlim(x1_lim)
-        # acqf_plot.ax.set_ylim(x2_lim)
-        # acqf_plot.plot().save_figure().close_figure()
+        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         for idx in range(bo.objective.dim):
