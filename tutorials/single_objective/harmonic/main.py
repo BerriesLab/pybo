@@ -19,7 +19,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = Harmonic(device=DEVICE, dtype=DTYPE, )
+    objective = Harmonic(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -38,7 +38,6 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bounds=objective.bounds,
         n_dimensions=objective.num_objectives,
         normalize=False,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
         seed=45,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
@@ -72,13 +71,17 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Plot """
         x_lims, y_lims = (-3, 3), (-2, 2)
-        lims = [x_lims, y_lims]
-        Experiment1DPlotter(bayesian_optimizer=bo, lims=lims).plot().save_figure().close_figure()
-        Acqf1DPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        BestValuePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ParameterPlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
-        ObjectivePlotter(bayesian_optimizer=bo).plot().save_figure().close_figure()
+        experiment_plotter = Experiment1DPlotter(bo=bo)
+        experiment_plotter.ax.set_xlim(x_lims)
+        experiment_plotter.ax.set_ylim(y_lims)
+        experiment_plotter.plot().save_figure().close_figure()
+        acqf_plotter = Acqf1DPlotter(bo=bo)
+        acqf_plotter.ax.set_xlim(x_lims)
+        acqf_plotter.plot().save_figure().close_figure()
+        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+        ParameterPlotter(bo=bo).plot().save_figure().close_figure()
+        ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
@@ -99,6 +102,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1]
+    batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)

@@ -73,8 +73,12 @@ class Experiment1DPlotter(PlotterBase):
         X_grid = self._generate_uniform_grid()
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
         Y_con_gt = self.bo.objective.evaluate_true_constraint(X_grid)
-        Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
-        feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
+        if Y_con_gt is not None:
+            Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
+        else:
+            feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
+
         if feasible_mask.any():
             feasible_X = X_grid[feasible_mask]
             feasible_Y = Y_obj_gt[feasible_mask]

@@ -102,7 +102,7 @@ infeasible_observations = {
     'edgecolor': 'black',
     'marker': 'X',
     's': ms ** 2,
-    'label': "Infeasible Obs.",
+    'label': "Infeasible obs.",
     'alpha': 0.8,
 }
 feasible_observations = {
@@ -110,7 +110,7 @@ feasible_observations = {
     'edgecolor': 'black',
     'marker': 'o',
     's': ms ** 2,
-    'label': "Feasible Obs.",
+    'label': "Feasible obs.",
     'alpha': 0.8,
 }
 feasible_ground_truth = {
@@ -118,14 +118,14 @@ feasible_ground_truth = {
     'marker': ".",
     's': ms_gt ** 2,
     'facecolors': 'none',
-    'label': "Feasible GT.",
+    'label': "Feasible GT",
 }
 infeasible_ground_truth = {
     'color': 'red',
     'marker': ".",
     's': ms_gt ** 2,
     'facecolors': 'none',
-    'label': "Infeasible GT.",
+    'label': "Infeasible GT",
 }
 
 # ===== 1D Experiments =====
