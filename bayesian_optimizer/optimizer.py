@@ -1070,7 +1070,7 @@ class BayesianOptimizer:
             else:
                 # If nonlinear inequality **input** constraints are provided, use a custom initial condition
                 # generator that selects "num_restarts" points. These points are distributed according to
-                # "fraction_of_previous_X" between the current pareto front and randomly generated points.
+                # "fraction_of_previous_X" between the optimal points and randomly generated points.
                 self._new_X, _ = optimize_acqf(
                     acq_function=self._acqf_instance,
                     bounds=self._objective.bounds,
@@ -1079,9 +1079,6 @@ class BayesianOptimizer:
                     raw_samples=self._num_raw_samples,
                     options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
                     sequential=True,
-                    equality_constraints=self._objective.linear_equality_input_constraints,
-                    inequality_constraints=self._objective.linear_inequality_input_constraints,
-                    nonlinear_inequality_constraints=self._objective.nonlinear_inequality_input_constraints,
                     ic_generator=self._ic_generator
                     if self._objective.nonlinear_inequality_input_constraints is not None
                     else None,
@@ -1129,13 +1126,9 @@ class BayesianOptimizer:
     def _ic_generator(
             self,
             acq_function,  # noqa
-            bounds: torch.Tensor,
             q: int,  # noqa
             num_restarts: int,
             raw_samples: int,
-            fixed_features: dict[int, float] | None = None,  # noqa
-            inequality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,  # noqa
-            equality_constraints: list[tuple[torch.Tensor, torch.Tensor, float]] | None = None,  # noqa
             **kwargs: dict
     ) -> torch.Tensor:
         """
@@ -1145,18 +1138,9 @@ class BayesianOptimizer:
 
         frac_prev = kwargs.get("fraction_of_previous_X", 0.5)
         noise_scale = kwargs.get("noise_scale", 0.0)
+        sampler = SobolSampler(device=self._device, dtype=self._dtype, objective=self.objective)
 
-        sampler = SobolSampler(
-            device=self._device,
-            dtype=self.dtype,
-            bounds=bounds,
-            n_dimensions=self.objective.dim,
-            normalize=False,
-            linear_equality_constraints=self.objective.linear_equality_input_constraints,
-            linear_inequality_constraints=self.objective.linear_inequality_input_constraints,
-            nonlinear_inequality_constraints=self.objective.nonlinear_inequality_input_constraints,
-        )
-
+        # 1. Collect previous observations
         X_feas, Y_feas = self.compute_feasible_XY()
         Y = Y_feas.clone()
         X = X_feas.clone()
@@ -1164,7 +1148,6 @@ class BayesianOptimizer:
         if X_feas.shape[0] > 0:
             # Adjust for minimization (BoTorch assumes maximization)
             Y[..., self.objective.obj_to_minimize] *= -1
-
             n_requested = int(frac_prev * num_restarts)
 
             # LOGIC SPLIT: Multi-Objective vs Single-Objective
@@ -1282,7 +1265,7 @@ class BayesianOptimizer:
             n_feasible = self._feasible_mask.sum().item()
             self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
 
-    def compute_feasible_XY(self, verbose=False):
+    def compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
         """ Computes feasible X and Y. This method assumes maximization,
         therefore, the Y must be cast into a maximization problem. """
 
@@ -1310,7 +1293,7 @@ class BayesianOptimizer:
 
         return feasible_X, feasible_Y
 
-    def compute_infeasible_XY(self, verbose=False):
+    def compute_infeasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
         """ Computes infeasible X and Y. This method assumes maximization,
         therefore, the Y must be cast into a maximization problem. """
 

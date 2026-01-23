@@ -1,3 +1,4 @@
+import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
@@ -187,27 +188,20 @@ class Experiment2DPlotter(PlotterBase):
         self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
         self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
 
-    # TODO: implement input constraints
     def plot_ground_truth(self, zorder: int = 0):
         N = self.n_grid_points
         X_grid = self._generate_uniform_grid()
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
-        Y_con_gt = self.bo.objective.evaluate_true_constraint(X_grid)
         X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
         Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
         Z_np = Y_obj_gt.reshape(N, N).cpu().numpy()
-
-        if Y_con_gt is not None:
-            Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
-        else:
-            feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
-        infeasible_mask = torch.logical_not(feasible_mask)
+        feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
+        Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
 
         cp = self.ax.contourf(
             X_np,
             Y_np,
-            Z_np,
+            Z_masked_np,
             zorder=zorder,
             **contour_gnd_truth
         )
@@ -215,15 +209,6 @@ class Experiment2DPlotter(PlotterBase):
             cp,
             ax=self.ax
         )
-
-        if infeasible_mask.any():
-            self.ax.contourf(
-                X_np,
-                Y_np,
-                infeasible_mask.cpu().numpy(),
-                zorder=zorder,
-                **contour_gnd_truth_infeasible
-            )
 
         return self
 

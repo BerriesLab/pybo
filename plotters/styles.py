@@ -1,5 +1,3 @@
-import torch
-
 ms = 8
 ms_gt = ms / 2
 
@@ -78,8 +76,6 @@ line2d_plot_kwargs = {
     'alpha': 1,
     'linestyle': '-',
 }
-
-# ===== 1D Experiments =====
 
 gp_mean = {
     'color': 'blue',
@@ -177,34 +173,3 @@ contour_gnd_truth_infeasible = {
     "colors": ['red'],
     "alpha": 0.3,  # Transparency for the "shaded" look
 }
-
-
-# ===== 2D Experiments =====
-
-
-def make_grid(size: int, bounds: torch.Tensor, dtype=torch.float64, device='cpu'):
-    """
-    Creates a grid of points within the given bounds.
-
-    Args:
-        size (int): Number of points per dimension.
-        bounds (torch.Tensor): Tensor of shape (2, d) containing min and max for each dimension.
-        dtype: Torch dtype.
-        device: Torch device.
-
-    Returns:
-        torch.Tensor: Grid of shape (size**d, d).
-    """
-    if bounds.ndim != 2 or bounds.shape[0] != 2:
-        raise ValueError(f"Bounds must be of shape (2, d), but got {bounds.shape}")
-
-    bounds = bounds.transpose(0, 1)  # Convert to (d, 2)
-    dim = bounds.shape[0]
-
-    axes = [
-        torch.linspace(bounds[i, 0], bounds[i, 1], size, dtype=dtype, device=device)
-        for i in range(dim)
-    ]
-    mesh = torch.meshgrid(*axes, indexing='ij')
-    grid = torch.stack(mesh, dim=-1).reshape(-1, dim)
-    return grid

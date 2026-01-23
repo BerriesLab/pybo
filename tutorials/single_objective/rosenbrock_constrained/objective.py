@@ -13,7 +13,7 @@ class RosenbrockConstrained(MCSingleObjectiveBase):
             num_constraints=0,
             num_trackers=0,
             obj_to_minimize=[True],
-            bounds=[(-1, 1), (-1, 1)],
+            bounds=[(-1.5, 1.5), (-1.5, 1.5)],
             ref_point=None,
             outcomes=[0],
             num_outcomes=1,

@@ -77,26 +77,27 @@ class Acqf2DPlotter(PlotterBase):
         self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
         self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
 
-    def plot_acquisition(self, cmap: str = 'viridis', levels: int = 50, zorder: int = 0):
-        if self.bo.acqf_instance is None:
-            raise ValueError("Acquisition function must be set before plotting.")
-
+    def plot_acquisition(self, zorder: int = 0):
+        N = self.n_grid_points
         X_grid = self._generate_uniform_grid()
-
+        X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
+        Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
         with torch.no_grad():
-            acq_values = self.bo.acqf_instance(X_grid.unsqueeze(1))
+            Z_np = self.bo.acqf_instance(X_grid.unsqueeze(1)).reshape(N, N).cpu().numpy()
+        feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
+        Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
 
-        # Reshape for contour plotting: (N*N) -> (N, N)
-        acq_np = acq_values.reshape(self.n_grid_points, self.n_grid_points).detach().cpu().numpy()
-
-        # Get bounds for the extent of the plot
-        bounds = self.bo.objective.bounds.cpu().numpy()
-
-        x = np.linspace(bounds[0, 0], bounds[1, 0], self.n_grid_points)
-        y = np.linspace(bounds[0, 1], bounds[1, 1], self.n_grid_points)
-
-        contour = self.ax.contourf(x, y, acq_np.T, levels=50, cmap=cmap)
-        self.ax.figure.colorbar(contour, ax=self.ax)
+        cp = self.ax.contourf(
+            X_np,
+            Y_np,
+            Z_masked_np,
+            zorder=zorder,
+            **contour_gnd_truth
+        )
+        self.fig.colorbar(
+            cp,
+            ax=self.ax
+        )
 
         return self
 
