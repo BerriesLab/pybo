@@ -20,9 +20,7 @@ class MCObjectiveBase(ABC):
             num_trackers: int,
             obj_to_minimize: torch.Tensor | list[bool],
             bounds: torch.Tensor | list[float],
-            ref_point: torch.Tensor | list[float] | None,
             outcomes: list[int],
-            num_outcomes: int,
             linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
             nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
@@ -36,7 +34,17 @@ class MCObjectiveBase(ABC):
     ):
         super().__init__()
 
-        """ Non-linear inequality constraints are satisfied if f(x) <= 0. """
+        """ 
+        - Input dimensions are passed in dim
+        - The number of objectives does not include constraints
+        - The objective bounds are passed as torch tensor with shape (dim, 2) or as list of tuples [(min, max)_0, (min, max)_1, ...]
+        - Outcomes is a list on indexes used to identify the objectives in the Y_full matrix.
+        - The number of outcomes must match the length of the outcomes list.
+        - Linear equality input constraints must be cast in matrix form and are satisfied for Ax - b = 0 
+        - Linear inequality input constraints must be cast in matrix form and are satisfied for Ax - b <= 0
+        - Non-linear inequality constraints must be cast in callable form and are satisfied if f(x) <= 0. 
+        - Output constraints, of whatever type, must be cast in callable form and are satisfied if f(x) <= 0. 
+        """
 
         # === CUDA attributes ===
         self.device = device
@@ -48,10 +56,8 @@ class MCObjectiveBase(ABC):
         self.num_constraints = num_constraints
         self.num_trackers = num_trackers
         self.obj_to_minimize = obj_to_minimize
-        self.ref_point = ref_point
         self.bounds = bounds
         self.outcomes = outcomes
-        self.num_outcomes = num_outcomes
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
         self.parameter_names = parameter_names
@@ -136,24 +142,6 @@ class MCObjectiveBase(ABC):
         self._obj_to_minimize = value
 
     @property
-    def ref_point(self) -> Tensor:
-        return self._ref_point
-
-    @ref_point.setter
-    def ref_point(self, value: list[float] | torch.Tensor):
-        if isinstance(value, list):
-            if len(value) != self.num_objectives:
-                raise ValueError("The number of objectives must match the dimensions of the reference point.")
-            value = torch.tensor(value, dtype=self.dtype, device=self.device)
-        if isinstance(value, torch.Tensor):
-            if value.shape[0] != self.num_objectives:
-                raise ValueError("The number of objectives must match the dimensions of the reference point.")
-            value = value.to(self.device, dtype=self.dtype)
-        # else:
-        #     raise TypeError("ref_point must be a list of floats or a torch.Tensor")
-        self._ref_point = value
-
-    @property
     def bounds(self) -> torch.Tensor:
         return self._bounds
 
@@ -191,26 +179,8 @@ class MCObjectiveBase(ABC):
         else:
             raise TypeError("outcomes must be a list of ints or a torch.Tensor")
 
-        if len(value) < self.num_objectives:
-            raise ValueError("The number of objectives must match the number of model outputs.")
-
-        # if any(i < 0 for i in value):
-        #     if self.num_outcomes is None:
-        #         raise BotorchError(
-        #             "num_outcomes is required if any outcomes are less than 0."
-        #         )
-        #     value = normalize_indices(value, self.num_outcomes)
-
         value = torch.tensor(value, device=self.device, dtype=torch.long)
         self._outcomes = value
-
-    @property
-    def num_outcomes(self) -> int | None:
-        return self._num_outcomes
-
-    @num_outcomes.setter
-    def num_outcomes(self, value: int | None):
-        self._num_outcomes = value
 
     @property
     def gt_noise_std(self) -> torch.Tensor | None:
@@ -493,11 +463,33 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
 
 
 class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
-    def __init__(self, max_hv: float | None = None, *args, **kwargs):
+    def __init__(self, ref_point: torch.Tensor | list[float], max_hv: float | None = None, *args, **kwargs):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
         MCObjectiveBase.__init__(self, *args, **kwargs)
-        self.max_h = max_hv
+        self.ref_point = ref_point
+        self.max_hv = max_hv
+
+    """
+    - The reference point is used only for multi objective problems to compute the Hypervolume.
+    - The max hypervolume may be known a priori. When passed, it is plotted by the Plotter as a target optimization value.
+    """
+
+    @property
+    def ref_point(self) -> Tensor:
+        return self._ref_point
+
+    @ref_point.setter
+    def ref_point(self, value: list[float] | torch.Tensor):
+        if isinstance(value, list):
+            if len(value) != self.num_objectives:
+                raise ValueError("The number of objectives must match the dimensions of the reference point.")
+            value = torch.tensor(value, dtype=self.dtype, device=self.device)
+        if isinstance(value, torch.Tensor):
+            if value.shape[0] != self.num_objectives:
+                raise ValueError("The number of objectives must match the dimensions of the reference point.")
+            value = value.to(self.device, dtype=self.dtype)
+        self._ref_point = value
 
     # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:

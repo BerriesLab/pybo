@@ -1,3 +1,4 @@
+import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.base_class import MCSingleObjectiveBase

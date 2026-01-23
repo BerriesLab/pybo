@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
@@ -358,3 +359,58 @@ class Experiment2DPlotter(PlotterBase):
     def save_figure(self, filename: str | Path | None = None):
         filename = filename or "experiment.png"
         return super().save_figure(filename=filename)
+
+
+class ParetoFront2DPlotter(PlotterBase):
+
+    def __init__(self, bo: BayesianOptimizer):
+        super().__init__(bo=bo)
+
+        if not isinstance(bo.objective, MCSingleObjectiveBase):
+            raise TypeError("Objective must be of type MCSingleObjectiveBase")
+
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.ax.set_xlabel(
+            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$f_2(X)$")
+        self.ax.set_ylabel(
+            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$f_1(X)$")
+        self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
+        self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+
+    def plot_ground_truth(self):
+        # if self.X_gt is None:
+        #     raise ValueError("Must provide X for ground truth.")
+
+        # self._initialize_norm()
+        # self._initialize_colormap()
+        # self.update_labels()
+
+        # === Compute ground truth ===
+        X_gt = self._generate_uniform_grid()
+        Y_obj_gt = self.bo.objective.evaluate_true_objective(X_gt)
+        Y_con_gt = self.bo.objective.evaluate_true_constraint(X_gt)
+
+        input_feas_mask = self.bo.objective.is_input_feasible(X_gt)
+        Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=0)
+        output_feas_mask = self.bo.objective.is_output_feasible(Y_full)
+        feas_mask = torch.logical_and(input_feas_mask, output_feas_mask)
+
+        # # === Compute pareto masks ===
+        # self._compute_feasible_pareto_ground_truth_mask()
+        # self._compute_feasible_non_pareto_ground_truth_mask()
+        #
+        # # === Plot infeasible ground truth ===
+        # self._plot_infeasible_ground_truth()
+        # self._plot_feasible_non_pareto_ground_truth()
+        # self._plot_feasible_pareto_ground_truth()
+        #
+        # # === Update colormaps ===
+        # if self.idx_color is not None:
+        #     if self.cbar is None:
+        #         self._add_colorbar()
+        #     self._update_cmap_and_norm()
+        #
+        # # === Update legend ===
+        # self.ax.legend(handles=self.legend_elements, loc="best")
+
+        return self

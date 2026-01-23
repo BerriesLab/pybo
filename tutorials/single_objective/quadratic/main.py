@@ -29,9 +29,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
-        bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
-        normalize=False,
+        objective=objective,
         seed=42,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
@@ -98,4 +96,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=16, q=batch_size, output_dir=main_path)
+        main(n_samples=32, q=batch_size, output_dir=main_path)

@@ -2,7 +2,6 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-
 from plotters.acqf import Acqf1DPlotter
 from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
 from plotters.experiment import Experiment1DPlotter
@@ -19,7 +18,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = PolynomialConstrained(device=DEVICE, dtype=DTYPE, )
+    objective = PolynomialConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(base_kernel=RBFKernel())
@@ -30,10 +29,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
-        bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
-        normalize=False,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
+        objective=objective,
         seed=42,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
@@ -100,6 +96,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2, 4, 8]
+    batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)

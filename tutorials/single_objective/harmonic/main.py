@@ -25,7 +25,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     kernel = ScaleKernel(
         base_kernel=CosineKernel(
             period_length_prior=None,
-            period_length_constraint=Interval(1 / 12 * 0.8, 1 / 12 * 1.2),
+            period_length_constraint=Interval(1 / 12 * 0.5, 1 / 12 * 1.5),
         )
     )
 
@@ -35,9 +35,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
-        bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
-        normalize=False,
+        objective=objective,
         seed=45,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))

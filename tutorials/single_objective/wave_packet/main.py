@@ -32,10 +32,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     sampler = SobolSampler(
         device=DEVICE,
         dtype=DTYPE,
-        bounds=objective.bounds,
-        n_dimensions=objective.num_objectives,
-        normalize=False,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
+        objective=objective,
         seed=45,
     )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
