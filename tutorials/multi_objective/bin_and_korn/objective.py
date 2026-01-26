@@ -19,10 +19,6 @@ class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):
         ("True" for intra-point. "False" for inter-point).
     """
 
-    class Obj(StrEnum):
-        BIN = "Bin"
-        KORN = "Korn"
-
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
@@ -30,8 +26,8 @@ class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):
             dim=2,
             num_objectives=2,
             objective_names=[
-                self.ObjName.BIN,
-                self.ObjName.KORN
+                "Bin",
+                "Korn"
             ],
             num_constraints=0,
             num_trackers=0,

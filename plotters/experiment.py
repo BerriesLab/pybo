@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union
+from typing import Union, Optional
 
 import torch
 import numpy as np
@@ -363,7 +363,7 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, *, x: NameLike, y: NameLike, c: NameLike):
+    def __init__(self, bo: BayesianOptimizer, *, x: NameLike, y: NameLike, c: Optional[NameLike]):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
@@ -426,6 +426,10 @@ class ParetoFront2DPlotter(PlotterBase):
         mask = self.bo.feasible_mask
 
         # 2. Pareto Mask (Always calculated on Objectives)
+        input_mask = self.bo.objective.is_input_feasible(X_gt)
+        output_mask = self.bo.objective.is_output_feasible(X_gt)
+        mask = torch.logical_and(input_mask, output_mask)
+
         self.ax.scatter(
             x=self.data_x[mask],
             y=self.data_y[mask],

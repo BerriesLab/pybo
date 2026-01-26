@@ -68,7 +68,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Plot """
         x_lims, y_lims = (0, 140), (0, 50)
-        experiment_plotter = ParetoFront2DPlotter(bo=bo, x=Obj.BIN, y=Obj.KORN)
+        experiment_plotter = ParetoFront2DPlotter(
+            bo=bo,
+            x="obj.bin",
+            y="obj.korn",
+            c="obj.korn"
+        )
         experiment_plotter.ax.set_xlim(x_lims)
         experiment_plotter.ax.set_ylim(y_lims)
         experiment_plotter.plot().save_figure().close_figure()

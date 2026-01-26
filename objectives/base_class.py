@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Union
 
 from torch import Tensor
@@ -9,21 +9,8 @@ from botorch.acquisition.objective import MCAcquisitionObjective
 from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
 
-NameLike = Union[str, Enum]
-
 
 class MCObjectiveBase(ABC):
-    class Obj(StrEnum):
-        pass
-
-    class Trk(StrEnum):
-        pass
-
-    class Par(StrEnum):
-        pass
-
-    class Con(StrEnum):
-        pass
 
     def __init__(
             self,
@@ -100,6 +87,10 @@ class MCObjectiveBase(ABC):
         self.objective_names = objective_names
         self.constraint_names = constraint_names
         self.tracker_names = tracker_names
+        # self.objective_names = [item.value for item in self.ObjName]
+        # self.constraint_names = [item.value for item in self.ConName]
+        # self.tracker_names = [item.value for item in self.TrkName]
+        # self.parameter_names = [item.value for item in self.ParName]
 
         # === Constraints ===
         self.linear_equality_input_constraints = linear_equality_input_constraints
@@ -451,6 +442,47 @@ class MCObjectiveBase(ABC):
         return feasible_mask
 
     # === HELPERS ===
+    def resolve_identifier(self, identifier: str | int) -> int:
+        """
+        Resolves an identifier into a global index.
+        Supports:
+            - str (named): 'obj.bin'
+            - str (indexed): 'obj.1' or 'trk.0'
+        """
+        if not isinstance(identifier, str):
+            raise TypeError("Identifier must be str")
+
+        if "." not in identifier:
+            raise ValueError(f"String '{identifier}' must follow 'prefix.name' or 'prefix.index' format.")
+
+        prefix, suffix = identifier.lower().split(".", 1)
+
+        mapping = {
+            "obj": self.objective_names,
+            "con": self.constraint_names,
+            "trk": self.tracker_names,
+            "par": self.parameter_names,
+        }
+
+        if prefix not in mapping:
+            raise KeyError(f"Invalid prefix '{prefix}'. Use: {list(mapping.keys())}")
+
+        target_list = mapping[prefix]
+
+        if suffix.isdigit():
+            idx = int(suffix)
+            if 0 <= idx < len(target_list):
+                # We need to map the local list index to the global Y matrix index
+                # This assumes your global indices are stored in self.outcomes etc.
+                # If your lists are already global, just return idx.
+                return idx
+            raise IndexError(f"Index {idx} out of range for {prefix} (len={len(target_list)})")
+
+        target_list_lower = [n.lower() for n in target_list]
+        try:
+            return target_list_lower.index(suffix)
+        except ValueError:
+            raise ValueError(f"'{suffix}' not found in {prefix}. Available: {target_list}")
 
     def get_index(self, name: NameLike) -> int:
         if isinstance(name, self.Obj):
