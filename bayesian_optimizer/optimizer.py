@@ -504,8 +504,6 @@ class BayesianOptimizer:
         self._fit_model(verbose=verbose)
 
         # === 3. Initialize acquisition function ===
-        if issubclass(self._acqf, MCAcquisitionFunction):
-            self._initialize_sampler(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
         # === 4. Optimize ===
@@ -717,6 +715,14 @@ class BayesianOptimizer:
 
             sig = inspect.signature(self.acqf.__init__)
             kwargs = {}
+
+            # Initialize sampler if required by the acqf
+            if issubclass(self._acqf, MCAcquisitionFunction):
+                self._initialize_sampler(verbose=verbose)
+
+            # Initialize partitioning if required by the acqf
+            if "partitioning" in sig.parameters and getattr(self, "_partitioning", None) is None:
+                self._initialize_partitioning()
 
             for name, param in sig.parameters.items():
                 if name in ('self', 'args', 'kwargs'):
@@ -1212,43 +1218,9 @@ class BayesianOptimizer:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
 
-    def _compute_feasibility_mask_bak(self, verbose=True):
-        """ Compute feasibility mask on the original, non maximized, Y.
-        If the objective is unconstrained, all observations are feasible.
-        Otherwise, concatenate objectives and constraints along the last
-        dimension, then compute the feasibility mask: a point is feasible
-        only if all constraints are ≤ 0.
-        Handles arbitrary batch shapes: (..., n_points, n_outputs) -> (..., n_points) """
-
-        if verbose:
-            print("Computing feasibility mask... ", end="")
-
-        n_points = self._Y_obj.shape[0]
-
-        if self._objective.constraints is None:
-            # No constraints — all points feasible
-            self._feasible_mask = torch.ones(n_points, dtype=torch.bool, device=self._device)
-        else:
-            # Concatenate objectives and constraints, check all constraints ≤ 0 (use 1e-6 for stability)
-            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
-            self._feasible_mask = torch.stack(
-                [c(Y_full) <= 1e-6 for c in self._objective.constraints]
-            ).all(dim=0).squeeze()  # (n_constraints, n_points) -> (n_points,)
-
-        if verbose:
-            n_feasible = self._feasible_mask.sum().item()
-            self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
-
     def _compute_feasibility_mask(self, verbose=True):
         """ Computes a combined feasibility mask for all observed data.
         A point is feasible only if it satisfies both Input and Output constraints. """
-        """ Compute feasibility mask on the original, non maximized, Y.
-        If the objective is unconstrained, all observations are feasible.
-        Otherwise, concatenate objectives and constraints along the last
-        dimension, then compute the feasibility mask: a point is feasible
-        only if all constraints are ≤ 0.
-        Handles arbitrary batch shapes: (..., n_points, n_outputs) -> (..., n_points) """
-
         if verbose:
             print("Computing feasibility mask... ", end="")
 
@@ -1271,9 +1243,6 @@ class BayesianOptimizer:
 
         if verbose:
             print("Computing feasible X and Y... ", end="")
-
-        if self._objective.num_objectives != 1:
-            raise ValueError("Only single objective is currently supported.")
 
         if self._feasible_mask is None:
             raise ValueError(

@@ -32,19 +32,39 @@ class MCObjectiveBase(ABC):
             constraint_names: list[str] | None = None,
             tracker_names: list[str] | None = None,
     ):
-        super().__init__()
-
-        """ 
+        r"""Args:
         - Input dimensions are passed in dim
         - The number of objectives does not include constraints
         - The objective bounds are passed as torch tensor with shape (dim, 2) or as list of tuples [(min, max)_0, (min, max)_1, ...]
         - Outcomes is a list on indexes used to identify the objectives in the Y_full matrix.
         - The number of outcomes must match the length of the outcomes list.
-        - Linear equality input constraints must be cast in matrix form and are satisfied for Ax - b = 0 
-        - Linear inequality input constraints must be cast in matrix form and are satisfied for Ax - b <= 0
-        - Non-linear inequality constraints must be cast in callable form and are satisfied if f(x) <= 0. 
-        - Output constraints, of whatever type, must be cast in callable form and are satisfied if f(x) <= 0. 
+        - Linear equality input constraints must be cast in matrix form and are satisfied for Ax - b = 0.
+          The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an equality
+          constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) = rhs`. See the docstring of
+          `make_scipy_linear_constraints` for an example.
+        - Linear inequality input constraints must be cast in matrix form Ax - b >= 0 (feasible if nonnegative).
+          The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an inequality
+          constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) >= rhs`. `indices` and `coefficients`
+          should be torch tensors. See the docstring of `make_scipy_linear_constraints` for an example.
+          When q=1, or when applying the same constraint to each candidate in the batch (intra-point constraint),
+          `indices` should be a 1-d tensor. For inter-point constraints, in which the constraint is applied to the
+          whole batch of candidates, `indices` must be a 2-d tensor, where in each row `indices[i] =(k_i,
+          l_i)` the first index `k_i` corresponds to the `k_i`-th element of the `q`-batch and the second index `l_i`
+          corresponds to the `l_i`-th feature of that element.
+        - Non-linear inequality input constraints must be cast in callable form f(x) >= 0 (feasible if nonnegative).
+          A list of tuples representing the nonlinear inequality constraints. The first element in the tuple is a
+          callable representing a constraint of the form `callable(x) >= 0`. In case of an intra-point constraint,
+          `callable()` takes in a one-dimensional tensor of shape `d` and returns a scalar.
+          In case of an inter-point constraint, `callable()` takes a two dimensional tensor of shape `q x d`
+          and again returns a scalar. The second element is a boolean, indicating if it is an intra-point or
+          inter-point constraint (`True` for intra-point. `False` for inter-point). For more information on
+          intra-point vs inter-point constraints, see the docstring of the `inequality_constraints` argument to
+          `optimize_acqf()`. The constraints will later be passed to the scipy solver. You need to pass in
+          `batch_initial_conditions` in this case. Using non-linear inequality constraints also requires that
+          `batch_limit` is set to 1, which will be done automatically if not specified in `options`.
+        - Output constraints, of whatever type, must be cast in callable form and are satisfied if f(x) >= 0 (feasible if nonnegative).
         """
+        super().__init__()
 
         # === CUDA attributes ===
         self.device = device
@@ -58,6 +78,7 @@ class MCObjectiveBase(ABC):
         self.obj_to_minimize = obj_to_minimize
         self.bounds = bounds
         self.outcomes = outcomes
+        self.num_outcomes = len(outcomes)
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
         self.parameter_names = parameter_names
@@ -147,7 +168,7 @@ class MCObjectiveBase(ABC):
 
     @bounds.setter
     def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
-        # Convert list of tuples to tensor
+        # Converts list of tuples to tensor
         if not torch.is_tensor(value):
             value = torch.tensor(value, device=self._device, dtype=self.dtype)
             if value.shape != (self.dim, 2):
@@ -387,43 +408,49 @@ class MCObjectiveBase(ABC):
 
     # === FEASIBILITY ===
 
-    def is_input_feasible(self, X: torch.Tensor) -> torch.Tensor:
-        """ Checks if input points X satisfy all input constraints (linear and nonlinear).
-        Returns a boolean mask of shape (batch_size,). """
+    def is_input_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
+        """
+        Supports X (..., d) and q-btach X (..., q, d) for intra-point constraints only (1D indices).
+        Returns mask of shape (...) (one per batch item / restart).
+        """
+        has_q = (X.dim() >= 3)  # interpret last two dims as (q, d)
+        base_shape = X.shape[:-2] if has_q else X.shape[:-1]
+        feasible_mask = torch.ones(base_shape, dtype=torch.bool, device=X.device)
 
-        # Start with a mask of all True
-        feasible_mask = torch.ones(X.shape[:-1], dtype=torch.bool, device=X.device)
+        lower, upper = self.bounds[0], self.bounds[1]
 
-        # Check bounds
-        lower = self.bounds[0]
-        upper = self.bounds[1]
-        in_bounds = (X >= lower).all(dim=-1) & (X <= upper).all(dim=-1)
-        feasible_mask &= in_bounds
+        # bounds
+        if has_q:
+            in_bounds = (X >= lower).all(dim=-1) & (X <= upper).all(dim=-1)  # (..., q)
+            feasible_mask &= in_bounds.all(dim=-1)  # (...,)
+        else:
+            feasible_mask &= (X >= lower).all(dim=-1) & (X <= upper).all(dim=-1)  # (...,)
 
-        # Check linear equality input constraints
-        lin_eq = self.linear_equality_input_constraints
-        if lin_eq is not None:
-            A_eq, b_eq = lin_eq
-            # Check |A*x - b| < tolerance
-            res_eq = (X @ A_eq.T) - b_eq.T
-            feasible_mask &= (res_eq.abs() <= 1e-6).all(dim=-1)
+        # linear equalities (1D indices only)
+        if self.linear_equality_input_constraints:
+            for indices, coeffs, rhs in self.linear_equality_input_constraints:
+                if indices.dim() != 1:
+                    raise ValueError("2D indices constraints require inter-point handling (not implemented here).")
+                lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
+                feasible_mask &= ((lhs - rhs).abs() <= atol).all(dim=-1) if has_q else (lhs - rhs).abs() <= atol
 
-        # Check linear inequality input constraints (A*x <= b)
-        lin_ineq = self.linear_inequality_input_constraints
-        if lin_ineq is not None:
-            A_ineq, b_ineq = lin_ineq
-            res_ineq = (X @ A_ineq.T) - b_ineq.T
-            feasible_mask &= (res_ineq <= 1e-6).all(dim=-1)
+        # linear inequalities, 1D indices only
+        if self.linear_inequality_input_constraints:
+            for indices, coeffs, rhs in self.linear_inequality_input_constraints:
+                if indices.dim() != 1:
+                    raise ValueError("2D indices constraints require inter-point handling (not implemented here).")
+                lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
+                feasible_mask &= (lhs >= (rhs - atol)).all(dim=-1) if has_q else lhs >= (rhs - atol)
 
-        # Check nonlinear inequality input constraints (c(x) <= 0)
-        nonlin_ineq = self.nonlinear_inequality_input_constraints
-        if nonlin_ineq is not None:
-            for c_func, _ in nonlin_ineq:
-                feasible_mask &= (c_func(X) <= 1e-6).squeeze(-1)
+        # nonlinear inequalities: c(x) >= 0
+        if self.nonlinear_inequality_input_constraints:
+            for c_func, _ in self.nonlinear_inequality_input_constraints:
+                cval = c_func(X).squeeze(-1)
+                feasible_mask &= (cval >= -atol).all(dim=-1) if has_q else (cval >= -atol)
 
         return feasible_mask
 
-    def is_output_feasible(self, Y: Tensor) -> Tensor:
+    def is_output_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
         """ Checks if the objective/constraint outputs Y satisfy the performance constraints.
             Y is expected to be [batch_shape, num_objectives + num_constraints]. """
 
@@ -433,7 +460,7 @@ class MCObjectiveBase(ABC):
         # Each c in self.constraints is a callable that returns <= 0 for feasible
         # We stack them and check if all are satisfied
         feasible_mask = torch.stack(
-            [c(Y) <= 1e-6 for c in self.constraints]
+            [c(Y) >= -atol for c in self.constraints]
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask

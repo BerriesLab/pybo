@@ -2,7 +2,8 @@ import os
 import torch
 from pathlib import Path
 
-from botorch.acquisition import qLogExpectedImprovement
+from botorch.acquisition import qLogExpectedImprovement, qLogNoisyExpectedImprovement
+from botorch.acquisition.multi_objective import qLogExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 
 from bayesian_optimizer.optimizer import BayesianOptimizer
@@ -48,7 +49,7 @@ def main(n_samples=64, q: int = 1, ):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acqf=qLogExpectedImprovement,
+        acqf=qLogExpectedHypervolumeImprovement,
         kernel=kernel,
         X=X,
         Y_obj=Y_obj,
@@ -82,11 +83,6 @@ def main(n_samples=64, q: int = 1, ):
             ConstraintPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
         for idx in range(bo.objective.num_trackers):
             TrackerPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
-
-        # Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
-        # Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
-        # ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
-        # BestValuePlotter(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

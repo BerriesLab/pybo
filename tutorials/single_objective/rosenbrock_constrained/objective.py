@@ -36,5 +36,4 @@ class RosenbrockConstrained(MCSingleObjectiveBase):
 
     @staticmethod
     def disk_constraint(X: Tensor) -> Tensor:
-        # (x^2 + y^2) <= 2
-        return (X[..., 0] ** 2 + X[..., 1] ** 2) - 2.0
+        return 2.0 - (X[..., 0] ** 2 + X[..., 1] ** 2)
