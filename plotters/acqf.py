@@ -48,7 +48,7 @@ class Acqf1DPlotter(PlotterBase):
             if X.ndim == 0:
                 X = [X.item()]
             for i, x in enumerate(X):
-                self.ax.axvline(x=x, **new_X_1d)
+                self.ax.axvline(x=x, **next_X_1d)
         return self
 
     def plot(self):

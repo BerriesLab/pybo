@@ -56,13 +56,11 @@ class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):
     @staticmethod
     def _input_c1(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 5)^2 + x1^2 <= 25 """
-        # return ((X[..., 0] - 5) ** 2 + X[..., 1] ** 2) - 25
         return 25 - ((X[..., 0] - 5) ** 2 + X[..., 1] ** 2)
 
     @staticmethod
     def _input_c2(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 """
-        # return 7.7 - (X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2
         return (X[..., 0] - 8) ** 2 + (X[..., 1] + 3) ** 2 - 7.7
 
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:

@@ -4,7 +4,6 @@ from botorch.utils.transforms import unnormalize
 from abc import ABC, abstractmethod
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
-
 from objectives.base_class import MCObjectiveBase
 
 
@@ -28,6 +27,7 @@ class SamplerBase(ABC):
         pass
 
     def draw_samples(self, n: int) -> torch.Tensor:
+        """ Draws n random samples of shape [n, dim] subject to input constraints."""
         valid_X = []
         num_attempts = 0
         max_attempts = 1000

@@ -96,11 +96,19 @@ gp_confidence_interval_3sigma = {
     'alpha': 0.02,
     'label': r'GP $\pm 3 \sigma$',
 }
-new_X_1d = {
+next_X_1d = {
     'color': 'green',
     'linestyle': ':',
     'linewidth': 2,
     'label': r"New $X$",
+}
+next_X_2d = {
+    "facecolor": 'red',
+    "edgecolors": 'black',
+    "marker": '*',
+    "s": ms ** 2,
+    "label": 'Next X',
+    "alpha": 0.8,
 }
 optimum = {
     'color': 'orange',

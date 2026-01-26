@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from enum import Enum
+from typing import Union
 
 from torch import Tensor
 from abc import ABC
@@ -6,6 +8,8 @@ from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
 from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
+
+NameLike = Union[str, Enum]
 
 
 class MCObjectiveBase(ABC):
@@ -234,12 +238,6 @@ class MCObjectiveBase(ABC):
 
     @linear_equality_input_constraints.setter
     def linear_equality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
-        r"""
-        Linear constraints are passed as a list of tuples. Each tuple corresponds
-        to a constraint, and includes 3 elements (indices, coefficients, rhs),
-        Each tuple encodes an equality constraint of the form:
-        \sum_i (X[indices[idx]] * coefficients[idx]) = rh
-        """
         if values is not None:
             if not isinstance(values, list):
                 raise TypeError("linear_equality_input_constraints must be a list of tuples")
@@ -270,12 +268,6 @@ class MCObjectiveBase(ABC):
 
     @linear_inequality_input_constraints.setter
     def linear_inequality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
-        r"""
-        Linear constraints are passed as a list of tuples. Each tuple corresponds
-        to a constraint, and includes 3 elements (indices, coefficients, rhs).
-        Each tuple encodes an inequality constraint of the form:
-        \sum_i (X[indices[idx]] * coefficients[idx]) >= rh
-        """
         if values is not None:
             if not isinstance(values, list):
                 raise TypeError("linear_equality_input_constraints must be a list of tuples")
@@ -306,24 +298,6 @@ class MCObjectiveBase(ABC):
 
     @nonlinear_inequality_input_constraints.setter
     def nonlinear_inequality_input_constraints(self, value):
-        r"""
-        A list of tuples representing the nonlinear
-        inequality constraints. The first element in the tuple is a callable
-        representing a constraint of the form `callable(x) >= 0`. In the case of an
-        intra-point constraint (single candidate or q=1), `callable()` takes in a
-        one-dimensional tensor of shape `d` and returns a scalar. In the case of an
-        inter-point constraint (multiple candidates or q >1), `callable()` takes a
-        two-dimensional tensor of shape `q x d` and again returns a scalar.
-        The second element is a boolean, indicating if it is an
-        intra-point or inter-point constraint (`True` for intra-point. `False` for
-        inter-point). For more information on intra-point vs. inter-point
-        constraints, see the docstring of the `inequality_constraints` argument to
-        `optimize_acqf()`. The constraints will later be passed to the scipy
-        solver. You need to pass in `batch_initial_conditions` in this case.
-        Using non-linear inequality constraints also requires that `batch_limit`
-        is set to 1, which will be done automatically if not specified in
-        `options`.
-        """
         if value is not None:
             if not isinstance(value, list):
                 raise TypeError("nonlinear_inequality_input_constraints must be a list of tuples")
@@ -464,6 +438,24 @@ class MCObjectiveBase(ABC):
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
+
+    # === HELPERS ===
+
+    def obj_index(self, name: NameLike) -> int:
+        key = name.value if isinstance(name, Enum) else str(name)
+        return [str(n) for n in self.objective_names].index(key)
+
+    def trk_index(self, name: NameLike) -> int:
+        key = name.value if isinstance(name, Enum) else str(name)
+        return [str(n) for n in self.tracker_names].index(key)
+
+    def con_index(self, name: NameLike) -> int:
+        key = name.value if isinstance(name, Enum) else str(name)
+        return [str(n) for n in self.constraint_names].index(key)
+
+    def par_index(self, name: NameLike) -> int:
+        key = name.value if isinstance(name, Enum) else str(name)
+        return [str(n) for n in self.parameter_names].index(key)
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):

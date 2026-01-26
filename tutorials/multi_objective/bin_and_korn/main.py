@@ -1,11 +1,9 @@
 import os
+from datetime import datetime
 import torch
 from pathlib import Path
-
-from botorch.acquisition import qLogExpectedImprovement, qLogNoisyExpectedImprovement
 from botorch.acquisition.multi_objective import qLogExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
-
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
@@ -18,12 +16,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples=64, q: int = 1, ):
-    data_path = main_path / "data"
-    data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"binh_and_korn"
-    directory = create_experiment_directory(data_path, experiment_name)
-    os.chdir(directory)
+def main(n_samples=64, q: int = 1, output_dir: Path = None):
+    run_dir = output_dir / f"batch_{q}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(run_dir)
 
     """ Instantiate true objective """
     objective = BinhAndKornMCMultiOutputObjective(
@@ -71,7 +67,11 @@ def main(n_samples=64, q: int = 1, ):
         bo.optimize()
 
         """ Plot """
-        ParetoFront2DPlotter.plot_ground_truth()
+        x_lims, y_lims = (0, 140), (0, 50)
+        experiment_plotter = ParetoFront2DPlotter(bo=bo, x=bo.Y_obj[], y=bo.Y_obj)
+        experiment_plotter.ax.set_xlim(x_lims)
+        experiment_plotter.ax.set_ylim(y_lims)
+        experiment_plotter.plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(bo=bo).plot().save_figure().close_figure()
@@ -99,7 +99,10 @@ def main(n_samples=64, q: int = 1, ):
 
 if __name__ == "__main__":
     print(f"Running on {DEVICE}.")
-    main_path = Path.cwd().parent
+    date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    main_path = Path.cwd() / "data" / date_time
+    main_path.mkdir(parents=True, exist_ok=True)
+
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=64, q=batch_size)
+        main(n_samples=32, q=batch_size, output_dir=main_path)

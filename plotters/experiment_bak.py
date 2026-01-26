@@ -1,6 +1,3 @@
-from enum import Enum
-from typing import Union
-
 import torch
 import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
@@ -10,8 +7,6 @@ from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-
-NameLike = Union[str, Enum, int]
 
 
 class Experiment1DPlotter(PlotterBase):
@@ -363,7 +358,7 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, *, x: NameLike, y: NameLike):
+    def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
@@ -371,31 +366,10 @@ class ParetoFront2DPlotter(PlotterBase):
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.ax.set_xlabel(
-            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
+            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$f_2(X)$")
         self.ax.set_ylabel(
-            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
-        self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
-        self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
-
-        self.x_sel = self._resolve_selector(parse_axis_spec(x_spec))
-        self.y_sel = self._resolve_selector(parse_axis_spec(y_spec))
-
-        self.ax.set_xlabel(self.x_sel.label)
-        self.ax.set_ylabel(self.y_sel.label)
-
+            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$f_1(X)$")
         self.n_grid_points = 200
-
-    @staticmethod
-    def _name_key(spec: NameLike) -> str:
-        return spec.value if isinstance(spec, Enum) else str(spec)
-
-    def _axis_label(self, spec: NameLike) -> str:
-        if isinstance(spec, int):
-            names = getattr(self.bo.objective, "objective_names", None)
-            if names is not None and spec < len(names):
-                return str(names[spec])
-            return f"obj{spec}"
-        return self._name_key(spec)
 
     def plot_ground_truth(self):
         X_gt = self._generate_uniform_grid()

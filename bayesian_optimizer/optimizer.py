@@ -30,7 +30,6 @@ from gpytorch.constraints import GreaterThan
 from objectives.base_class import MCObjectiveBase
 from samplers.samplers import SamplerBase, SobolSampler
 from gpytorch.mlls import SumMarginalLogLikelihood
-from utils.bo_types import *
 
 
 class BayesianOptimizer:
@@ -491,22 +490,19 @@ class BayesianOptimizer:
 
         t0 = time.monotonic()
 
-        # === 1. Compute metrics on current data ===
-        self._compute_feasibility_mask(verbose=verbose)
-        self._compute_acquisition_function_reference(verbose=verbose)
-        if self._objective.num_objectives == 1:
-            self._compute_best_value(verbose=verbose)
-        else:
-            self._compute_hypervolume(verbose=verbose)
+        # === 1. Compute metrics ===
+        self._compute_feasible_mask(verbose=verbose)
+        self._compute_metrics(verbose=verbose)
 
         # === 2. Initialize and fit Model ===
         self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
-        # === 3. Initialize acquisition function ===
+        # === 3. Initialize acqf ===
+        self._compute_acquisition_function_reference(verbose=verbose)
         self._initialize_acquisition_function(verbose=verbose)
 
-        # === 4. Optimize ===
+        # === 4. Optimize acqf ===
         self._optimize_acquisition_function(verbose=verbose)
 
         t1 = time.monotonic()
@@ -515,19 +511,88 @@ class BayesianOptimizer:
         if verbose:
             print(f"Optimization step completed in {t1 - t0:.2f}s")
 
+    def _compute_feasible_mask(self, verbose=True):
+        """ Computes feasible mask for all observed data. A point is defined feasible only
+        if it satisfies both Input and Output constraints. """
+        if verbose:
+            print("Computing feasibility mask... ", end="")
+
+        feasible_input_mask = self._compute_feasible_input_mask()
+        feasible_output_mask = self._compute_feasible_output_mask()
+        self._feasible_mask = feasible_input_mask & feasible_output_mask
+
+        if verbose:
+            n_points = self.X.shape[0]
+            n_feasible = self._feasible_mask.sum().item()
+            self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
+
+    def _compute_feasible_input_mask(self):
+        return self.objective.is_input_feasible(self.X)
+
+    def _compute_feasible_output_mask(self):
+        if self.objective.constraints is None:
+            Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
+        else:
+            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
+            Y_feasible = self.objective.is_output_feasible(Y_full)
+        return Y_feasible
+
+    def _compute_metrics(self, verbose=True):
+        """ Compute optimization metrics depending on problem dimensionality
+        Single-objective: _best_f
+        Multi-objective: hypervolume."""
+        if self._objective.num_objectives == 1:
+            self._compute_best_value(verbose=verbose)
+        else:
+            self._compute_hypervolume(verbose=verbose)
+
+    def _compute_best_value(self, verbose=True):
+        if verbose:
+            print("Computing best value... ", end="")
+
+        if self._best_feasible_Y is not None:
+            best_value = self._best_feasible_Y.squeeze().item()
+        else:
+            best_value = float('inf') if self._objective.obj_to_minimize[0] else float('-inf')
+
+        self._best_values.append(best_value)
+
+        if verbose:
+            self._print_success(msg=f"({best_value:.4f})")
+
+    def _compute_hypervolume(self, verbose=True):
+        if verbose:
+            print("Computing hypervolume... ", end="")
+
+        if self._feasible_pareto_front_Y is None:
+            hv = torch.nan
+            if verbose:
+                print("✗ Cannot compute hypervolume. No Pareto front found.")
+            self._hypervolume.append(hv)
+            return
+
+        # Negate only the dimensions that are minimization objectives
+        feasible_pareto_front_Y_maximized = self._feasible_pareto_front_Y.clone()
+        feasible_pareto_front_Y_maximized[..., self._objective.obj_to_minimize] *= -1
+        hv = Hypervolume(self._ref_point).compute(feasible_pareto_front_Y_maximized)
+        self._hypervolume.append(hv)
+
+        if verbose:
+            print("✓")
+            print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
+
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and constraints.
 
         This method prepares the training dataset by combining the objective and constraint
-        observations (and optionally their variances). Then it creates one independent
-        SingleTaskGP model for each output dimension (each objective or constraint).
+        observations (and optionally their variances). Then, it creates an independent
+        SingleTaskGP model for each output dimension (including objectives and constraints).
         The SingleTaskGP are finally combined into a ModelListGP to jointly represent the full
         multi-output model.
 
         Important: The GP model in BoTorch is a pure regression model: it simply fits the data
         it receives. It does not know or care about whether the model is for objectives to
-        minimize or maximize. As such, the model must always and only receive the true, unnegated
-        objective values as training data. In other words, the model is always fit to the true data.
+        minimize or maximize.
 
         Note: by setting an input transform and an outcome transform, input (X) and output data (Y) are
         transformed and untransformed accordingly across the whole optimization pipeline, including
@@ -536,8 +601,8 @@ class BayesianOptimizer:
         However, if a penalty is added in the forward method, this is not standardized properly and a
         pre-factor (or scaling) results in different penalty weights.
 
-        Note: the kernel instance must be deep-copied, otherwise the same kernel would be shared across
-        all the initialized models. """
+        Note: the kernel instance must be deep-copied, otherwise the same kernel is shared across
+        all the models. This is critical in multi objective problems. """
 
         if verbose:
             print("Initializing model... ", end="")
@@ -566,12 +631,7 @@ class BayesianOptimizer:
             self._print_success()
 
     def _prepare_training_dataset(self):
-        """ Prepare the training dataset for fitting the surrogate model.
-
-        This method formats the inputs and outputs for model training:
-            - Concatenates any available constraints to the outputs.
-            - Concatenates variances for both objectives and constraints if available, else None."""
-
+        """ Prepare the training dataset for fitting the surrogate model. """
         train_x = self.X.clone()
         train_y = self._Y_obj.clone()
 
@@ -590,32 +650,75 @@ class BayesianOptimizer:
 
         return train_x, train_y, train_var
 
-    def _initialize_sampler(self, verbose=True):
-        """Initialize sampler for Monte Carlo acquisition functions."""
+    def _fit_model(self, restart_on_error=True, verbose=True):
+        if not isinstance(self._model, ModelListGP):
+            raise ValueError("Model must be initialized before fitting.")
 
-        if verbose:
-            print("Initializing sampler... ", end="")
+        restart_count = 0
+        last_error = None
 
-        self._sampler = SobolQMCNormalSampler(torch.Size([self._num_mc_samples]))
+        while restart_count <= self._n_model_fit_restarts:
 
-        if verbose:
-            self._print_success()
+            try:
+                # === Fit ===
+                if verbose:
+                    print("Fitting model... ", end="")
+
+                with warnings.catch_warnings(record=True) as caught:
+                    botorch.fit_gpytorch_mll(self._mll)
+                self._warnings.extend(caught)
+
+                if verbose:
+                    self._print_success()
+                    self._print_caught_warnings()
+                    self._clear_warnings()
+
+                # TODO
+                # === Validation ===
+                # with warnings.catch_warnings(record=True) as caught:
+                #     self._validate_models(verbose=verbose)
+                # self._warnings.extend(caught)
+                #
+                # if self._warnings:
+                #     raise RuntimeError("Unphysical model parameters.")
+
+                break
+
+            except Exception as e:
+                last_error = e
+                # self._print_failed()
+                self._print_caught_warnings()
+                self._clear_warnings()
+                restart_count += 1
+
+                if not restart_on_error or restart_count >= self._n_model_fit_restarts:
+                    raise RuntimeError(
+                        f"Model validation failed after {self._n_model_fit_restarts} attempts. "
+                        f"Last error: {last_error}"
+                    )
+
+                if verbose:
+                    print(f"Reinitializing and retrying... "
+                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")  #
+
+                # self._initialize_kernel(verbose=verbose)
+                # self._initialize_model(verbose=verbose)
+                # self._randomize_hyperparameters(issues)
 
     def _compute_acquisition_function_reference(self, verbose=True):
-        """Compute reference values needed for acquisition function initialization.
-        Single-objective: computes best value (_best_f)
-        Multi-objective: computes reference point in high dimensional space."""
+        """Compute the reference value for the acquisition function.
+        Single-objective: best value (_best_f)
+        Multi-objective: reference point in high dimensional space."""
         if self._objective.num_objectives == 1:
-            self._compute_best_Y(verbose=verbose)
+            self._compute_best_f(verbose=verbose)
         else:
             self._compute_reference_point(verbose=verbose)
             self._compute_pareto_front(verbose=verbose)
 
-    def _compute_best_Y(self, verbose=True):
-        """Compute the current best observed value (for single-objective).
+    def _compute_best_f(self, verbose=True):
+        """Compute the optimal observation (for single-objective).
         This method assumes maximization, therefore, the Y must be cast into a
         maximization problem before computing the best observation."""
-
         if self._feasible_mask is None:
             raise ValueError(
                 "Feasibility mask is missing. "
@@ -666,7 +769,7 @@ class BayesianOptimizer:
 
     def _compute_pareto_front(self, verbose=True):
         """
-        Compute the Pareto front including constraints. Note that as
+        Compute the Pareto front including constraints. Note that since
         "is_non_dominated" assumes maximization, the Y must be cast into a
         maximization problem before computing the pareto front.
         """
@@ -689,15 +792,10 @@ class BayesianOptimizer:
         # Compute feasible Pareto front
         if self._feasible_mask.any():
             feasible_pareto_mask = torch.zeros_like(self._feasible_mask)
-            feasible_pareto_mask[self._feasible_mask] = is_non_dominated(
-                Y_obj_maximized[self._feasible_mask]
-            )
-
+            feasible_pareto_mask[self._feasible_mask] = is_non_dominated(Y_obj_maximized[self._feasible_mask])
             self._feasible_pareto_front_X = self.X[feasible_pareto_mask]
             self._feasible_pareto_front_Y = self._Y_obj[feasible_pareto_mask]
-
         else:
-
             self._feasible_pareto_front_X = None
             self._feasible_pareto_front_Y = None
 
@@ -766,60 +864,69 @@ class BayesianOptimizer:
             Y=Y,
         )
 
-    def _fit_model(self, restart_on_error=True, verbose=True):
-        if not isinstance(self._model, ModelListGP):
-            raise ValueError("Model must be initialized before fitting.")
+    def _initialize_sampler(self, verbose=True):
+        """Initialize sampler for Monte Carlo acquisition functions."""
+        if verbose:
+            print("Initializing sampler... ", end="")
 
-        restart_count = 0
-        last_error = None
+        self._sampler = SobolQMCNormalSampler(torch.Size([self._num_mc_samples]))
 
-        while restart_count <= self._n_model_fit_restarts:
+        if verbose:
+            self._print_success()
 
-            try:
-                # === Fit ===
-                if verbose:
-                    print("Fitting model... ", end="")
+    # TODO: is there a better logic for this?
+    def compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
+        """ Computes feasible X and Y """
 
-                with warnings.catch_warnings(record=True) as caught:
-                    botorch.fit_gpytorch_mll(self._mll)
-                self._warnings.extend(caught)
+        if verbose:
+            print("Computing feasible X and Y... ", end="")
 
-                if verbose:
-                    self._print_success()
-                    self._print_caught_warnings()
-                    self._clear_warnings()
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
 
-                # TODO
-                # === Validation ===
-                # with warnings.catch_warnings(record=True) as caught:
-                #     self._validate_models(verbose=verbose)
-                # self._warnings.extend(caught)
-                #
-                # if self._warnings:
-                #     raise RuntimeError("Unphysical model parameters.")
+        if self._feasible_mask.any():
+            feasible_X = self.X[self._feasible_mask].clone()
+            feasible_Y = self._Y_obj[self._feasible_mask].clone()
+        else:
+            feasible_X = None
+            feasible_Y = None
 
-                break
+        if verbose:
+            print("✓")
 
-            except Exception as e:
-                last_error = e
-                # self._print_failed()
-                self._print_caught_warnings()
-                self._clear_warnings()
-                restart_count += 1
+        return feasible_X, feasible_Y
 
-                if not restart_on_error or restart_count >= self._n_model_fit_restarts:
-                    raise RuntimeError(
-                        f"Model validation failed after {self._n_model_fit_restarts} attempts. "
-                        f"Last error: {last_error}"
-                    )
+    def compute_infeasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
+        """ Computes infeasible X and Y. This method assumes maximization,
+        therefore, the Y must be cast into a maximization problem. """
 
-                if verbose:
-                    print(f"Reinitializing and retrying... "
-                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")  #
+        if verbose:
+            print("Computing infeasible X and Y... ", end="")
 
-                # self._initialize_kernel(verbose=verbose)
-                # self._initialize_model(verbose=verbose)
-                # self._randomize_hyperparameters(issues)
+        if self._objective.num_objectives != 1:
+            raise ValueError("Only single objective is currently supported.")
+
+        if self._feasible_mask is None:
+            raise ValueError(
+                "Feasibility mask is missing. "
+                "Call compute_feasibility_mask() first."
+            )
+
+        infeasible_mask = torch.logical_not(self._feasible_mask)
+        if infeasible_mask.any():
+            infeasible_X = self.X[infeasible_mask].clone()
+            infeasible_Y = self._Y_obj[infeasible_mask].clone()
+        else:
+            infeasible_X = None
+            infeasible_Y = None
+
+        if verbose:
+            print("✓")
+
+        return infeasible_X, infeasible_Y
 
     # def _randomize_hyperparameters_bak(self):
     #     """Randomize hyperparameters for a fresh optimization start."""
@@ -1217,118 +1324,6 @@ class BayesianOptimizer:
         if verbose:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
-
-    def _compute_feasibility_mask(self, verbose=True):
-        """ Computes a combined feasibility mask for all observed data.
-        A point is feasible only if it satisfies both Input and Output constraints. """
-        if verbose:
-            print("Computing feasibility mask... ", end="")
-
-        X_feasible = self.objective.is_input_feasible(self.X)
-        if self.objective.constraints is None:
-            Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
-        else:
-            Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
-            Y_feasible = self.objective.is_output_feasible(Y_full)
-        self._feasible_mask = X_feasible & Y_feasible
-
-        if verbose:
-            n_points = self.X.shape[0]
-            n_feasible = self._feasible_mask.sum().item()
-            self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
-
-    def compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
-        """ Computes feasible X and Y. This method assumes maximization,
-        therefore, the Y must be cast into a maximization problem. """
-
-        if verbose:
-            print("Computing feasible X and Y... ", end="")
-
-        if self._feasible_mask is None:
-            raise ValueError(
-                "Feasibility mask is missing. "
-                "Call compute_feasibility_mask() first."
-            )
-
-        if self._feasible_mask.any():
-            feasible_X = self.X[self._feasible_mask].clone()
-            feasible_Y = self._Y_obj[self._feasible_mask].clone()
-        else:
-            feasible_X = None
-            feasible_Y = None
-
-        if verbose:
-            print("✓")
-
-        return feasible_X, feasible_Y
-
-    def compute_infeasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
-        """ Computes infeasible X and Y. This method assumes maximization,
-        therefore, the Y must be cast into a maximization problem. """
-
-        if verbose:
-            print("Computing infeasible X and Y... ", end="")
-
-        if self._objective.num_objectives != 1:
-            raise ValueError("Only single objective is currently supported.")
-
-        if self._feasible_mask is None:
-            raise ValueError(
-                "Feasibility mask is missing. "
-                "Call compute_feasibility_mask() first."
-            )
-
-        infeasible_mask = torch.logical_not(self._feasible_mask)
-        if infeasible_mask.any():
-            infeasible_X = self.X[infeasible_mask].clone()
-            infeasible_Y = self._Y_obj[infeasible_mask].clone()
-        else:
-            infeasible_X = None
-            infeasible_Y = None
-
-        if verbose:
-            print("✓")
-
-        return infeasible_X, infeasible_Y
-
-    def _compute_hypervolume(self, verbose=True):
-        """ Compute the hypervolume metric. It assumes maximization. """
-
-        if verbose:
-            print("Computing hypervolume... ", end="")
-
-        if self._feasible_pareto_front_Y is None:
-            hv = torch.nan
-            if verbose:
-                print("✗ Cannot compute hypervolume. No Pareto front found.")
-            self._hypervolume.append(hv)
-            return
-
-        # Negate only the dimensions that are minimization objectives
-        feasible_pareto_front_Y_maximized = self._feasible_pareto_front_Y.clone()
-        feasible_pareto_front_Y_maximized[..., self._objective.obj_to_minimize] *= -1
-        hv = Hypervolume(self._ref_point).compute(feasible_pareto_front_Y_maximized)
-        self._hypervolume.append(hv)
-
-        if verbose:
-            print("✓")
-            print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
-
-    def _compute_best_value(self, verbose=True):
-        """ Track the best observed value as metric for single objective problems."""
-
-        if verbose:
-            print("Computing best value... ", end="")
-
-        if self._best_feasible_Y is not None:
-            best_value = self._best_feasible_Y.squeeze().item()  # Original space
-        else:
-            best_value = float('inf') if self._objective.obj_to_minimize[0] else float('-inf')
-
-        self._best_values.append(best_value)
-
-        if verbose:
-            self._print_success(msg=f"({best_value:.4f})")
 
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,

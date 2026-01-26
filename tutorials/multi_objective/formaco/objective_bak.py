@@ -3,10 +3,10 @@ from enum import StrEnum
 import torch
 from torch import Tensor
 from constraints.output_constraints import Identity
-from objectives.base_class import MCMultiObjectiveBase
+from objectives.base_class import MCMultiOutputBase
 
 
-class FormACOMCMultiOutputConstrainedObjective(MCMultiObjectiveBase):
+class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
     """
     2x objectives:
         - Machining Time: Originally intended for minimization.
@@ -154,7 +154,7 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiObjectiveBase):
         return selected
 
 
-class FormACOMCMultiOutputObjective(MCMultiObjectiveBase):
+class FormACOMCMultiOutputObjective(MCMultiOutputBase):
     """
     3x objectives:
         - Machining Time: Originally intended for minimization.
@@ -181,39 +181,30 @@ class FormACOMCMultiOutputObjective(MCMultiObjectiveBase):
     class TrkName(StrEnum):
         ORBITING_TIME = "Orbiting Time (min)"
 
-    class ParName(StrEnum):
-        MAX_CURRENT = "Max Current (A)"
-        PEDESTAL_CURRENT = "Pedestal Current (A)"
-        MAX_RAMP_TIME = "Max Ramp Time (μs)"
-
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device,
             dtype=dtype,
             dim=3,
             parameter_names=[
-                self.ParName.MAX_CURRENT,
-                self.ParName.PEDESTAL_CURRENT,
-                self.ParName.MAX_RAMP_TIME
+                "Maximum Current (A)",
+                "Pedestal Current (A)",
+                "Maximum Ramp Time (μs)"
             ],
             num_objectives=3,
             objective_names=[
-                self.ObjName.MACHINING_TIME,
-                self.ObjName.ELECTRODE_WEAR,
-                self.ObjName.ORBITING_TIME_PENALTY,
+                "Machining Time (min)",
+                "Electrode Wear (μm)",
+                "Orbiting Time Penalty (min)",
             ],
-            bounds=[
-                (7.5, 15),
-                (3, 7.5),
-                (0.1 * 78, 78)
-            ],
+            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
             obj_to_minimize=[True, True, False],
             ref_point=[300, 150, -50],
             num_outcomes=3,
             outcomes=[0, 1, 2],
             num_trackers=1,
             tracker_names=[
-                self.TrkName.ORBITING_TIME
+                "Orbiting Time (min)"
             ],
             num_constraints=0,
             constraint_names=None,
