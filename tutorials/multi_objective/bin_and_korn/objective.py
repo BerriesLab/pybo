@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 import torch
 from torch import Tensor
 from objectives.base_class import MCMultiObjectiveBase
@@ -17,12 +19,20 @@ class BinhAndKornMCMultiOutputObjective(MCMultiObjectiveBase):
         ("True" for intra-point. "False" for inter-point).
     """
 
+    class Obj(StrEnum):
+        BIN = "Bin"
+        KORN = "Korn"
+
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
         super().__init__(
             device=device,
             dtype=dtype,
             dim=2,
             num_objectives=2,
+            objective_names=[
+                self.ObjName.BIN,
+                self.ObjName.KORN
+            ],
             num_constraints=0,
             num_trackers=0,
             obj_to_minimize=[True, True],

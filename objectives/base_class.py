@@ -13,6 +13,17 @@ NameLike = Union[str, Enum]
 
 
 class MCObjectiveBase(ABC):
+    class Obj(StrEnum):
+        pass
+
+    class Trk(StrEnum):
+        pass
+
+    class Par(StrEnum):
+        pass
+
+    class Con(StrEnum):
+        pass
 
     def __init__(
             self,
@@ -441,21 +452,33 @@ class MCObjectiveBase(ABC):
 
     # === HELPERS ===
 
+    def get_index(self, name: NameLike) -> int:
+        if isinstance(name, self.Obj):
+            return self.objective_names.index(name.value)
+
+        elif isinstance(name, self.Trk):
+            return self.tracker_names.index(name.value)
+
+        elif isinstance(name, self.Con):
+            return self.constraint_names.index(name.value)
+
+        elif isinstance(name, self.Par):
+            return self.parameter_names.index(name.value)
+
+        else:
+            raise TypeError(f"Type {type(name)} is not valid.")
+
     def obj_index(self, name: NameLike) -> int:
-        key = name.value if isinstance(name, Enum) else str(name)
-        return [str(n) for n in self.objective_names].index(key)
+        return self.objective_names.index(name.value)
 
     def trk_index(self, name: NameLike) -> int:
-        key = name.value if isinstance(name, Enum) else str(name)
-        return [str(n) for n in self.tracker_names].index(key)
+        return self.tracker_names.index(name.value)
 
     def con_index(self, name: NameLike) -> int:
-        key = name.value if isinstance(name, Enum) else str(name)
-        return [str(n) for n in self.constraint_names].index(key)
+        return self.constraint_names.index(name.value)
 
     def par_index(self, name: NameLike) -> int:
-        key = name.value if isinstance(name, Enum) else str(name)
-        return [str(n) for n in self.parameter_names].index(key)
+        return self.parameter_names.index(name.value)
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
