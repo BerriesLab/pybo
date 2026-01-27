@@ -2,13 +2,13 @@ import os
 from datetime import datetime
 import torch
 from pathlib import Path
-from botorch.acquisition.multi_objective import qLogExpectedHypervolumeImprovement
+from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
-from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
-    ConstraintPlotter, TrackerPlotter, ParameterPlotter
+from plotters.metrics import HypervolumePlotter, ElapsedTimePlotter, HypervolumeImprovementPlotter
+from plotters.evolution import ObjectiveEvolution, ConstraintEvolution, TrackerEvolution, ParameterEvolution
 from tutorials.multi_objective.bin_and_korn.objective import BinhAndKorn
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,21 +21,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = BinhAndKorn(
-        device=DEVICE,
-        dtype=DTYPE,
-    )
+    objective = BinhAndKorn(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
 
     """ Generate initial dataset """
-    sampler = SobolSampler(
-        device=DEVICE,
-        dtype=DTYPE,
-        objective=objective,
-        seed=2063
-    )
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)
     X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
@@ -44,7 +36,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acqf=qLogExpectedHypervolumeImprovement,
+        acqf=qLogNoisyExpectedHypervolumeImprovement,
         kernel=kernel,
         X=X,
         Y_obj=Y_obj,
@@ -66,20 +58,14 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        experiment_plotter = ParetoFront2DPlotter(bo=bo, x=objective.Obj.BIN, y=objective.Obj.KORN,
-                                                  z=objective.Obj.KORN)
-        experiment_plotter.plot().save_figure().close_figure()
+        ParetoFront2DPlotter(bo=bo, x=objective.Obj.BINH, y=objective.Obj.KORN).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(bo=bo).plot().save_figure().close_figure()
-        for idx in range(bo.objective.dim):
-            ParameterPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_objectives):
-            ObjectivePlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_constraints):
-            ConstraintPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_trackers):
-            TrackerPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
+        for par in objective.Par: ParameterEvolution(bo=bo, par=par).plot().save_figure().close_figure()
+        for obj in objective.Obj: ObjectiveEvolution(bo=bo, obj=obj).plot().save_figure().close_figure()
+        for con in objective.Con: ConstraintEvolution(bo=bo, con=con).plot().save_figure().close_figure()
+        for trk in objective.Trk: TrackerEvolution(bo=bo, trk=trk).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

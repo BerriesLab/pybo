@@ -2,6 +2,7 @@ import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.base_class import MCSingleObjectiveBase
+from objectives.data_base import VariableRegistry
 from plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
@@ -64,25 +65,36 @@ class Acqf1DPlotter(PlotterBase):
 
 class Acqf2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: BayesianOptimizer, x: VariableRegistry, y: VariableRegistry):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
+        # self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        # self.ax.set_xlabel(
+        #     self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
+        # self.ax.set_ylabel(
+        #     self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
+        # self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
+        # self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel(
-            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
-        self.ax.set_ylabel(
-            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
-        self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
-        self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+        self.x = x
+        self.y = y
+
+        # Lock X and Y scales from VariableRegistry bounds
+        self.ax.set_xlim(self.x.bounds)
+        self.ax.set_ylim(self.y.bounds)
+
+        self.ax.set_xlabel(x.label)
+        self.ax.set_ylabel(y.label)
 
     def plot_acquisition(self, zorder: int = 0):
         N = self.n_grid_points
         X_grid = self._generate_uniform_grid()
-        X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
-        Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
+        X_np = X_grid[:, self.x.index].reshape(N, N).cpu().numpy()
+        Y_np = X_grid[:, self.y.index].reshape(N, N).cpu().numpy()
         with torch.no_grad():
             Z_np = self.bo.acqf_instance(X_grid.unsqueeze(1)).reshape(N, N).cpu().numpy()
         feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
@@ -93,7 +105,7 @@ class Acqf2DPlotter(PlotterBase):
             Y_np,
             Z_masked_np,
             zorder=zorder,
-            **contour_gnd_truth
+            **experiment_contour_gnd_truth
         )
         self.fig.colorbar(
             cp,
@@ -117,26 +129,26 @@ class Acqf2DPlotter(PlotterBase):
         # Plot feasible observations (excluding the optimum)
         if X_f_plot is not None and X_f_plot.nelement() > 0:
             self.ax.scatter(
-                X_f_plot[..., 0].detach().cpu().numpy(),
-                X_f_plot[..., 1].detach().cpu().numpy(),
+                x=X_f_plot[..., self.x.index].detach().cpu().numpy(),
+                y=X_f_plot[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_feasible
+                **experiment_scatter_observations_feasible
             )
 
         # Plot infeasible observations
         if X_i is not None:
             self.ax.scatter(
-                X_i[..., 0].detach().cpu().numpy(),
-                X_i[..., 1].detach().cpu().numpy(),
+                x=X_i[..., self.x.index].detach().cpu().numpy(),
+                y=X_i[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_infeasible
+                **experiment_scatter_observations_infeasible
             )
 
         # Plot optimum
         if X_best is not None:
             self.ax.scatter(
-                X_best[..., 0].detach().cpu().numpy(),
-                X_best[..., 1].detach().cpu().numpy(),
+                x=X_best[..., self.x.index].detach().cpu().numpy(),
+                y=X_best[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
                 **optimum,
             )
@@ -147,7 +159,8 @@ class Acqf2DPlotter(PlotterBase):
         if self.bo.new_X is not None:
             X = self.bo.new_X.detach().cpu().numpy()
             self.ax.scatter(
-                X[:, 0], X[:, 1],
+                x=X[:, self.x.index],
+                y=X[:, self.y.index],
                 color='red', marker='*', s=200,
                 edgecolor='white', label="Next X", zorder=zorder,
             )
@@ -172,8 +185,8 @@ class Acqf2DPlotter(PlotterBase):
                 for j in range(len(X_new)):
                     self.ax.annotate(
                         text="",
-                        xy=(X_new[j, 0], X_new[j, 1]),
-                        xytext=(X_np[i, 0], X_np[i, 1]),
+                        xy=(X_new[j, self.x.index], X_new[j, self.y.index]),
+                        xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
                         zorder=zorder,
                         arrowprops=arrow_future,
                     )
@@ -196,8 +209,8 @@ class Acqf2DPlotter(PlotterBase):
             for j in range(first_batch.shape[0]):
                 self.ax.annotate(
                     text="",
-                    xy=(first_batch[j, 0], first_batch[j, 1]),
-                    xytext=(X_np[i, 0], X_np[i, 1]),
+                    xy=(first_batch[j, self.x.index], first_batch[j, self.y.index]),
+                    xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
                     zorder=zorder,
                     arrowprops=arrow_past,
                 )
@@ -210,8 +223,8 @@ class Acqf2DPlotter(PlotterBase):
                 for j in range(B.shape[0]):
                     self.ax.annotate(
                         text="",
-                        xy=(float(B[j, 0]), float(B[j, 1])),
-                        xytext=(float(A[i, 0]), float(A[i, 1])),
+                        xy=(float(B[j, self.x.index]), float(B[j, self.y.index])),
+                        xytext=(float(A[i, self.x.index]), float(A[i, self.y.index])),
                         zorder=zorder,
                         arrowprops=arrow_past,
                     )
@@ -223,8 +236,8 @@ class Acqf2DPlotter(PlotterBase):
                 for j in range(len(X_new)):
                     self.ax.annotate(
                         text="",
-                        xy=(float(X_new[j, 0]), float(X_new[j, 1])),
-                        xytext=(float(last_batch[i, 0]), float(last_batch[i, 1])),
+                        xy=(float(X_new[j, self.x.index]), float(X_new[j, self.y.index])),
+                        xytext=(float(last_batch[i, self.x.index]), float(last_batch[i, self.y.index])),
                         zorder=zorder + 2,
                         arrowprops=arrow_future,
                     )

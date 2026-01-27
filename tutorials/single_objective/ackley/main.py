@@ -3,6 +3,7 @@ from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
 from plotters.acqf import Acqf2DPlotter
+from plotters.metrics import ElapsedTimePlotter, BestValuePlotter
 from tutorials.single_objective.ackley.objective import Ackley
 from plotters.experiment import *
 from samplers.samplers import *
@@ -62,14 +63,14 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Experiment2DPlotter(bo=bo, x=objective.Par.P1, y=objective.Par.P2).plot().save_figure().close_figure()
+        Acqf2DPlotter(bo=bo, x=objective.Par.P1, y=objective.Par.P2).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        for idx in range(bo.objective.dim):
-            ParameterPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_objectives):
-            ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
+        for par in objective.Par: ParameterEvolution(bo=bo, par=par).plot().save_figure().close_figure()
+        for obj in objective.Obj: ObjectiveEvolution(bo=bo, obj=obj).plot().save_figure().close_figure()
+        for con in objective.Con: ConstraintEvolution(bo=bo, con=con).plot().save_figure().close_figure()
+        for trk in objective.Trk: TrackerEvolution(bo=bo, trk=trk).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

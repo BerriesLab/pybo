@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.data_base import DataBase
+from objectives.data_base import VariableRegistry
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
@@ -93,7 +93,7 @@ class Experiment1DPlotter(PlotterBase):
                 x=feasible_X.detach().cpu().numpy(),
                 y=feasible_Y.detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_gnd_truth_feasible
+                **experiment_scatter_gnd_truth_feasible
             )
         infeasible_mask = torch.logical_not(feasible_mask)
         if infeasible_mask.any():
@@ -103,7 +103,7 @@ class Experiment1DPlotter(PlotterBase):
                 x=infeasible_X.detach().cpu().numpy(),
                 y=infeasible_Y.detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_gnd_truth_infeasible
+                **experiment_scatter_gnd_truth_infeasible
             )
 
         return self
@@ -127,7 +127,7 @@ class Experiment1DPlotter(PlotterBase):
                 X_f_plot.detach().cpu().numpy(),
                 Y_f_plot.detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_feasible
+                **experiment_scatter_observations_feasible
             )
 
         # Plot infeasible observations
@@ -136,7 +136,7 @@ class Experiment1DPlotter(PlotterBase):
                 X_i.detach().cpu().numpy(),
                 Y_i.detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_infeasible
+                **experiment_scatter_observations_infeasible
             )
 
         # Plot optimum
@@ -180,26 +180,37 @@ class Experiment1DPlotter(PlotterBase):
 
 class Experiment2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: BayesianOptimizer, x: VariableRegistry, y: VariableRegistry):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
+        # self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        # self.ax.set_xlabel(
+        #     self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
+        # self.ax.set_ylabel(
+        #     self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
+        # self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
+        # self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel(
-            self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
-        self.ax.set_ylabel(
-            self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
-        self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
-        self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+        self.x = x
+        self.y = y
+
+        # Lock X and Y scales from VariableRegistry bounds
+        self.ax.set_xlim(self.x.bounds)
+        self.ax.set_ylim(self.y.bounds)
+
+        self.ax.set_xlabel(x.label)
+        self.ax.set_ylabel(y.label)
 
     def plot_ground_truth(self, zorder: int = 0):
         N = self.n_grid_points
         X_grid = self._generate_uniform_grid()
         Y_obj_gt = self.bo.objective.evaluate_true_objective(X_grid)
-        X_np = X_grid[:, 0].reshape(N, N).cpu().numpy()
-        Y_np = X_grid[:, 1].reshape(N, N).cpu().numpy()
+        X_np = X_grid[:, self.x.index].reshape(N, N).cpu().numpy()
+        Y_np = X_grid[:, self.y.index].reshape(N, N).cpu().numpy()
         Z_np = Y_obj_gt.reshape(N, N).cpu().numpy()
         feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
         Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
@@ -209,7 +220,7 @@ class Experiment2DPlotter(PlotterBase):
             Y_np,
             Z_masked_np,
             zorder=zorder,
-            **contour_gnd_truth
+            **experiment_contour_gnd_truth
         )
         self.fig.colorbar(
             cp,
@@ -233,26 +244,26 @@ class Experiment2DPlotter(PlotterBase):
         # Plot feasible observations (excluding the optimum)
         if X_f_plot is not None and X_f_plot.nelement() > 0:
             self.ax.scatter(
-                X_f_plot[..., 0].detach().cpu().numpy(),
-                X_f_plot[..., 1].detach().cpu().numpy(),
+                X_f_plot[..., self.x.index].detach().cpu().numpy(),
+                X_f_plot[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_feasible
+                **experiment_scatter_observations_feasible
             )
 
         # Plot infeasible observations
         if X_i is not None:
             self.ax.scatter(
-                X_i[..., 0].detach().cpu().numpy(),
-                X_i[..., 1].detach().cpu().numpy(),
+                X_i[..., self.x.index].detach().cpu().numpy(),
+                X_i[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_infeasible
+                **experiment_scatter_observations_infeasible
             )
 
         # Plot optimum
         if X_best is not None:
             self.ax.scatter(
-                X_best[..., 0].detach().cpu().numpy(),
-                X_best[..., 1].detach().cpu().numpy(),
+                X_best[..., self.x.index].detach().cpu().numpy(),
+                X_best[..., self.y.index].detach().cpu().numpy(),
                 zorder=zorder,
                 **optimum,
             )
@@ -263,8 +274,8 @@ class Experiment2DPlotter(PlotterBase):
         X_new = self.bo.new_X.detach().cpu().numpy()
         if X_new is not None:
             self.ax.scatter(
-                x=X_new[:, 0],
-                y=X_new[:, 1],
+                x=X_new[:, self.x.index],
+                y=X_new[:, self.y.index],
                 zorder=zorder + 3,
                 **next_X_2d
             )
@@ -288,8 +299,8 @@ class Experiment2DPlotter(PlotterBase):
                 for j in range(len(X_new)):
                     self.ax.annotate(
                         text="",
-                        xy=(X_new[j, 0], X_new[j, 1]),
-                        xytext=(X_np[i, 0], X_np[i, 1]),
+                        xy=(X_new[j, self.x.index], X_new[j, self.y.index]),
+                        xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
                         zorder=zorder,
                         arrowprops=arrow_future,
                     )
@@ -312,8 +323,8 @@ class Experiment2DPlotter(PlotterBase):
             for j in range(first_batch.shape[0]):
                 self.ax.annotate(
                     text="",
-                    xy=(first_batch[j, 0], first_batch[j, 1]),
-                    xytext=(X_np[i, 0], X_np[i, 1]),
+                    xy=(first_batch[j, self.x.index], first_batch[j, self.y.index]),
+                    xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
                     zorder=zorder,
                     arrowprops=arrow_past,
                 )
@@ -326,8 +337,8 @@ class Experiment2DPlotter(PlotterBase):
                 for j in range(B.shape[0]):
                     self.ax.annotate(
                         text="",
-                        xy=(float(B[j, 0]), float(B[j, 1])),
-                        xytext=(float(A[i, 0]), float(A[i, 1])),
+                        xy=(float(B[j, self.x.index]), float(B[j, self.y.index])),
+                        xytext=(float(A[i, self.x.index]), float(A[i, self.y.index])),
                         zorder=zorder,
                         arrowprops=arrow_past,
                     )
@@ -339,8 +350,8 @@ class Experiment2DPlotter(PlotterBase):
                 for j in range(len(X_new)):
                     self.ax.annotate(
                         text="",
-                        xy=(float(X_new[j, 0]), float(X_new[j, 1])),
-                        xytext=(float(last_batch[i, 0]), float(last_batch[i, 1])),
+                        xy=(float(X_new[j, self.x.index]), float(X_new[j, self.y.index])),
+                        xytext=(float(last_batch[i, self.x.index]), float(last_batch[i, self.y.index])),
                         zorder=zorder + 2,
                         arrowprops=arrow_future,
                     )
@@ -362,18 +373,22 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, x: DataBase, y: DataBase, z: DataBase | None = None):
+    def __init__(self, bo: BayesianOptimizer, x: VariableRegistry, y: VariableRegistry,
+                 z: VariableRegistry | None = None, cmap='viridis'):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.n_grid_points = 100  # Resolution for Ground Truth grid
+        self.n_grid_points = 100
+        self.cmap = cmap
 
         self.x = x
         self.y = y
+        self.z = z
 
+        # Lock X and Y scales from VariableRegistry bounds
         if self.x.bounds is not None:
             self.ax.set_xlim(self.x.bounds)
         if self.y.bounds is not None:
@@ -382,27 +397,9 @@ class ParetoFront2DPlotter(PlotterBase):
         self.ax.set_xlabel(x.label)
         self.ax.set_ylabel(y.label)
 
-        if z:
-            self.z = z
-            self.data_z = self._fetch_data_by_name(z)
-            self.ax.set_title(f"{z.label}")
-            if hasattr(self, 'cb') and self.z.bounds is not None:
-                self.sc_mappable.set_clim(self.z.bounds)
-
-    def _fetch_data_by_name(self, x: DataBase) -> torch.Tensor:
-        if isinstance(x, self.bo.objective.Obj):
-            return self.bo.Y_obj[:, x.index]
-        if isinstance(x, self.bo.objective.Trk):
-            return self.bo.Y_track[:, x.index]
-        if isinstance(x, self.bo.objective.Con):
-            return self.bo.Y_con[:, x.index]
-        if isinstance(x, self.bo.objective.Par):
-            return self.bo.X[:, x.index]
-
-        raise TypeError(f"Unrecognised type: {type(x)}")
-
     def _get_data(self, axis_config, X_gt, Y_obj, Y_con, Y_track):
-        """Extracts data from the specific ground-truth tensors provided."""
+        if axis_config is None:
+            return None
         if isinstance(axis_config, self.bo.objective.Obj):
             return Y_obj[..., axis_config.index]
         if isinstance(axis_config, self.bo.objective.Trk):
@@ -411,149 +408,126 @@ class ParetoFront2DPlotter(PlotterBase):
             return Y_con[..., axis_config.index]
         if isinstance(axis_config, self.bo.objective.Par):
             return X_gt[..., axis_config.index]
-        if axis_config is None:
-            return None
         raise TypeError(f"Unrecognised type: {type(axis_config)}")
 
     def plot_ground_truth(self):
-        # 1. Generate grid and evaluate ground truth
         X_gt = self._generate_uniform_grid()
         input_mask = self.bo.objective.is_input_feasible(X_gt)
-
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
         Y_track = self.bo.objective.evaluate_trackers(X_gt)
 
-        # 2. Extract GT values for the axes
         x_gt = self._get_data(self.x, X_gt, Y_obj, Y_con, Y_track)
         y_gt = self._get_data(self.y, X_gt, Y_obj, Y_con, Y_track)
         z_gt = self._get_data(self.z, X_gt, Y_obj, Y_con, Y_track)
 
-        # 3. Define basic masks
         output_mask = self.bo.objective.is_output_feasible(Y_obj)
-        feasible_mask = torch.logical_and(input_mask, output_mask)
-        infeasible_mask = torch.logical_and(input_mask, torch.logical_not(output_mask))
+        is_feasible = torch.logical_and(input_mask, output_mask)
+        is_infeasible = torch.logical_and(input_mask, torch.logical_not(output_mask))
 
-        # --- Identify Pareto Front first to subtract it from feasible region ---
+        # Identify Pareto
         Y_max_space = Y_obj.clone()
-        # Negate objectives marked for minimisation to identify non-dominated points
         Y_max_space[..., self.bo.objective.to_minimize] *= -1
-
-        feasible_indices = torch.where(feasible_mask)[0]
-        is_pareto = torch.zeros_like(feasible_mask, dtype=torch.bool)
-
+        is_pareto = torch.zeros_like(is_feasible, dtype=torch.bool)
+        feasible_indices = torch.where(is_feasible)[0]
         if feasible_indices.numel() > 0:
             from botorch.utils.multi_objective.pareto import is_non_dominated
-            # Calculate non-domination only among feasible candidates
-            pareto_sub_mask = is_non_dominated(Y_max_space[feasible_mask])
-            # Map the sub-mask back to the original grid shape
+            pareto_sub_mask = is_non_dominated(Y_max_space[is_feasible])
             is_pareto[feasible_indices[pareto_sub_mask]] = True
 
-        # --- Define final mutually exclusive masks ---
-        # Points that are feasible BUT NOT part of the Pareto front
-        exclusive_feasible_mask = torch.logical_and(feasible_mask, torch.logical_not(is_pareto))
+        mask_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
-        # 4. Render the plot in layers (bottom to top)
+        # === Render ===
 
-        # Layer 1: Infeasible (Output constraints violated)
-        self.ax.scatter(
-            x_gt[infeasible_mask].cpu().numpy(),
-            y_gt[infeasible_mask].cpu().numpy(),
-            c='red', s=2, alpha=0.1, label='Infeasible GT'
-        )
+        # Layer 1: Infeasible ground truth
+        if is_infeasible.any():
+            self.ax.scatter(
+                x_gt[is_infeasible].cpu().numpy(),
+                y_gt[is_infeasible].cpu().numpy(),
+                **experiment_scatter_gnd_truth_infeasible
+            )
 
-        # Layer 2: Feasible but dominated points
-        self.ax.scatter(
-            x_gt[exclusive_feasible_mask].cpu().numpy(),
-            y_gt[exclusive_feasible_mask].cpu().numpy(),
-            c='green', s=2, alpha=0.1, label='Feasible GT'
-        )
+        # Layer 2: Feasible dominated ground truth
+        kwargs = experiment_scatter_gnd_truth_feasible.copy()
+        kwargs.pop("facecolor")
+        if mask_exclusive_feasible.any():
+            self.ax.scatter(
+                x_gt[mask_exclusive_feasible].cpu().numpy(),
+                y_gt[mask_exclusive_feasible].cpu().numpy(),
+                c=z_gt[mask_exclusive_feasible].cpu().numpy() if z_gt is not None else
+                experiment_scatter_gnd_truth_feasible[
+                    "facecolor"],
+                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
+                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
+                cmap=self.cmap if z_gt is not None else None,
+                **kwargs
+            )
 
-        # Layer 3: Pareto-optimal front (The "best" points)
+        # Layer 3: Pareto ground truth
+        kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
+        kwargs.pop("facecolor")
         if is_pareto.any():
             self.ax.scatter(
                 x_gt[is_pareto].cpu().numpy(),
                 y_gt[is_pareto].cpu().numpy(),
-                c='gold', edgecolor='black', s=20, label='Pareto Front'
+                c=z_gt[is_pareto].cpu().numpy() if z_gt is not None else experiment_scatter_gnd_truth_pareto_front[
+                    "facecolor"],
+                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
+                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
+                cmap=self.cmap if z_gt is not None else None,
+                **kwargs
             )
-
         return self
 
-    def plot_observations(self, zorder=2):
-        # 1. Gather all observed data
-        X = self.bo.X
-        Y_obj = self.bo.Y_obj
-        Y_con = self.bo.Y_con
-        Y_track = self.bo.Y_track
+    def plot_observations(self, zorder=4):
+        X, Y_obj = self.bo.X, self.bo.Y_obj
+        Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
 
-        # 2. Extract x, y, z values for the plot axes using your helper
         x_obs = self._get_data(self.x, X, Y_obj, Y_con, Y_track)
         y_obs = self._get_data(self.y, X, Y_obj, Y_con, Y_track)
+        z_obs = self._get_data(self.z, X, Y_obj, Y_con, Y_track)
 
-        # 3. Step-by-step exclusive masking
-        # A point is 'feasible' only if it passes both input and output constraints
-        input_feas = self.bo.objective.is_input_feasible(X)
-        output_feas = self.bo.objective.is_output_feasible(Y_obj)
-        is_feasible = torch.logical_and(input_feas, output_feas)
+        is_feasible = torch.logical_and(self.bo.objective.is_input_feasible(X),
+                                        self.bo.objective.is_output_feasible(Y_obj))
 
-        # 4. Determine Pareto status ONLY for feasible points
         is_pareto = torch.zeros(X.shape[0], dtype=torch.bool, device=X.device)
-        feasible_indices = torch.where(is_feasible)[0]
-
-        if feasible_indices.numel() > 0:
+        f_idx = torch.where(is_feasible)[0]
+        if f_idx.numel() > 0:
             from botorch.utils.multi_objective.pareto import is_non_dominated
-            # Flip signs for minimization objectives to identify the front correctly
-            Y_max_space = Y_obj[is_feasible].clone()
-            Y_max_space[..., self.bo.objective.to_minimize] *= -1
+            Y_ms = Y_obj[is_feasible].clone()
+            Y_ms[..., self.bo.objective.to_minimize] *= -1
+            is_pareto[f_idx[is_non_dominated(Y_ms)]] = True
 
-            pareto_sub_mask = is_non_dominated(Y_max_space)
-            is_pareto[feasible_indices[pareto_sub_mask]] = True
-
-        # 5. Create final MUTUALLY EXCLUSIVE masks
-        # Mask A: Infeasible points
         mask_infeasible = torch.logical_not(is_feasible)
+        mask_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
-        # Mask B: Feasible points that are NOT Pareto-optimal
-        mask_feasible_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
-
-        # Mask C: Pareto-optimal points
-        mask_pareto = is_pareto
-
-        # --- Rendering ---
-
-        # Layer 1: Infeasible (Plot first, at the bottom)
+        # Render Observations
         if mask_infeasible.any():
+            self.ax.scatter(x_obs[mask_infeasible].cpu().numpy(), y_obs[mask_infeasible].cpu().numpy(),
+                            zorder=zorder, **experiment_scatter_observations_infeasible)
+
+        if mask_dominated.any():
             self.ax.scatter(
-                x_obs[mask_infeasible].cpu().numpy(),
-                y_obs[mask_infeasible].cpu().numpy(),
-                zorder=zorder,
-                **scatter_observations_infeasible  # e.g., red 'x'
+                x_obs[mask_dominated].cpu().numpy(),
+                y_obs[mask_dominated].cpu().numpy(),
+                c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
+                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
+                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
+                cmap=self.cmap if z_obs is not None else None,
+                edgecolors="black",
+                zorder=zorder, s=20
             )
 
-        # Layer 2: Feasible Dominated (Middle layer)
-        if mask_feasible_dominated.any():
+        if is_pareto.any():
             self.ax.scatter(
-                x_obs[mask_feasible_dominated].cpu().numpy(),
-                y_obs[mask_feasible_dominated].cpu().numpy(),
-                zorder=zorder,
-                **scatter_observations_feasible  # e.g., solid green dots
+                x_obs[is_pareto].cpu().numpy(),
+                y_obs[is_pareto].cpu().numpy(),
+                c=z_obs[is_pareto].cpu().numpy() if z_obs is not None else None,
+                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
+                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
+                cmap=self.cmap if z_obs is not None else None,
+                edgecolors='black', linewidths=1.5, s=50, zorder=zorder + 1, label='Observed Pareto'
             )
-
-        # Layer 3: Pareto Front (Top layer)
-        # Since we want "hollow circles surrounding the point",
-        # but we want no overlap, we plot the hollow marker ALONE here.
-        if mask_pareto.any():
-            self.ax.scatter(
-                x_obs[mask_pareto].cpu().numpy(),
-                y_obs[mask_pareto].cpu().numpy(),
-                zorder=zorder + 1,
-                facecolors='none',  # Hollow
-                edgecolors='gold',  # Halo color
-                linewidths=1.5,
-                s=50,  # Larger to look like a surrounding circle
-                label='Observed Pareto Front'
-            )
-
         return self
 
     def plot(self):

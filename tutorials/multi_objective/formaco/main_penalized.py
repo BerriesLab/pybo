@@ -7,8 +7,9 @@ from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.multi_objective_experiment import MultiObjectivePlotter
-from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, ParameterPlotter, \
-    ObjectivePlotter, TrackerPlotter, ConstraintPlotter
+from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, \
+    ParameterEvolution, \
+    ObjectiveEvolution, TrackerEvolution, ConstraintEvolution
 from plotters.styles import make_grid
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -111,13 +112,13 @@ def main(n_samples=64, q: int = 1, ):
         HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
         for idx in range(mobo.objective.dim):
-            ParameterPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
+            ParameterEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_objectives):
-            ObjectivePlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
+            ObjectiveEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_constraints):
-            ConstraintPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
+            ConstraintEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
         for idx in range(mobo.objective.num_trackers):
-            TrackerPlotter(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
+            TrackerEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
 
     print("Optimization Finished.")
 

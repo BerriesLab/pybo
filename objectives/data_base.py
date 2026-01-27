@@ -1,24 +1,24 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
+import torch
 
 
 @dataclass(frozen=True, slots=True)
 class Config:
     label: str
-    index: int
-    bounds: tuple[float, float] | None
-    dtype: Any
+    bounds: tuple[float, float] | Optional[None]
+    dtype: torch.dtype
+    index: int = 0
     to_minimize: bool = False
+    ref_point: Optional[float] = None
 
 
-class DataBase(Enum):
-    # The enum value *is* the Config for that key.
+class VariableRegistry(Enum):
     @property
     def cfg(self) -> Config:
         return self.value  # type: ignore[return-value]
 
-    # Optional convenience shortcuts:
     @property
     def label(self) -> str: return self.cfg.label
 
@@ -33,3 +33,6 @@ class DataBase(Enum):
 
     @property
     def to_minimize(self) -> bool: return self.cfg.to_minimize
+
+    @property
+    def ref_point(self) -> float: return self.cfg.ref_point

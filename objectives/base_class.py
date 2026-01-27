@@ -6,9 +6,21 @@ from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
 from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
+from objectives.data_base import VariableRegistry
 
 
 class MCObjectiveBase(ABC):
+    class Obj(VariableRegistry):
+        pass
+
+    class Par(VariableRegistry):
+        pass
+
+    class Trk(VariableRegistry):
+        pass
+
+    class Con(VariableRegistry):
+        pass
 
     def __init__(
             self,
@@ -469,16 +481,16 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
+        selected[..., self.to_minimize] *= -1
         return selected.squeeze(-1)
 
 
 class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
-    def __init__(self, ref_point: torch.Tensor | list[float], max_hv: float | None = None, *args, **kwargs):
+    def __init__(self, max_hv: float | None = None, *args, **kwargs):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
         MCObjectiveBase.__init__(self, *args, **kwargs)
-        self.ref_point = ref_point
+        self.ref_point = [item.ref_point for item in self.Obj]
         self.max_hv = max_hv
 
     """

@@ -487,29 +487,34 @@ class BayesianOptimizer:
     """ ===================== """
 
     def optimize(self, verbose=True):
-
         t0 = time.monotonic()
 
-        # === 1. Compute metrics ===
+        # === 1. Data Processing (Historical Analysis) ===
+        # First, find out what is feasible in the current dataset
         self._compute_feasible_mask(verbose=verbose)
+
+        # Second, identify the current "Best" (best_f or Pareto Front).
+        # This MUST happen before metrics because metrics log these values.
+        self._compute_acquisition_function_reference(verbose=verbose)
+
+        # Third, log the progress (Hypervolume or Best Value)
         self._compute_metrics(verbose=verbose)
 
-        # === 2. Initialize and fit Model ===
+        # === 2. Surrogate Modeling ===
+        # Fit the GPs to the data we just analyzed
         self._initialize_model(verbose=verbose)
         self._fit_model(verbose=verbose)
 
-        # === 3. Initialize acqf ===
-        self._compute_acquisition_function_reference(verbose=verbose)
+        # === 3. Acquisition Strategy ===
+        # Initialise and optimize the acquisition function
         self._initialize_acquisition_function(verbose=verbose)
-
-        # === 4. Optimize acqf ===
         self._optimize_acquisition_function(verbose=verbose)
 
         t1 = time.monotonic()
         self._elapsed_time.append(t1 - t0)
 
         if verbose:
-            print(f"Optimization step completed in {t1 - t0:.2f}s")
+            print(f"Optimisation step completed in {t1 - t0:.2f}s")
 
     def _compute_feasible_mask(self, verbose=True):
         """ Computes feasible mask for all observed data. A point is defined feasible only
@@ -804,11 +809,6 @@ class BayesianOptimizer:
 
     def _initialize_acquisition_function(self, verbose=True):
         """ Initialize an acquisition function instance using the acqf. """
-
-        if verbose:
-            name = self.acqf.__name__
-            print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
-
         with warnings.catch_warnings(record=True) as caught:
 
             sig = inspect.signature(self.acqf.__init__)
@@ -820,7 +820,11 @@ class BayesianOptimizer:
 
             # Initialize partitioning if required by the acqf
             if "partitioning" in sig.parameters and getattr(self, "_partitioning", None) is None:
-                self._initialize_partitioning()
+                self._initialize_partitioning(verbose=verbose)
+
+            if verbose:
+                name = self.acqf.__name__
+                print(f"Initializing acquisition function of type {name}... ", end="", flush=True)
 
             for name, param in sig.parameters.items():
                 if name in ('self', 'args', 'kwargs'):
@@ -843,7 +847,10 @@ class BayesianOptimizer:
 
         self._warnings = []
 
-    def _initialize_partitioning(self):
+    def _initialize_partitioning(self, verbose=True):
+        if verbose:
+            print("Initializing partitioning... ", end="")
+
         # Compute posterior mean of objectives
         prediction = self._model.posterior(self.X).mean
 
@@ -863,6 +870,9 @@ class BayesianOptimizer:
             ref_point=self._ref_point,
             Y=Y,
         )
+
+        if verbose:
+            self._print_success()
 
     def _initialize_sampler(self, verbose=True):
         """Initialize sampler for Monte Carlo acquisition functions."""

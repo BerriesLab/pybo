@@ -72,8 +72,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         acqf_plotter.plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        ParameterPlotter(bo=bo).plot().save_figure().close_figure()
-        ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
+        ParameterEvolution(bo=bo).plot().save_figure().close_figure()
+        ObjectiveEvolution(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

@@ -65,9 +65,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         for idx in range(bo.objective.dim):
-            ParameterPlotter(bo=bo, idx=idx).plot().save_figure().close_figure()
+            ParameterEvolution(bo=bo, idx=idx).plot().save_figure().close_figure()
         for idx in range(bo.objective.num_objectives):
-            ObjectivePlotter(bo=bo).plot().save_figure().close_figure()
+            ObjectiveEvolution(bo=bo).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

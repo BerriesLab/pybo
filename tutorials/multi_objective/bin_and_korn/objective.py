@@ -5,38 +5,19 @@ from objectives.data_base import *
 
 
 class BinhAndKorn(MCMultiObjectiveBase):
-    """ Two objective problem composed of the Binh and Korn functions.
+    """ Two objective problem composed of the Binh and Korn functions. """
 
-    Notes:
-        - Both functions are originally intended for minimization.
-        - The non-linear constraints must be cast in the form tuple[callable(x) >= 0, bool].
-        The first element in the tuple is a callable representing a constraint of the form `callable(x) >= 0`.
-        In case of an intra-point constraint, "callable()" takes in a one-dimensional tensor of
-        shape "d" and returns a scalar. In case of an inter-point constraint, "callable()"
-        takes a two-dimensional tensor of shape "q x d" and again returns a scalar. The second
-        element is a boolean, indicating if it is an intra-point or inter-point constraint
-        ("True" for intra-point. "False" for inter-point).
-    """
+    class Obj(VariableRegistry):
+        BINH = Config(label="Binh", index=0, bounds=(0.0, 140.0), dtype=torch.float64, to_minimize=True, ref_point=150)
+        KORN = Config(label="Korn", index=1, bounds=(0.0, 50.0), dtype=torch.float64, to_minimize=True, ref_point=60)
 
-    class Obj(DataBase):
-        BIN = Config(label="Bin", index=0, bounds=(0.0, 140.0), dtype=torch.float64, to_minimize=True)
-        KORN = Config(label="Korn", index=1, bounds=(0.0, 150.0), dtype=torch.float64, to_minimize=True)
-
-    class Par(DataBase):
+    class Par(VariableRegistry):
         P1 = Config(label="P1", index=0, bounds=(0.0, 5.0), dtype=torch.float64)
         P2 = Config(label="P2", index=1, bounds=(0.0, 3.0), dtype=torch.float64)
 
-    class Trk(DataBase):
-        pass
-
-    class Con(DataBase):
-        pass
-
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
-            device=device,
-            dtype=dtype,
-            ref_point=torch.tensor([130.0, 50.0]),
+            device=device, dtype=dtype,
             nonlinear_inequality_input_constraints=[
                 (self._input_c1, True),
                 (self._input_c2, True)
@@ -69,14 +50,3 @@ class BinhAndKorn(MCMultiObjectiveBase):
         f1 = self._f1(X=X)
         f2 = self._f2(X=X)
         return torch.stack([f1, f2], dim=-1)
-
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        """ Transform Monte Carlo samples from the model's posterior according to the specified
-        objective configuration. This method selects the relevant output dimensions (if `outcomes` are specified),
-        and optionally applies negation if the objective is formulated as a minimization problem but needs to
-        be maximized internally (as is common in acquisition functions like qNEHVI)."""
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.to_minimize] *= -1
-        return selected
