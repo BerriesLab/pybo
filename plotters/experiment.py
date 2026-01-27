@@ -1,12 +1,11 @@
 from enum import Enum
-from typing import Union, Optional
-
+from typing import Union
 import torch
 import numpy as np
-from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
+from objectives.data_base import DataBase
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
@@ -363,201 +362,203 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, *, x: NameLike, y: NameLike, c: Optional[NameLike]):
+    def __init__(self, bo: BayesianOptimizer, x: DataBase, y: DataBase, z: DataBase | None = None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.n_grid_points = 100  # Resolution for Ground Truth grid
 
-        self.x_name = x
-        self.y_name = y
-        self.c_name = c
+        self.x = x
+        self.y = y
 
-        self.data_x = self._fetch_data_by_name(x)
-        self.data_y = self._fetch_data_by_name(y)
-        self.data_z = self._fetch_data_by_name(c)
+        if self.x.bounds is not None:
+            self.ax.set_xlim(self.x.bounds)
+        if self.y.bounds is not None:
+            self.ax.set_ylim(self.y.bounds)
 
-        self.ax.set_xlabel(x.value if x.value is not None else r"$f_1(X)$")
-        self.ax.set_ylabel(y.value if y.value is not None else r"$f_2(X)$")
+        self.ax.set_xlabel(x.label)
+        self.ax.set_ylabel(y.label)
 
-        self.n_grid_points = 200
+        if z:
+            self.z = z
+            self.data_z = self._fetch_data_by_name(z)
+            self.ax.set_title(f"{z.label}")
+            if hasattr(self, 'cb') and self.z.bounds is not None:
+                self.sc_mappable.set_clim(self.z.bounds)
 
-    def _fetch_data_by_name(self, name: NameLike) -> torch.Tensor:
-        obj = self.bo.objective
-        idx = obj.get_index(name)
+    def _fetch_data_by_name(self, x: DataBase) -> torch.Tensor:
+        if isinstance(x, self.bo.objective.Obj):
+            return self.bo.Y_obj[:, x.index]
+        if isinstance(x, self.bo.objective.Trk):
+            return self.bo.Y_track[:, x.index]
+        if isinstance(x, self.bo.objective.Con):
+            return self.bo.Y_con[:, x.index]
+        if isinstance(x, self.bo.objective.Par):
+            return self.bo.X[:, x.index]
 
-        if isinstance(name, obj.Obj):
-            return self.bo.Y_obj[:, idx]
-        if isinstance(name, obj.Trk):
-            return self.bo.Y_track[:, idx]
-        if isinstance(name, obj.Con):
-            return self.bo.Y_con[:, idx]
-        if isinstance(name, obj.Par):
-            return self.bo.X[:, idx]
+        raise TypeError(f"Unrecognised type: {type(x)}")
 
-        raise TypeError(f"Unrecognised NameLike type: {type(name)}")
-
-    def _get_gt_data(self, X_gt: torch.Tensor):
-        obj_fn = self.bo.objective
-
-        # Standard BO evaluations
-        Y_obj_gt = obj_fn.evaluate_true_objective(X_gt)
-        Y_con_gt = obj_fn.evaluate_true_constraint(X_gt)
-
-        # Physics Trackers: Check if the objective class can evaluate them
-        Y_trk_gt = None
-        if hasattr(obj_fn, 'evaluate_true_tracker'):
-            Y_trk_gt = obj_fn.evaluate_true_tracker(X_gt)
-
-        return {
-            obj_fn.Obj: Y_obj_gt,
-            obj_fn.Con: Y_con_gt,
-            obj_fn.Par: X_gt,
-            obj_fn.Trk: Y_trk_gt
-        }
+    def _get_data(self, axis_config, X_gt, Y_obj, Y_con, Y_track):
+        """Extracts data from the specific ground-truth tensors provided."""
+        if isinstance(axis_config, self.bo.objective.Obj):
+            return Y_obj[..., axis_config.index]
+        if isinstance(axis_config, self.bo.objective.Trk):
+            return Y_track[..., axis_config.index]
+        if isinstance(axis_config, self.bo.objective.Con):
+            return Y_con[..., axis_config.index]
+        if isinstance(axis_config, self.bo.objective.Par):
+            return X_gt[..., axis_config.index]
+        if axis_config is None:
+            return None
+        raise TypeError(f"Unrecognised type: {type(axis_config)}")
 
     def plot_ground_truth(self):
+        # 1. Generate grid and evaluate ground truth
         X_gt = self._generate_uniform_grid()
-        obj_fn = self.bo.objective
-        gt_map = self._get_gt_data(X_gt)
-
-        mask = self.bo.feasible_mask
-
-        # 2. Pareto Mask (Always calculated on Objectives)
         input_mask = self.bo.objective.is_input_feasible(X_gt)
-        output_mask = self.bo.objective.is_output_feasible(X_gt)
-        mask = torch.logical_and(input_mask, output_mask)
 
+        Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
+        Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
+        Y_track = self.bo.objective.evaluate_trackers(X_gt)
+
+        # 2. Extract GT values for the axes
+        x_gt = self._get_data(self.x, X_gt, Y_obj, Y_con, Y_track)
+        y_gt = self._get_data(self.y, X_gt, Y_obj, Y_con, Y_track)
+        z_gt = self._get_data(self.z, X_gt, Y_obj, Y_con, Y_track)
+
+        # 3. Define basic masks
+        output_mask = self.bo.objective.is_output_feasible(Y_obj)
+        feasible_mask = torch.logical_and(input_mask, output_mask)
+        infeasible_mask = torch.logical_and(input_mask, torch.logical_not(output_mask))
+
+        # --- Identify Pareto Front first to subtract it from feasible region ---
+        Y_max_space = Y_obj.clone()
+        # Negate objectives marked for minimisation to identify non-dominated points
+        Y_max_space[..., self.bo.objective.to_minimize] *= -1
+
+        feasible_indices = torch.where(feasible_mask)[0]
+        is_pareto = torch.zeros_like(feasible_mask, dtype=torch.bool)
+
+        if feasible_indices.numel() > 0:
+            from botorch.utils.multi_objective.pareto import is_non_dominated
+            # Calculate non-domination only among feasible candidates
+            pareto_sub_mask = is_non_dominated(Y_max_space[feasible_mask])
+            # Map the sub-mask back to the original grid shape
+            is_pareto[feasible_indices[pareto_sub_mask]] = True
+
+        # --- Define final mutually exclusive masks ---
+        # Points that are feasible BUT NOT part of the Pareto front
+        exclusive_feasible_mask = torch.logical_and(feasible_mask, torch.logical_not(is_pareto))
+
+        # 4. Render the plot in layers (bottom to top)
+
+        # Layer 1: Infeasible (Output constraints violated)
         self.ax.scatter(
-            x=self.data_x[mask],
-            y=self.data_y[mask],
-            c=self.data_z[mask],
-            s=2,
-            alpha=0.2,
-            label='Feasible Space'
+            x_gt[infeasible_mask].cpu().numpy(),
+            y_gt[infeasible_mask].cpu().numpy(),
+            c='red', s=2, alpha=0.1, label='Infeasible GT'
         )
 
-        # Foreground: The Pareto Front projected onto these axes
-        x_pareto = x_feas[pareto_mask]
-        y_pareto = y_feas[pareto_mask]
+        # Layer 2: Feasible but dominated points
+        self.ax.scatter(
+            x_gt[exclusive_feasible_mask].cpu().numpy(),
+            y_gt[exclusive_feasible_mask].cpu().numpy(),
+            c='green', s=2, alpha=0.1, label='Feasible GT'
+        )
 
-        # Sort for line plot (only if it makes sense for your 2D projection)
-        sort_idx = np.argsort(x_pareto)
-        self.ax.plot(x_pareto[sort_idx], y_pareto[sort_idx], color='red', lw=2, label='True Pareto Front')
+        # Layer 3: Pareto-optimal front (The "best" points)
+        if is_pareto.any():
+            self.ax.scatter(
+                x_gt[is_pareto].cpu().numpy(),
+                y_gt[is_pareto].cpu().numpy(),
+                c='gold', edgecolor='black', s=20, label='Pareto Front'
+            )
 
         return self
 
-    # def plot_ground_truth(self):
-    #     X_gt = self._generate_uniform_grid()
-    #     # sampler = SobolSampler(
-    #     #     device=self.bo.device,
-    #     #     dtype=self.bo.dtype,
-    #     #     objective=self.bo.objective,
-    #     #     seed=2025,
-    #     # )
-    #     # X_gt = sampler.draw_samples(n=100000)
-    #     Y_obj_gt = self.bo.objective.evaluate_true_objective(X_gt)
-    #     Y_con_gt = self.bo.objective.evaluate_true_constraint(X_gt)
-    #
-    #     input_feas_mask = self.bo.objective.is_input_feasible(X_gt)
-    #     if Y_con_gt is not None:
-    #         Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=0)
-    #     else:
-    #         Y_full = Y_obj_gt
-    #     output_feas_mask = self.bo.objective.is_output_feasible(Y_full)
-    #     feasible_mask = torch.logical_and(input_feas_mask, output_feas_mask)
-    #
-    #     # Filter feasible points for Pareto calculation
-    #     Y_feasible = Y_obj_gt[feasible_mask]
-    #
-    #     # 3. Compute Pareto Front
-    #     Y_feasible_max = Y_feasible.clone()
-    #     Y_feasible_max[..., self.bo.objective.obj_to_minimize] *= -1
-    #     pareto_mask = is_non_dominated(Y_feasible_max)
-    #     Y_pareto = Y_feasible[pareto_mask]
-    #
-    #     # 4. Sorting for a clean line plot
-    #     # Sort by the first objective to ensure the line connects points in order
-    #     sort_idx = torch.argsort(Y_pareto[:, 0])
-    #     Y_pareto_sorted = Y_pareto[sort_idx].detach().cpu().numpy()
-    #
-    #     # 5. Visualisation
-    #     # Plot all evaluated points (faint) to show the objective space "cloud"
-    #     self.ax.scatter(
-    #         Y_obj_gt[:, 0].detach().cpu().numpy(),
-    #         Y_obj_gt[:, 1].detach().cpu().numpy(),
-    #         c='grey', s=1, alpha=0.1, label='Objective Space'
-    #     )
-    #
-    #     # Highlight Feasible Region
-    #     self.ax.scatter(
-    #         Y_feasible[:, 0].detach().cpu().numpy(),
-    #         Y_feasible[:, 1].detach().cpu().numpy(),
-    #         c='black', s=2, alpha=0.1, label='Feasible Points'
-    #     )
-    #
-    #     # Plot the Pareto Front Line
-    #     self.ax.plot(
-    #         Y_pareto_sorted[:, 0],
-    #         Y_pareto_sorted[:, 1],
-    #         color='red', lw=2, label='True Pareto Front', zorder=5
-    #     )
-    #
-    #     self.ax.legend(loc="upper right")
-    #     return self
+    def plot_observations(self, zorder=2):
+        # 1. Gather all observed data
+        X = self.bo.X
+        Y_obj = self.bo.Y_obj
+        Y_con = self.bo.Y_con
+        Y_track = self.bo.Y_track
 
-    def plot_observations(self, zorder=2, maximize=False):
-        # Gather points
-        X_pareto, Y_pareto = self.bo.feasible_pareto_front_X, self.bo.feasible_pareto_front_Y
-        X_f, Y_f = self.bo.compute_feasible_XY()
-        X_i, Y_i = self.bo.compute_infeasible_XY()
+        # 2. Extract x, y, z values for the plot axes using your helper
+        x_obs = self._get_data(self.x, X, Y_obj, Y_con, Y_track)
+        y_obs = self._get_data(self.y, X, Y_obj, Y_con, Y_track)
 
-        # --- Feasible: split into Pareto vs non-Pareto ---
-        X_pareto = Y_pareto = None
-        X_f_plot = Y_f_plot = X_f, Y_f
+        # 3. Step-by-step exclusive masking
+        # A point is 'feasible' only if it passes both input and output constraints
+        input_feas = self.bo.objective.is_input_feasible(X)
+        output_feas = self.bo.objective.is_output_feasible(Y_obj)
+        is_feasible = torch.logical_and(input_feas, output_feas)
 
-        if X_f is not None and X_f.nelement() > 0 and Y_f is not None and Y_f.nelement() > 0:
-            # Make Y consistent with "minimize" for Pareto check
-            Y_for_pareto = (-Y_f) if maximize else Y_f
+        # 4. Determine Pareto status ONLY for feasible points
+        is_pareto = torch.zeros(X.shape[0], dtype=torch.bool, device=X.device)
+        feasible_indices = torch.where(is_feasible)[0]
 
-            # mask: True for non-dominated points
-            pareto_mask = is_non_dominated(Y_for_pareto)
+        if feasible_indices.numel() > 0:
+            from botorch.utils.multi_objective.pareto import is_non_dominated
+            # Flip signs for minimization objectives to identify the front correctly
+            Y_max_space = Y_obj[is_feasible].clone()
+            Y_max_space[..., self.bo.objective.to_minimize] *= -1
 
-            X_pareto, Y_pareto = X_f[pareto_mask], Y_f[pareto_mask]
-            X_f_plot, Y_f_plot = X_f[~pareto_mask], Y_f[~pareto_mask]
+            pareto_sub_mask = is_non_dominated(Y_max_space)
+            is_pareto[feasible_indices[pareto_sub_mask]] = True
 
-        # Plot feasible non-Pareto observations
-        if X_f_plot is not None and X_f_plot.nelement() > 0:
+        # 5. Create final MUTUALLY EXCLUSIVE masks
+        # Mask A: Infeasible points
+        mask_infeasible = torch.logical_not(is_feasible)
+
+        # Mask B: Feasible points that are NOT Pareto-optimal
+        mask_feasible_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
+
+        # Mask C: Pareto-optimal points
+        mask_pareto = is_pareto
+
+        # --- Rendering ---
+
+        # Layer 1: Infeasible (Plot first, at the bottom)
+        if mask_infeasible.any():
             self.ax.scatter(
-                X_f_plot[..., 0].detach().cpu().numpy(),
-                X_f_plot[..., 1].detach().cpu().numpy(),
+                x_obs[mask_infeasible].cpu().numpy(),
+                y_obs[mask_infeasible].cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_feasible
+                **scatter_observations_infeasible  # e.g., red 'x'
             )
 
-        # Plot infeasible observations
-        if X_i is not None and X_i.nelement() > 0:
+        # Layer 2: Feasible Dominated (Middle layer)
+        if mask_feasible_dominated.any():
             self.ax.scatter(
-                X_i[..., 0].detach().cpu().numpy(),
-                X_i[..., 1].detach().cpu().numpy(),
+                x_obs[mask_feasible_dominated].cpu().numpy(),
+                y_obs[mask_feasible_dominated].cpu().numpy(),
                 zorder=zorder,
-                **scatter_observations_infeasible
+                **scatter_observations_feasible  # e.g., solid green dots
             )
 
-        # Plot Pareto-optimal feasible points
-        if X_pareto is not None and X_pareto.nelement() > 0:
+        # Layer 3: Pareto Front (Top layer)
+        # Since we want "hollow circles surrounding the point",
+        # but we want no overlap, we plot the hollow marker ALONE here.
+        if mask_pareto.any():
             self.ax.scatter(
-                X_pareto[..., 0].detach().cpu().numpy(),
-                X_pareto[..., 1].detach().cpu().numpy(),
+                x_obs[mask_pareto].cpu().numpy(),
+                y_obs[mask_pareto].cpu().numpy(),
                 zorder=zorder + 1,
-                **optimum,  # rename to scatter_pareto if you prefer
+                facecolors='none',  # Hollow
+                edgecolors='gold',  # Halo color
+                linewidths=1.5,
+                s=50,  # Larger to look like a surrounding circle
+                label='Observed Pareto Front'
             )
+
+        return self
 
     def plot(self):
         self.plot_ground_truth()
-        # self.plot_observations()
+        self.plot_observations()
         self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
         return self
 

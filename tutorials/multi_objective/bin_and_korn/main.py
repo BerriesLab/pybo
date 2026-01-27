@@ -7,10 +7,9 @@ from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
-from utils.helpers import create_experiment_directory
 from plotters.evolution import HypervolumePlotter, HypervolumeImprovementPlotter, ElapsedTimePlotter, ObjectivePlotter, \
     ConstraintPlotter, TrackerPlotter, ParameterPlotter
-from tutorials.multi_objective.bin_and_korn.objective import BinhAndKornMCMultiOutputObjective
+from tutorials.multi_objective.bin_and_korn.objective import BinhAndKorn
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -22,7 +21,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = BinhAndKornMCMultiOutputObjective(
+    objective = BinhAndKorn(
         device=DEVICE,
         dtype=DTYPE,
     )
@@ -67,15 +66,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (0, 140), (0, 50)
-        experiment_plotter = ParetoFront2DPlotter(
-            bo=bo,
-            x="obj.bin",
-            y="obj.korn",
-            c="obj.korn"
-        )
-        experiment_plotter.ax.set_xlim(x_lims)
-        experiment_plotter.ax.set_ylim(y_lims)
+        experiment_plotter = ParetoFront2DPlotter(bo=bo, x=objective.Obj.BIN, y=objective.Obj.KORN,
+                                                  z=objective.Obj.KORN)
         experiment_plotter.plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumePlotter(bo=bo).plot().save_figure().close_figure()

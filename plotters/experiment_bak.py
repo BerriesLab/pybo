@@ -396,7 +396,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
         # 3. Compute Pareto Front
         Y_feasible_max = Y_feasible.clone()
-        Y_feasible_max[..., self.bo.objective.obj_to_minimize] *= -1
+        Y_feasible_max[..., self.bo.objective.to_minimize] *= -1
         pareto_mask = is_non_dominated(Y_feasible_max)
         Y_pareto = Y_feasible[pareto_mask]
 

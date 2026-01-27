@@ -164,7 +164,7 @@ class MultiObjectivePlotter(PlotterBase):
         pareto_mask = torch.zeros_like(self.feasible_obj_mask, device=self.bayesian_optimizer.device, dtype=torch.bool)
         if self.feasible_obj_mask.any():
             Y_par = self.bayesian_optimizer.Y_obj.clone()
-            Y_par[..., self.bayesian_optimizer.objective.obj_to_minimize] *= -1
+            Y_par[..., self.bayesian_optimizer.objective.to_minimize] *= -1
             Y_par = Y_par[self.feasible_obj_mask][..., self.pareto_idxs]
             pareto_mask[self.feasible_obj_mask] = is_non_dominated(Y_par)
         self.feasible_pareto_obj_mask = torch.logical_and(self.feasible_obj_mask, pareto_mask)
@@ -173,7 +173,7 @@ class MultiObjectivePlotter(PlotterBase):
         pareto_mask = torch.zeros_like(self.feasible_gt_mask, device=self.bayesian_optimizer.device, dtype=torch.bool)
         if self.feasible_gt_mask.any():
             Y_par = self.Y_obj_gt.clone()
-            Y_par[..., self.bayesian_optimizer.objective.obj_to_minimize] *= -1
+            Y_par[..., self.bayesian_optimizer.objective.to_minimize] *= -1
             Y_par = Y_par[self.feasible_gt_mask][..., self.pareto_idxs]
             pareto_mask[self.feasible_gt_mask] = is_non_dominated(Y_par)
         self.feasible_pareto_gt_mask = torch.logical_and(self.feasible_gt_mask, pareto_mask)

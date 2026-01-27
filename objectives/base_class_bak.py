@@ -1,5 +1,7 @@
-import inspect
 from collections.abc import Callable
+from enum import Enum, StrEnum
+from typing import Union
+
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
@@ -14,39 +16,55 @@ class MCObjectiveBase(ABC):
             self,
             device: torch.device,
             dtype: torch.dtype,
-            linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None = None,
-            output_constraints: list[Callable] | None = None,
+            dim: int,
+            num_objectives: int,
+            num_constraints: int,
+            num_trackers: int,
+            obj_to_minimize: torch.Tensor | list[bool],
+            bounds: torch.Tensor | list[float],
+            outcomes: list[int],
+            linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
+            linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None,
+            nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None,
+            output_constraints: list[Callable] | None,
             gt_noise_std: float | list[float] | None = None,
             add_noise_to_gt: bool = False,
+            parameter_names: list[str] | None = None,
+            objective_names: list[str] | None = None,
+            constraint_names: list[str] | None = None,
+            tracker_names: list[str] | None = None,
     ):
         r"""Args:
+        - Input dimensions are passed in dim
+        - The number of objectives does not include constraints
+        - The objective bounds are passed as torch tensor with shape (dim, 2) or as list of tuples [(min, max)_0, (min, max)_1, ...]
+        - Outcomes is a list on indexes used to identify the objectives in the Y_full matrix.
+        - The number of outcomes must match the length of the outcomes list.
         - Linear equality input constraints must be cast in matrix form and are satisfied for Ax - b = 0.
           The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an equality
           constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) = rhs`. See the docstring of
           `make_scipy_linear_constraints` for an example.
-        - Linear inequality input constraints must be cast in matrix form Ax - b >= 0 (feasible if non-negative).
+        - Linear inequality input constraints must be cast in matrix form Ax - b >= 0 (feasible if nonnegative).
           The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an inequality
           constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) >= rhs`. `indices` and `coefficients`
           should be torch tensors. See the docstring of `make_scipy_linear_constraints` for an example.
           When q=1, or when applying the same constraint to each candidate in the batch (intra-point constraint),
           `indices` should be a 1-d tensor. For inter-point constraints, in which the constraint is applied to the
-          whole batch of candidates, `indices` must be a 2-d tensor. Here, in each row `indices[i] = (k_i, l_i)`
-          the first index `k_i` corresponds to the `k_i`-th element of the `q`-batch and the second index `l_i`
+          whole batch of candidates, `indices` must be a 2-d tensor, where in each row `indices[i] =(k_i,
+          l_i)` the first index `k_i` corresponds to the `k_i`-th element of the `q`-batch and the second index `l_i`
           corresponds to the `l_i`-th feature of that element.
-        - Non-linear inequality input constraints must be cast in callable form f(x) >= 0 (feasible if non-negative).
+        - Non-linear inequality input constraints must be cast in callable form f(x) >= 0 (feasible if nonnegative).
           A list of tuples representing the nonlinear inequality constraints. The first element in the tuple is a
           callable representing a constraint of the form `callable(x) >= 0`. In case of an intra-point constraint,
           `callable()` takes in a one-dimensional tensor of shape `d` and returns a scalar.
-          In case of an inter-point constraint, `callable()` takes a two-dimensional tensor of shape `q x d`
+          In case of an inter-point constraint, `callable()` takes a two dimensional tensor of shape `q x d`
           and again returns a scalar. The second element is a boolean, indicating if it is an intra-point or
           inter-point constraint (`True` for intra-point. `False` for inter-point). For more information on
           intra-point vs inter-point constraints, see the docstring of the `inequality_constraints` argument to
           `optimize_acqf()`. The constraints will later be passed to the scipy solver. You need to pass in
           `batch_initial_conditions` in this case. Using non-linear inequality constraints also requires that
           `batch_limit` is set to 1, which will be done automatically if not specified in `options`.
-        - Output constraints must be cast in callable form and are satisfied if f(x) >= 0 (feasible if non-negative).
+        - Output constraints, of whatever type, must be cast in callable form and are satisfied if f(x) >= 0 (feasible if nonnegative).
         """
         super().__init__()
 
@@ -54,22 +72,25 @@ class MCObjectiveBase(ABC):
         self.device = device
         self.dtype = dtype
 
-        # Accessing the Enums via the Class (more robust)
-        cls = self.__class__
-
-        # === Derived Objective Attributes ===
-        self.dim = len(cls.Par)
-        self.num_objectives = len(cls.Obj)
-        self.num_constraints = len(cls.Con)
-        self.num_trackers = len(cls.Trk)
-
-        # === Assigned Attributes ===
-        self.to_minimize = [item.to_minimize for item in cls.Obj]
-        self.bounds = self.get_bounds_from_pars()
-        self.outcomes = [item.index for item in cls.Obj]
-        self.num_outcomes = len(cls.Obj)
+        # === Objective Attributes ===
+        self.dim = dim
+        self.num_objectives = num_objectives
+        self.num_constraints = num_constraints
+        self.num_trackers = num_trackers
+        self.obj_to_minimize = obj_to_minimize
+        self.bounds = bounds
+        self.outcomes = outcomes
+        self.num_outcomes = len(outcomes)
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
+        self.parameter_names = parameter_names
+        # self.objective_names = objective_names
+        self.constraint_names = constraint_names
+        self.tracker_names = tracker_names
+        # self.objective_names = [item.value for item in self.Obj]
+        # self.constraint_names = [item.value for item in self.ConName]
+        # self.tracker_names = [item.value for item in self.TrkName]
+        self.parameter_names = [item.label for item in self.Par]
 
         # === Constraints ===
         self.linear_equality_input_constraints = linear_equality_input_constraints
@@ -80,14 +101,13 @@ class MCObjectiveBase(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # Skip the check if the class is intended to be Abstract
-        if ABC in cls.__bases__ or inspect.isabstract(cls):
-            return
+        # Check if 'Obj' exists in the new child class
+        if not hasattr(cls, 'Obj'):
+            raise TypeError(f"Class {cls.__name__} must define an inner 'Obj' Enum.")
 
-        # The mandatory "contract"
-        for attr in ['Obj', 'Par', 'Con', 'Trk']:
-            if not hasattr(cls, attr):
-                raise TypeError(f"Class {cls.__name__} must define an inner '{attr}' Enum.")
+        # Optionally: Check if 'Params' exists too
+        if not hasattr(cls, 'Par'):
+            raise TypeError(f"Class {cls.__name__} must define an inner 'Params' Enum.")
 
     # === CUDA Properties ===
     @property
@@ -142,11 +162,11 @@ class MCObjectiveBase(ABC):
         self._num_constraints = num_constraints
 
     @property
-    def to_minimize(self) -> Tensor:
+    def obj_to_minimize(self) -> Tensor:
         return self._obj_to_minimize
 
-    @to_minimize.setter
-    def to_minimize(self, value: list[bool] | torch.Tensor):
+    @obj_to_minimize.setter
+    def obj_to_minimize(self, value: list[bool] | torch.Tensor):
         if isinstance(value, list):
             if len(value) != self.num_objectives:
                 raise ValueError("The length of obj_to_minimize must be equal to the number of objectives.")
@@ -162,23 +182,6 @@ class MCObjectiveBase(ABC):
     @property
     def bounds(self) -> torch.Tensor:
         return self._bounds
-
-    def get_bounds_from_pars(self) -> torch.Tensor:
-        """
-        Extracts bounds from Par enum members, sorted by their defined index.
-        Returns a tensor of shape (dim, 2).
-        """
-        # Sort pars by their index attribute to ensure correct order
-        sorted_pars = sorted(self.Par, key=lambda p: p.index)
-
-        # Create the list of tuples: [(lb, ub), (lb, ub), ...]
-        bounds_list = [p.bounds for p in sorted_pars]
-
-        return torch.tensor(
-            bounds_list,
-            device=self._device,
-            dtype=self.dtype
-        ).transpose(0, 1)
 
     @bounds.setter
     def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
@@ -448,6 +451,8 @@ class MCObjectiveBase(ABC):
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
+
+    # === HELPERS ===
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):

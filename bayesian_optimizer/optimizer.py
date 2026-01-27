@@ -553,7 +553,7 @@ class BayesianOptimizer:
         if self._best_feasible_Y is not None:
             best_value = self._best_feasible_Y.squeeze().item()
         else:
-            best_value = float('inf') if self._objective.obj_to_minimize[0] else float('-inf')
+            best_value = float('inf') if self._objective.to_minimize[0] else float('-inf')
 
         self._best_values.append(best_value)
 
@@ -573,7 +573,7 @@ class BayesianOptimizer:
 
         # Negate only the dimensions that are minimization objectives
         feasible_pareto_front_Y_maximized = self._feasible_pareto_front_Y.clone()
-        feasible_pareto_front_Y_maximized[..., self._objective.obj_to_minimize] *= -1
+        feasible_pareto_front_Y_maximized[..., self._objective.to_minimize] *= -1
         hv = Hypervolume(self._ref_point).compute(feasible_pareto_front_Y_maximized)
         self._hypervolume.append(hv)
 
@@ -732,7 +732,7 @@ class BayesianOptimizer:
 
         if feasible_X is not None:
             feasible_Y_max = feasible_Y.clone()
-            feasible_Y_max[..., self._objective.obj_to_minimize] *= -1
+            feasible_Y_max[..., self._objective.to_minimize] *= -1
             best_idx = feasible_Y_max.squeeze(-1).argmax()
 
             self._best_feasible_X = feasible_X[best_idx]
@@ -762,7 +762,7 @@ class BayesianOptimizer:
             print("Defining reference point... ", end="")
 
         self._ref_point = self.objective.ref_point.clone().to(self._device, self._dtype)
-        self._ref_point[..., self._objective.obj_to_minimize] *= -1
+        self._ref_point[..., self._objective.to_minimize] *= -1
 
         if verbose:
             self._print_success(msg=f"{self._ref_point.detach().cpu().numpy()} in max. space.")
@@ -787,7 +787,7 @@ class BayesianOptimizer:
             )
 
         Y_obj_maximized = self._Y_obj.clone()
-        Y_obj_maximized[..., self._objective.obj_to_minimize] *= -1
+        Y_obj_maximized[..., self._objective.to_minimize] *= -1
 
         # Compute feasible Pareto front
         if self._feasible_mask.any():
@@ -856,7 +856,7 @@ class BayesianOptimizer:
 
         # Cast feasible points in maximization space
         Y = feasible_Y.clone()
-        Y[..., self.objective.obj_to_minimize] *= -1
+        Y[..., self.objective.to_minimize] *= -1
 
         # Build partitioning with feasible objectives only
         self._partitioning = NondominatedPartitioning(
@@ -1260,7 +1260,7 @@ class BayesianOptimizer:
 
         if X_feas.shape[0] > 0:
             # Adjust for minimization (BoTorch assumes maximization)
-            Y[..., self.objective.obj_to_minimize] *= -1
+            Y[..., self.objective.to_minimize] *= -1
             n_requested = int(frac_prev * num_restarts)
 
             # LOGIC SPLIT: Multi-Objective vs Single-Objective
