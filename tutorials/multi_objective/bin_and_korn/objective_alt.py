@@ -16,7 +16,7 @@ class BinhAndKorn(MCMultiObjectiveBase):
 
     class InputCon(VariableRegistry):
         C1 = Config(label="C1", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c1)
-        C2 = Config(label=)
+        C2 = Config(label="C2", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c2)
         C3.
 
     class OutputCon
