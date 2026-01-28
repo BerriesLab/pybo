@@ -6,7 +6,7 @@ from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
 from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
-from objectives.data_base import VariableRegistry
+from objectives.variable_registry import VariableRegistry
 
 
 class MCObjectiveBase(ABC):

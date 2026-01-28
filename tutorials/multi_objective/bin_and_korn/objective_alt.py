@@ -14,6 +14,14 @@ class BinhAndKorn(MCMultiObjectiveBase):
         P1 = Config(label="P1", index=0, bounds=(0.0, 5.0), dtype=torch.float64)
         P2 = Config(label="P2", index=1, bounds=(0.0, 3.0), dtype=torch.float64)
 
+    class InputCon(VariableRegistry):
+        C1 = Config(label="C1", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c1)
+        C2 = Config(label=)
+        C3.
+
+    class OutputCon
+
+
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device, dtype=dtype,

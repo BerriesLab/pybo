@@ -1,7 +1,7 @@
 from objectives.base_class import MCSingleObjectiveBase
 import torch
 from torch import Tensor
-from objectives.data_base import Config, VariableRegistry
+from objectives.variable_registry import Config, VariableRegistry
 
 
 class Ackley(MCSingleObjectiveBase):

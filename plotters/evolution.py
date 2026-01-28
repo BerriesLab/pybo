@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.pyplot import axvline
 
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.data_base import VariableRegistry
+from objectives.variable_registry import VariableRegistry
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 

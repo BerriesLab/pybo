@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.base_class import MCSingleObjectiveBase
-from objectives.data_base import VariableRegistry
+from objectives.variable_registry import VariableRegistry
 from plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
