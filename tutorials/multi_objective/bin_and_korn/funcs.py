@@ -1,12 +1,12 @@
 import torch
 
 
-def f1(X: torch.Tensor) -> torch.Tensor:
+def obj_01(X: torch.Tensor) -> torch.Tensor:
     x1, x2 = X[..., 0], X[..., 1]
     return 4.0 * x1 ** 2 + 4.0 * x2 ** 2
 
 
-def f2(X: torch.Tensor) -> torch.Tensor:
+def obj_02(X: torch.Tensor) -> torch.Tensor:
     x1, x2 = X[..., 0], X[..., 1]
     return (x1 - 5.0) ** 2 + (x2 - 5.0) ** 2
 

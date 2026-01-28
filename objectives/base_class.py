@@ -514,6 +514,11 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             value = value.to(self.device, dtype=self.dtype)
         self._ref_point = value
 
+    def evaluate_true_objective(self, X: torch.Tensor, add_noise=False) -> torch.Tensor:
+        f1 = self._f1(X=X)
+        f2 = self._f2(X=X)
+        return torch.stack([f1, f2], dim=-1)
+
     # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
