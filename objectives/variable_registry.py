@@ -1,22 +1,72 @@
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Optional
-import torch
+from enum import Enum, StrEnum
+from typing import Any, Optional, Callable
 
 
-@dataclass(frozen=True, slots=True)
-class Config:
+class ConstraintType(StrEnum):
+    INPUT_LINEAR_EQUALITY = "input linear equality"
+    INPUT_LINEAR_INEQUALITY = "input linear inequality"
+    INPUT_NONLINEAR_INEQUALITY = "input nonlinear inequality"
+    OUTPUT_INEQUALITY = "output inequality"
+
+
+@dataclass(frozen=True)
+class Cfg:
+    """Base configuration class"""
     label: str
-    bounds: tuple[float, float] | Optional[None]
-    dtype: torch.dtype
-    index: int = 0
+    index: int
+
+
+@dataclass(frozen=True)
+class ObjectiveCfg(Cfg):
+    """Configuration for objectives"""
+    f: Callable
+    bounds: tuple[float, float] | None
     to_minimize: bool = False
-    ref_point: Optional[float] = None
+    ref_point: float | None = None
+
+
+@dataclass(frozen=True)
+class ParameterCfg(Cfg):
+    """Configuration for parameters"""
+    bounds: tuple[float, float] | None
+    pass
+
+
+@dataclass(frozen=True)
+class LinearEqualityInputConstraintCfg(Cfg):
+    """Configuration for linear equality input constraints"""
+    f: tuple[int, float, float]
+
+
+@dataclass(frozen=True)
+class LinearInequalityInputConstraintCfg(Cfg):
+    """Configuration for linear inequality input constraints"""
+    f: tuple[int, float, float]
+
+
+@dataclass(frozen=True)
+class NonLinearInequalityInputConstraintCfg(Cfg):
+    """Configuration for nonlinear inequality input constraints"""
+    f: (Callable, bool)
+
+
+@dataclass(frozen=True)
+class OutputConstraintCfg(Cfg):
+    """Configuration for output constraints"""
+    f: Callable
+
+
+@dataclass(frozen=True)
+class TrkCfg(Cfg):
+    """Configuration for trackers """
+    bounds: tuple[float, float] | None
+    f: Callable
 
 
 class VariableRegistry(Enum):
     @property
-    def cfg(self) -> Config:
+    def cfg(self) -> Cfg:
         return self.value  # type: ignore[return-value]
 
     @property

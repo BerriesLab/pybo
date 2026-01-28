@@ -1,18 +1,18 @@
 import torch
 from objectives.base_class import MCSingleObjectiveBase
 
-from objectives.variable_registry import Config, VariableRegistry
+from objectives.variable_registry import Cfg, VariableRegistry
 
 
 class Ackley(MCSingleObjectiveBase):
     """ Unconstrained single objective problem. """
 
     class Obj(VariableRegistry):
-        ACKLEY = Config(label="Ackley", index=0, bounds=(15.0, 0.0), dtype=torch.float64, to_minimize=True)
+        ACKLEY = Cfg(label="Ackley", index=0, bounds=(15.0, 0.0), dtype=torch.float64, to_minimize=True)
 
     class Par(VariableRegistry):
-        P1 = Config(label="P1", index=0, bounds=(-5.0, 5.0), dtype=torch.float64)
-        P2 = Config(label="P2", index=1, bounds=(-5.0, 5.0), dtype=torch.float64)
+        P1 = Cfg(label="P1", index=0, bounds=(-5.0, 5.0), dtype=torch.float64)
+        P2 = Cfg(label="P2", index=1, bounds=(-5.0, 5.0), dtype=torch.float64)
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(device=device, dtype=dtype)

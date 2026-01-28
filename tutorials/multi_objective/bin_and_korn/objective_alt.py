@@ -7,29 +7,19 @@ class BinhAndKorn(MCMultiObjectiveBase):
     """ Two objective problem composed of the Binh and Korn functions. """
 
     class Obj(VariableRegistry):
-        BINH = Config(label="Binh", index=0, bounds=(0.0, 140.0), dtype=torch.float64, to_minimize=True, ref_point=150)
-        KORN = Config(label="Korn", index=1, bounds=(0.0, 50.0), dtype=torch.float64, to_minimize=True, ref_point=60)
+        BINH = Cfg(label="Binh", index=0, bounds=(0.0, 140.0), dtype=torch.float64, to_minimize=True, ref_point=150)
+        KORN = Cfg(label="Korn", index=1, bounds=(0.0, 50.0), dtype=torch.float64, to_minimize=True, ref_point=60)
 
     class Par(VariableRegistry):
-        P1 = Config(label="P1", index=0, bounds=(0.0, 5.0), dtype=torch.float64)
-        P2 = Config(label="P2", index=1, bounds=(0.0, 3.0), dtype=torch.float64)
+        P1 = Cfg(label="P1", index=0, bounds=(0.0, 5.0), dtype=torch.float64)
+        P2 = Cfg(label="P2", index=1, bounds=(0.0, 3.0), dtype=torch.float64)
 
-    class InputCon(VariableRegistry):
-        C1 = Config(label="C1", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c1)
-        C2 = Config(label="C2", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c2)
-        C3.
-
-    class OutputCon
-
+    class Con(VariableRegistry):
+        C1 = ConConfig(label="C1", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f)
+        C2 = Cfg(label="C2", index=0, bounds=(0.0, 5.0), dtype=torch.float64, f=self._input_c2)
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
-        super().__init__(
-            device=device, dtype=dtype,
-            nonlinear_inequality_input_constraints=[
-                (self._input_c1, True),
-                (self._input_c2, True)
-            ],
-        )
+        super().__init__(device=device, dtype=dtype)
 
     def _f1(self, X: torch.Tensor) -> torch.Tensor:
         x1 = X[..., self.Par.P1.index]

@@ -7,29 +7,7 @@ class BinhAndKorn(MCMultiObjectiveBase):
     """ Two objective problem composed of the Binh and Korn functions. """
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
-        self.par_cfg = [
-            ParameterCfg(label="P1", index=0, bounds=(0.0, 5.0)),
-            ParameterCfg(label="P2", index=1, bounds=(0.0, 3.0)),
-        ]
-        self.obj_cfg = [
-            ObjectiveCfg(label="Binh", index=0, bounds=(0.0, 140.0), to_minimize=True, ref_point=150, f=self._f1),
-            ObjectiveCfg(label="Korn", index=1, bounds=(0.0, 50.0), to_minimize=True, ref_point=60, f=self._f2),
-        ]
-        self.nonlinear_inequality_input_con_cfg = [
-            NonLinearInequalityInputConstraintCfg(label="C1", index=0, f=self._input_c1),
-            NonLinearInequalityInputConstraintCfg(label="C2", index=1, f=self._input_c2),
-        ]
-        super().__init__(
-            device=device, dtype=dtype,
-            par_cfg=[
-                dict(label="P1", index=0, bounds=(0.0, 5.0)),
-                dict(label="P2", index=1, bounds=(0.0, 3.0))
-            ],
-            obj_cfg=[
-                dict(label="Binh", index=0, bounds=(0.0, 140.0), ref_point=150, f=self._f1),
-                dict(label="Korn", index=1, bounds=(0.0, 50.0), ref_point=60, f=self._f2),
-            ]
-        )
+        super().__init__(device=device, dtype=dtype)
 
     def _f1(self, X: torch.Tensor) -> torch.Tensor:
         x1 = X[..., self.par_cfg[0].index]

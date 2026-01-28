@@ -7,12 +7,12 @@ class BinhAndKorn(MCMultiObjectiveBase):
     """ Two objective problem composed of the Binh and Korn functions. """
 
     class Obj(VariableRegistry):
-        BINH = Config(label="Binh", index=0, bounds=(0.0, 140.0), dtype=torch.float64, to_minimize=True, ref_point=150)
-        KORN = Config(label="Korn", index=1, bounds=(0.0, 50.0), dtype=torch.float64, to_minimize=True, ref_point=60)
+        BINH = ObjConfig(label="Binh", index=0, bounds=(0.0, 140.0), to_minimize=True, ref_point=150)
+        KORN = ObjConfig(label="Korn", index=1, bounds=(0.0, 50.0), to_minimize=True, ref_point=60)
 
     class Par(VariableRegistry):
-        P1 = Config(label="P1", index=0, bounds=(0.0, 5.0), dtype=torch.float64)
-        P2 = Config(label="P2", index=1, bounds=(0.0, 3.0), dtype=torch.float64)
+        P1 = ParConfig(label="P1", index=0, bounds=(0.0, 5.0))
+        P2 = ParConfig(label="P2", index=1, bounds=(0.0, 3.0))
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
