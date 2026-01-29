@@ -3,7 +3,7 @@
 `pyBO` is a Python library for Bayesian Optimization of single and multi
 objective problems. Built on top of BoTorch and using Gaussian Processes as
 surrogate models, it provides a user-friendly framework for optimizing multiple
-competing objectives under experimental constraints, and finding pareto-optimal
+competing objectives under experimental ineq_Y_con, and finding pareto-optimal
 solutions.
 
 ## Table of Contents
@@ -27,10 +27,10 @@ Version 0.2 currently supports:
   functions $$\mathbf{f}_0: \mathbb{R}^N \to \mathbb{R}^m$$.
 - Noisy observations (variance).
 - Single and batch mode (q-batch) for parallel evaluations.
-- Linear equality constraints on the input domain (X).
-- Linear inequality constraints on the input domain (X).
-- Nonlinear inequality constraints on the input domain (X).
-- Linear and non-linear inequality constraints on the output domain (Y).
+- Linear equality ineq_Y_con on the input domain (X).
+- Linear inequality ineq_Y_con on the input domain (X).
+- Nonlinear inequality ineq_Y_con on the input domain (X).
+- Linear and non-linear inequality ineq_Y_con on the output domain (Y).
 - The following Kernels: Scale, RBF, Matern, Cosine, Periodic, RBF + Periodic,
   RBF x Periodic.
 - The following analytical acquisition functions: EI, LogEI,
@@ -87,10 +87,10 @@ flowchart TD
 
 pyBO consists of the following packages:
 
-- **constraints**: Handles constraint definitions for the optimization problem.
+- **ineq_Y_con**: Handles constraint definitions for the optimization problem.
 - **mobo**: A stateful class that manages the Bayesian optimization loop.
 - **objectives**: classes designed to provide all information required by Mobo,
-  including bounds, constraints, the reference point, and the target objectives
+  including bounds, ineq_Y_con, the reference point, and the target objectives
   to optimize. The optimization problem is defined in the original space, as is
   the reference point. By specifying the objective to minimize, Mobo
   automatically handles any necessary sign flips.
@@ -122,7 +122,7 @@ and where
 - $n$ is the number of observations.
 - $d$ is the number of parameters or input space dimension.
 - $m$ is the number of objectives.
-- $c$ is the number of constraints.
+- $c$ is the number of ineq_Y_con.
 
 `pyBO` allows exporting:
 
@@ -141,7 +141,7 @@ The current version of `pyBO` provides built-in tools to visualize:
 - The evolution as a function of optimization steps of:
     - parameters
     - objectives
-    - constraints
+    - ineq_Y_con
     - trackers
 
 ## Tutorials
@@ -149,16 +149,16 @@ The current version of `pyBO` provides built-in tools to visualize:
 Explore the following examples to learn how to use `pyBO`, and make sure to
 review the corresponding objective definitions.
 
-- [Branin-Currin](tutorials/multi_objective/branin_currin/main.py): An unconstrained
-  bi-objective optimization problem.
+- [Branin-Currin](tutorials/multi_objective/branin_currin/main.py): An
+  unconstrained bi-objective optimization problem.
 - [Linear Equality Test](tutorials/multi_objective/linear_equality/main.py): A
   linear equality input constrained bi-objective optimization problem.
 - [Linear Inequality Test](tutorials/multi_objective/linear_inequality/main.py):
   A linear inequality input constrained bi-objective optimization problem.
-- [Binh and Korn](tutorials/multi_objective/bin_and_korn/main.py): A nonlinear inequality
-  input constrained bi-objective optimization problem.
-- [Osyczka-Kundu](tutorials/multi_objective/osyczka_kundu/objective.py): A liner and
-  nonlinear inequality input constrained bi-objective optimization problem.
+- [Binh and Korn](tutorials/multi_objective/bin_and_korn/main.py): A nonlinear
+  inequality input constrained bi-objective optimization problem.
+- [Osyczka-Kundu](tutorials/multi_objective/osyczka_kundu/objective.py): A liner
+  and nonlinear inequality input constrained bi-objective optimization problem.
 - [C2DTLZ2](tutorials/multi_objective/c2dtlz2/main.py): An output constrained
   bi-objective optimization problem.
 

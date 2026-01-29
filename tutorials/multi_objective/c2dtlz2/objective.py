@@ -15,7 +15,7 @@ class C2DTLZ2MCMultiOutputObjective(MCMultiOutputBase):
         f_1(x) = (1 + g(x)) * sin(x_0 * pi / 2)
         g(x) = \sum_{idx=m}^{d-1} (x_i - 0.5)^2
 
-    The constraints are imposed in the objective space as spherical exclusion regions:
+    The ineq_Y_con_cfg are imposed in the objective space as spherical exclusion regions:
 
         c(f) = min {(Σ_i (f_i - 1)^2 - r^2), (Σ_i (f_i - 1/√M)^2 - r^2)} ≤ 0
 

@@ -44,8 +44,8 @@ def main(n_samples=64, q: int = 1, ):
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Generate samples for ground truth evaluation - random sampler or grid """
-    # When constraints apply to the input X, build the ground truth by using
-    # a random generator subject to constraints
+    # When ineq_Y_con_cfg apply to the input X, build the ground truth by using
+    # a random generator subject to ineq_Y_con_cfg
     X_gt = sampler.draw_samples(n=100)
 
     """ Instantiate a Mobo object """

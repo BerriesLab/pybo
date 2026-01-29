@@ -25,4 +25,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["acquisition_functions", "constraints", "mobo", "objectives", "plotters", "samplers", "utils"]
+where = ["acquisition_functions", "ineq_Y_con", "mobo", "objectives", "plotters", "samplers", "utils"]

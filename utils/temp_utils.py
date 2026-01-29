@@ -13,7 +13,7 @@ def compute_feasible_input_mask(objective, X):
 
 
 def compute_feasible_output_mask(objective, Y_obj, Y_con):
-    if objective.constraints is None:
+    if objective.ineq_Y_con_cfg is None:
         Y_feasible = torch.ones(Y_obj, dtype=torch.bool, device=self._device)
     else:
         Y_full = torch.cat([Y_obj, Y_con], dim=-1)

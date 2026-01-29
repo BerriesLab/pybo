@@ -299,7 +299,7 @@ class BayesianOptimizer:
         if not isinstance(Y_con, Union[torch.Tensor, None]):
             raise ValueError("Y_con must be of type torch.Tensor or None.")
         if Y_con is not None and Y_con.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Y_con must have the same number of constraints as objective.")
+            raise ValueError("Y_con must have the same number of ineq_Y_con_cfg as objective.")
         self._Y_con = Y_con.to(self._device, self._dtype) if Y_con is not None else None
 
     @Y_con_var.setter
@@ -307,7 +307,7 @@ class BayesianOptimizer:
         if not isinstance(Y_con_var, Union[torch.Tensor, None]):
             raise ValueError("Y_con_var must be of type torch.Tensor or None.")
         if Y_con_var is not None and Y_con_var.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Y_con_var must have the same number of constraints as objective.")
+            raise ValueError("Y_con_var must have the same number of ineq_Y_con_cfg as objective.")
         self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
 
     @Y_track.setter
@@ -518,7 +518,7 @@ class BayesianOptimizer:
 
     def _compute_feasible_mask(self, verbose=True):
         """ Computes feasible mask for all observed data. A point is defined feasible only
-        if it satisfies both Input and Output constraints. """
+        if it satisfies both Input and Output ineq_Y_con_cfg. """
         if verbose:
             print("Computing feasibility mask... ", end="")
 
@@ -535,7 +535,7 @@ class BayesianOptimizer:
         return self.objective.is_input_feasible(self.X)
 
     def _compute_feasible_output_mask(self):
-        if self.objective.constraints is None:
+        if self.objective.ineq_Y_con is None:
             Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
@@ -587,11 +587,11 @@ class BayesianOptimizer:
             print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
 
     def _initialize_model(self, verbose=True):
-        """ Initialize Gaussian Process model(s) for the objectives and constraints.
+        """ Initialize Gaussian Process model(s) for the objectives and ineq_Y_con_cfg.
 
         This method prepares the training dataset by combining the objective and constraint
         observations (and optionally their variances). Then, it creates an independent
-        SingleTaskGP model for each output dimension (including objectives and constraints).
+        SingleTaskGP model for each output dimension (including objectives and ineq_Y_con_cfg).
         The SingleTaskGP are finally combined into a ModelListGP to jointly represent the full
         multi-output model.
 
@@ -640,7 +640,7 @@ class BayesianOptimizer:
         train_x = self.X.clone()
         train_y = self._Y_obj.clone()
 
-        # Concatenate constraints if available (not None)
+        # Concatenate ineq_Y_con_cfg if available (not None)
         if self._Y_con is not None:
             train_y_con = self._Y_con.clone()
             train_y = torch.cat((train_y, train_y_con), dim=-1)
@@ -774,7 +774,7 @@ class BayesianOptimizer:
 
     def _compute_pareto_front(self, verbose=True):
         """
-        Compute the Pareto front including constraints. Note that since
+        Compute the Pareto front including ineq_Y_con_cfg. Note that since
         "is_non_dominated" assumes maximization, the Y must be cast into a
         maximization problem before computing the pareto front.
         """
@@ -854,11 +854,11 @@ class BayesianOptimizer:
         # Compute posterior mean of objectives
         prediction = self._model.posterior(self.X).mean
 
-        # Filter feasible points if constraints exist
-        if self._objective.constraints is None:
+        # Filter feasible points if ineq_Y_con_cfg exist
+        if self._objective.ineq_Y_con is None:
             feasible_Y = prediction
         else:
-            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.constraints]).all(dim=0)
+            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.ineq_Y_con]).all(dim=0)
             feasible_Y = prediction[feasible_maks]
 
         # Cast feasible points in maximization space
@@ -1191,7 +1191,7 @@ class BayesianOptimizer:
                     options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
                 )
             else:
-                # If nonlinear inequality **input** constraints are provided, use a custom initial condition
+                # If nonlinear inequality **input** ineq_Y_con_cfg are provided, use a custom initial condition
                 # generator that selects "num_restarts" points. These points are distributed according to
                 # "fraction_of_previous_X" between the optimal points and randomly generated points.
                 self._new_X, _ = optimize_acqf(
@@ -1203,12 +1203,12 @@ class BayesianOptimizer:
                     options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
                     sequential=True,
                     ic_generator=self._ic_generator
-                    if self._objective.nonlinear_inequality_input_constraints is not None
+                    if self._objective.nonlin_ineq_X_con is not None
                     else None,
                     **{
                         "fraction_of_previous_X": 0.8,
                         "noise_scale": 0,
-                    } if self.objective.nonlinear_inequality_input_constraints is not None
+                    } if self.objective.nonlin_ineq_X_con is not None
                     else {}
                 )
 

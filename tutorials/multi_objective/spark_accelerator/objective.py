@@ -10,7 +10,7 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         - Machining Time: Originally intended for minimization.
         - Electrode Wear: Originally intended for minimization.
 
-    1x constraints:
+    1x ineq_Y_con_cfg:
         - Orbiting Time: Requires values > 40 mins.
 
     3x parameters:

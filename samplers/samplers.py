@@ -27,7 +27,7 @@ class SamplerBase(ABC):
         pass
 
     def draw_samples(self, n: int) -> torch.Tensor:
-        """ Draws n random samples of shape [n, dim] subject to input constraints."""
+        """ Draws n random samples of shape [n, dim] subject to input ineq_Y_con_cfg."""
         valid_X = []
         num_attempts = 0
         max_attempts = 1000

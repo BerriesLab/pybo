@@ -5,7 +5,7 @@ from torch import Tensor
 
 class OsyczkaKundu(MCMultiOutputBase):
     r"""
-    Two-objective problem with a set of linear inequality constraints.
+    Two-objective problem with a set of linear inequality ineq_Y_con_cfg.
     ref: https://en.wikipedia.org/wiki/Test_functions_for_optimization
     """
 

@@ -33,7 +33,7 @@ class Experiment1DPlotter(PlotterBase):
 
         with torch.no_grad():
             # Note: model.posterior() returns a value for each GP model, including those associated with
-            # the constraints. Therefore, here we keep only the posterior associated with the objective outcomes.
+            # the ineq_Y_con_cfg. Therefore, here we keep only the posterior associated with the objective outcomes.
             posterior = self.bo.model.posterior(X_grid)
             mean = posterior.mean[..., self.bo.objective.outcomes].squeeze(-1)
             std = posterior.variance.sqrt()[..., self.bo.objective.outcomes].squeeze(-1)
@@ -82,7 +82,7 @@ class Experiment1DPlotter(PlotterBase):
 
         if Y_con_gt is not None:
             Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.constraints]).all(dim=0).squeeze()
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.ineq_Y_con]).all(dim=0).squeeze()
         else:
             feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
 

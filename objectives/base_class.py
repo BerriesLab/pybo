@@ -6,59 +6,55 @@ from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
 from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
-from objectives.variable_registry import VariableRegistry
+from objectives.variable_registry import *
 
 
 class MCObjectiveBase(ABC):
-    class Obj(VariableRegistry):
-        pass
-
-    class Par(VariableRegistry):
-        pass
-
-    class Trk(VariableRegistry):
-        pass
-
-    class Con(VariableRegistry):
-        pass
 
     def __init__(
             self,
             device: torch.device,
             dtype: torch.dtype,
-            linear_equality_input_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            linear_inequality_input_constraints: list[tuple[Tensor, Tensor, float]] | None = None,
-            nonlinear_inequality_input_constraints: list[tuple[Callable, bool]] | None = None,
-            output_constraints: list[Callable] | None = None,
+            obj_cfg: list[ObjCfg],
+            par_cfg: list[ParCfg],
+            trk_cfg: list[TrkCfg] = None,
+            lin_eq_X_con_cfg: list[LinEqXConCfg] = None,
+            lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
+            nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
+            ineq_Y_con_cfg: list[IneqYConCfg] = None,
             gt_noise_std: float | list[float] | None = None,
             add_noise_to_gt: bool = False,
     ):
         r"""Args:
-        - Linear equality input constraints must be cast in matrix form and are satisfied for Ax - b = 0.
-          The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an equality
-          constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) = rhs`. See the docstring of
-          `make_scipy_linear_constraints` for an example.
-        - Linear inequality input constraints must be cast in matrix form Ax - b >= 0 (feasible if non-negative).
-          The user must pass a list of tuples (indices, coefficients, rhs), with each tuple encoding an inequality
-          constraint of the form `\sum_i (X[indices[i]] * coefficients[i]) >= rhs`. `indices` and `coefficients`
-          should be torch tensors. See the docstring of `make_scipy_linear_constraints` for an example.
-          When q=1, or when applying the same constraint to each candidate in the batch (intra-point constraint),
-          `indices` should be a 1-d tensor. For inter-point constraints, in which the constraint is applied to the
-          whole batch of candidates, `indices` must be a 2-d tensor. Here, in each row `indices[i] = (k_i, l_i)`
-          the first index `k_i` corresponds to the `k_i`-th element of the `q`-batch and the second index `l_i`
-          corresponds to the `l_i`-th feature of that element.
-        - Non-linear inequality input constraints must be cast in callable form f(x) >= 0 (feasible if non-negative).
-          A list of tuples representing the nonlinear inequality constraints. The first element in the tuple is a
-          callable representing a constraint of the form `callable(x) >= 0`. In case of an intra-point constraint,
-          `callable()` takes in a one-dimensional tensor of shape `d` and returns a scalar.
-          In case of an inter-point constraint, `callable()` takes a two-dimensional tensor of shape `q x d`
-          and again returns a scalar. The second element is a boolean, indicating if it is an intra-point or
-          inter-point constraint (`True` for intra-point. `False` for inter-point). For more information on
-          intra-point vs inter-point constraints, see the docstring of the `inequality_constraints` argument to
-          `optimize_acqf()`. The constraints will later be passed to the scipy solver. You need to pass in
-          `batch_initial_conditions` in this case. Using non-linear inequality constraints also requires that
-          `batch_limit` is set to 1, which will be done automatically if not specified in `options`.
-        - Output constraints must be cast in callable form and are satisfied if f(x) >= 0 (feasible if non-negative).
+        - lin_eq_X_con_cfg: Configuration for linear equality input constraints.
+        It receives a list of LinEqXConCfg. These objects are internally converted
+        to a list of tuples (idxs,coeffs, rhs), with each tuple encoding
+        an equality constraint of the form `\sum_i (X[idxs[i]] * coeffs[i]) = rhs`.
+
+        - lin_ineq_X_con_cfg: Configuration for linear inequality input constraints.
+        It receives a list of LinIneqXConCfg. These objects are internally converted
+        to a list of tuples (idxs, coeffs, rhs), with each tuple encoding
+        an inequality constraint of the form `\sum_i (X[idxs[i]] * coeffs[i]) >= rhs`.
+        For intra-point constraints, idxs[i] is a 1D tensor where each index determines
+        the feature of the point. For intra-point constraints, idxs[i] = (k_i, l_i) is
+        a 2D tensor, where the first index `k_i` corresponds to the `k_i`-th point
+        and the second index `l_i`corresponds to the `l_i`-th feature of that point.
+
+        - nonlin_ineq_X_con_cfg: Configuration for non-linear inequality input constrsints.
+        It receives a list of NonLinIneqXConCfg. These objects are internally converted
+        to a list of tuples (f, intra). Here, the first element is a callable
+        representing a constraint of the form `callable(x) >= 0`. The second element
+        is a boolean defining intra-point constraints (True) or intra-point constraints (False).,
+        In case of an intra-point constraint, `callable()` takes in a one-dimensional
+        tensor of shape `d` and returns a scalar. In case of an intra-point constraint,
+        `callable()` takes a two-dimensional tensor of shape `q x d` and again returns a scalar.
+
+        - ineq_Y_con_cfg: Configuretion for inequality output constraints.
+        It receives a list of IneqYConfg. These objects are internally converted to...
+
+        Output ineq_Y_con_cfg must be cast in callable form and are
+        satisfied if
+        f(x) >= 0 (feasible if non-negative).
         """
         super().__init__()
 
@@ -66,40 +62,41 @@ class MCObjectiveBase(ABC):
         self.device = device
         self.dtype = dtype
 
-        # Accessing the Enums via the Class (more robust)
-        cls = self.__class__
+        # === Store cfg ===
+        self.par_cfg = par_cfg
+        self.obj_cfg = obj_cfg
+        self.trk_cfg = trk_cfg
+        self.lin_eq_input_con_cfg = lin_eq_X_con_cfg
+        self.lin_ineq_input_con_cfg = lin_ineq_X_con_cfg
+        self.nonlin_ineq_input_con_cfg = nonlin_ineq_X_con_cfg
+        self.output_con_cfg = ineq_Y_con_cfg
 
         # === Derived Objective Attributes ===
-        self.dim = len(cls.Par)
-        self.num_objectives = len(cls.Obj)
-        self.num_constraints = len(cls.Con)
-        self.num_trackers = len(cls.Trk)
+        self.dim = len(self.par_cfg) if self.par_cfg is not None else 0
+        self.num_objectives = len(self.obj_cfg) if self.obj_cfg is not None else 0
+        self.num_constraints = len(self.output_con_cfg) if self.output_con_cfg is not None else 0
+        self.num_trackers = len(self.trk_cfg) if trk_cfg is not None else 0
 
         # === Assigned Attributes ===
-        self.to_minimize = [item.to_minimize for item in cls.Obj]
+        self.to_minimize = [cfg.to_minimize for cfg in self.obj_cfg]
         self.bounds = self.get_bounds_from_pars()
-        self.outcomes = [item.index for item in cls.Obj]
-        self.num_outcomes = len(cls.Obj)
+        self.outcomes = [cfg.index for cfg in self.obj_cfg]
+        self.num_outcomes = len(self.obj_cfg)
         self.gt_noise_std = gt_noise_std
         self.add_noise_to_gt = add_noise_to_gt
 
         # === Constraints ===
-        self.linear_equality_input_constraints = linear_equality_input_constraints
-        self.linear_inequality_input_constraints = linear_inequality_input_constraints
-        self.nonlinear_inequality_input_constraints = nonlinear_inequality_input_constraints
-        self.constraints = output_constraints
+        self.lin_eq_X_con = lin_eq_X_con_cfg
+        self.lin_ineq_X_con = lin_ineq_X_con_cfg
+        self.nonlin_ineq_X_con = nonlin_ineq_X_con_cfg
+        self.ineq_Y_con = ineq_Y_con_cfg
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        # Skip the check if the class is intended to be Abstract
-        if ABC in cls.__bases__ or inspect.isabstract(cls):
-            return
-
-        # The mandatory "contract"
-        for attr in ['Obj', 'Par', 'Con', 'Trk']:
-            if not hasattr(cls, attr):
-                raise TypeError(f"Class {cls.__name__} must define an inner '{attr}' Enum.")
+    def get_idx(self, label: str) -> int:
+        """ Returns the integer index for a given parameter label. """
+        for item in self.par_cfg:
+            if item.label == label:
+                return item.index
+        raise ValueError(f"Label '{label}' not found in par_cfg")
 
     # === CUDA Properties ===
     @property
@@ -176,34 +173,23 @@ class MCObjectiveBase(ABC):
         return self._bounds
 
     def get_bounds_from_pars(self) -> torch.Tensor:
-        """
-        Extracts bounds from Par enum members, sorted by their defined index.
-        Returns a tensor of shape (dim, 2).
-        """
-        # Sort pars by their index attribute to ensure correct order
-        sorted_pars = sorted(self.Par, key=lambda p: p.index)
-
-        # Create the list of tuples: [(lb, ub), (lb, ub), ...]
-        bounds_list = [p.bounds for p in sorted_pars]
-
-        return torch.tensor(
-            bounds_list,
-            device=self._device,
-            dtype=self.dtype
-        ).transpose(0, 1)
+        """ Extracts bounds from ParCfg objects, sorted by their defined index.
+        Returns a tensor of shape (2, dim). """
+        sorted_pars = sorted(self.par_cfg, key=lambda p: p.index)
+        lb = [p.bounds[0] for p in sorted_pars]
+        ub = [p.bounds[1] for p in sorted_pars]
+        return torch.tensor([lb, ub], device=self.device, dtype=self.dtype)
 
     @bounds.setter
     def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
-        # Converts list of tuples to tensor
         if not torch.is_tensor(value):
             value = torch.tensor(value, device=self._device, dtype=self.dtype)
             if value.shape != (self.dim, 2):
                 raise InputDataError(
                     f"Expected list of {self.dim} (lb, ub) tuples, got shape {value.shape}"
                 )
-            self._bounds = value.transpose(0, 1)  # shape -> (2, dim)
+            self._bounds = value.transpose(0, 1)
         else:
-            # Tensor input: expect shape (2, dim)
             if value.shape != (2, self.dim):
                 raise InputDataError(
                     f"Expected tensor of shape (2, {self.dim}), got {value.shape}"
@@ -253,100 +239,109 @@ class MCObjectiveBase(ABC):
 
         self._noise_std = value
 
-    # == Constraints Properties ===
+    # ===== X Constraint Properties =====
+
     @property
-    def linear_equality_input_constraints(self):
-        return self._linear_equality_input_constraints
+    def lin_eq_X_con(self):
+        return self._lin_eq_X_con
 
-    @linear_equality_input_constraints.setter
-    def linear_equality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
-        if values is not None:
-            if not isinstance(values, list):
-                raise TypeError("linear_equality_input_constraints must be a list of tuples")
+    @lin_eq_X_con.setter
+    def lin_eq_X_con(self, cfg_list: list[LinEqXConCfg] | None):
+        """ Parses LinEqXConCfg into internal tuples: (indices_tensor, coeff_tensor, rhs_float) """
+        if cfg_list is not None:
+            if not isinstance(cfg_list, list):
+                raise TypeError("lin_eq_X_con must be a list of LinEqXConCfg")
 
-            new_values = []
-            for c in values:
-                # Type checks
-                if not (isinstance(c, tuple) and len(c) == 3):
-                    raise TypeError("Each linear_equality_input_constraints item must be a tuple of 3 elements")
-                if not isinstance(c[0], torch.Tensor):
-                    raise TypeError("The 1st element must be a torch.Tensor")
-                if not isinstance(c[1], torch.Tensor):
-                    raise TypeError("The 2nd element must be a torch.Tensor")
-                if not isinstance(c[2], (float, int)):
-                    raise TypeError("The 3rd element must be a float or an integer.")
+            processed = []
+            for cfg in cfg_list:
+                if not isinstance(cfg, LinEqXConCfg):
+                    raise TypeError("lin_eq_X_con must be a list of LinEqXConCfg")
 
-                indices_tensor = c[0].to(device=self.device, dtype=torch.long)
-                coefficients_tensor = c[1].to(device=self.device, dtype=self.dtype)
-                new_values.append((indices_tensor, coefficients_tensor, c[2]))
+                indices_t = torch.tensor(cfg.idxs, device=self.device, dtype=torch.long)
+                coeff_t = torch.tensor(cfg.coeff, device=self.device, dtype=self.dtype)
+                rhs = torch.tensor(cfg.rhs, device=self.device, dtype=self.dtype)
+                processed.append((indices_t, coeff_t, rhs))
 
-            self._linear_equality_input_constraints = new_values
+            self._lin_eq_X_con = processed
         else:
-            self._linear_equality_input_constraints = None
+            self._lin_eq_X_con = None
 
     @property
-    def linear_inequality_input_constraints(self):
-        return self._linear_inequality_input_constraints
+    def lin_ineq_X_con(self):
+        return self._lin_ineq_X_con
 
-    @linear_inequality_input_constraints.setter
-    def linear_inequality_input_constraints(self, values: list[tuple[Tensor, Tensor, float]]):
-        if values is not None:
-            if not isinstance(values, list):
-                raise TypeError("linear_equality_input_constraints must be a list of tuples")
+    @lin_ineq_X_con.setter
+    def lin_ineq_X_con(self, cfg_list: list[LinIneqXConCfg] | None):
+        """ Parses LinIneqXConCfg into internal tuples: (indices_tensor, coeff_tensor, rhs_float)"""
+        if cfg_list is not None:
+            if not isinstance(cfg_list, list):
+                raise TypeError("lin_ineq_X_con must be a list of LinIneqXConCfg")
 
-            new_values = []
-            for c in values:
-                # Type checks
-                if not (isinstance(c, tuple) and len(c) == 3):
-                    raise TypeError("Each linear_equality_input_constraints item must be a tuple of 3 elements")
-                if not isinstance(c[0], torch.Tensor):
-                    raise TypeError("The 1st element must be a torch.Tensor")
-                if not isinstance(c[1], torch.Tensor):
-                    raise TypeError("The 2nd element must be a torch.Tensor")
-                if not isinstance(c[2], (float, int)):
-                    raise TypeError("The 3rd element must be a float or an integer.")
+            processed = []
+            for cfg in cfg_list:
+                if not isinstance(cfg, LinIneqXConCfg):
+                    raise TypeError("lin_ineq_X_con must be a list of LinIneqXConCfg")
+                indices_t = torch.tensor(cfg.idxs, device=self.device, dtype=torch.long)
+                coeff_t = torch.tensor(cfg.coeff, device=self.device, dtype=self.dtype)
+                rhs = torch.tensor(cfg.rhs, device=self.device, dtype=self.dtype)
+                processed.append((indices_t, coeff_t, rhs))
 
-                indices_tensor = c[0].to(device=self.device, dtype=torch.long)
-                coefficients_tensor = c[1].to(device=self.device, dtype=self.dtype)
-                new_values.append((indices_tensor, coefficients_tensor, c[2]))
-
-            self._linear_inequality_input_constraints = new_values
+            self._lin_ineq_X_con = processed
         else:
-            self._linear_inequality_input_constraints = None
+            self._lin_ineq_X_con = None
 
     @property
-    def nonlinear_inequality_input_constraints(self):
-        return self._nonlinear_inequality_input_constraints
+    def nonlin_ineq_X_con(self):
+        return self._nonlin_ineq_X_con
 
-    @nonlinear_inequality_input_constraints.setter
-    def nonlinear_inequality_input_constraints(self, value):
-        if value is not None:
-            if not isinstance(value, list):
-                raise TypeError("nonlinear_inequality_input_constraints must be a list of tuples")
-            for item in value:
-                if not (isinstance(item, tuple) and len(item) == 2 and callable(item[0]) and isinstance(item[1],
-                                                                                                        bool)):
-                    raise TypeError(
-                        "Each nonlinear_inequality_input_constraints item must be a tuple of (Callable, bool)"
-                    )
-        self._nonlinear_inequality_input_constraints = value
+    @nonlin_ineq_X_con.setter
+    def nonlin_ineq_X_con(self, cfg_list):
+        """ Parses NonLinIneqXConCfg into internal tuples: (Callable, bool).
+        The boolean 'intra' flag determines if it is intra-point (True) or
+        inter-point (False). """
+        if cfg_list is not None:
+            if not isinstance(cfg_list, list):
+                raise TypeError("nonlin_ineq_X_con must be a list of NonLinIneqXConCfg")
+
+            processed = []
+            for cfg in cfg_list:
+                if not isinstance(cfg, NonLinIneqXConCfg):
+                    raise TypeError("nonlin_ineq_X_con must be a list of NonLinIneqXConCfg")
+                if not callable(cfg.f):
+                    raise TypeError("Constraint 'f' must be callable")
+                if not isinstance(cfg.intra, bool):
+                    raise TypeError("Constraint 'intra' must be a boolean")
+                processed.append((cfg.f, cfg.intra))
+
+            self._nonlin_ineq_X_con = processed
+        else:
+            self._nonlin_ineq_X_con = None
 
     # === Output Constraints ===
-    @property
-    def constraints(self):
-        return self._output_constraints
 
-    @constraints.setter
-    def constraints(self, value):
-        if value is not None:
-            if not isinstance(value, list):
-                raise TypeError("constraints must be a list of Callables")
-            for item in value:
-                if not callable(item):
-                    raise TypeError("Each output_constraint must be callable")
-        self._output_constraints = value
+    @property
+    def ineq_Y_con(self):
+        return self._ineq_Y_con
+
+    @ineq_Y_con.setter
+    def ineq_Y_con(self, cfg_list: list[IneqYConCfg] | None):
+        if cfg_list is not None:
+            if not isinstance(cfg_list, list):
+                raise TypeError(f"ineq_Y_con_cfg must be a list of {IneqYConCfg.__name__}")
+
+            processed = []
+            for cfg in cfg_list:
+                if not isinstance(cfg, IneqYConCfg):
+                    raise TypeError(f"ineq_Y_con_cfg must be a list of {IneqYConCfg.__name__}")
+                if not callable(cfg.f):
+                    raise TypeError(f"Each {IneqYConCfg.f.__name__} must be callable")
+                processed.append(cfg.f)
+            self._ineq_Y_con = processed
+        else:
+            self._ineq_Y_con = None
 
     # === GROUND TRUTH METHODS ===
+
     def evaluate_true_objective(self, X: Tensor) -> Tensor:
         """
         Evaluate the true, unnegated objective function at the given input
@@ -362,18 +357,14 @@ class MCObjectiveBase(ABC):
         Y = self.add_noise(Y)
         return Y
 
-    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
-        """
-        Evaluate the true, unnegated constraint at the given input
-        locations X. This method serves as the ground-truth evaluation of the
-        problem and is typically used for benchmarking, visualization (e.g.,
-        plotting the true Pareto front), or performance assessment of
-        optimization algorithms.
-        """
-        pass
+    def evaluate_true_constraints(self, X: Tensor) -> Tensor:
+        """Evaluates and stacks all nonlinear input ineq_Y_con_cfg."""
+        if not self.ineq_Y_con:
+            return torch.empty((*X.shape[:-1], 0), device=self.device, dtype=self.dtype)
+        return torch.stack([f(X) for f, _ in self.ineq_Y_con], dim=-1)
 
     def evaluate_true_constraint_with_noise(self, X: Tensor) -> Tensor:
-        Y = self.evaluate_true_constraint(X)
+        Y = self.evaluate_true_constraints(X)
         Y = self.add_noise(Y)
         return Y
 
@@ -391,7 +382,7 @@ class MCObjectiveBase(ABC):
         """
         if slack < 0:
             raise ValueError("slack must be positive")
-        return self.evaluate_true_constraint(X=X) - slack
+        return self.evaluate_true_constraints(X=X) - slack
 
     def add_noise(self, Y: Tensor) -> Tensor:
         """
@@ -405,10 +396,8 @@ class MCObjectiveBase(ABC):
     # === FEASIBILITY ===
 
     def is_input_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
-        """
-        Supports X (..., d) and q-btach X (..., q, d) for intra-point constraints only (1D indices).
-        Returns mask of shape (...) (one per batch item / restart).
-        """
+        """ Supports X (..., d) and q-btach X (..., q, d) for inter and intra-point
+        input constraints. Returns mask of shape (...) (one per batch item / restart)."""
         has_q = (X.dim() >= 3)  # interpret last two dims as (q, d)
         base_shape = X.shape[:-2] if has_q else X.shape[:-1]
         feasible_mask = torch.ones(base_shape, dtype=torch.bool, device=X.device)
@@ -423,53 +412,79 @@ class MCObjectiveBase(ABC):
             feasible_mask &= (X >= lower).all(dim=-1) & (X <= upper).all(dim=-1)  # (...,)
 
         # linear equalities (1D indices only)
-        if self.linear_equality_input_constraints:
-            for indices, coeffs, rhs in self.linear_equality_input_constraints:
+        if self.lin_eq_X_con:
+            for indices, coeffs, rhs in self.lin_eq_X_con:
                 if indices.dim() != 1:
-                    raise ValueError("2D indices constraints require inter-point handling (not implemented here).")
+                    raise ValueError("2D indices ineq_Y_con_cfg require intra-point handling (not implemented here).")
                 lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
                 feasible_mask &= ((lhs - rhs).abs() <= atol).all(dim=-1) if has_q else (lhs - rhs).abs() <= atol
 
         # linear inequalities, 1D indices only
-        if self.linear_inequality_input_constraints:
-            for indices, coeffs, rhs in self.linear_inequality_input_constraints:
+        if self.lin_ineq_X_con:
+            for indices, coeffs, rhs in self.lin_ineq_X_con:
                 if indices.dim() != 1:
-                    raise ValueError("2D indices constraints require inter-point handling (not implemented here).")
+                    raise ValueError("2D indices ineq_Y_con_cfg require intra-point handling (not implemented here).")
                 lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
                 feasible_mask &= (lhs >= (rhs - atol)).all(dim=-1) if has_q else lhs >= (rhs - atol)
 
         # nonlinear inequalities: c(x) >= 0
-        if self.nonlinear_inequality_input_constraints:
-            for c_func, _ in self.nonlinear_inequality_input_constraints:
+        if self.nonlin_ineq_X_con:
+            for c_func, _ in self.nonlin_ineq_X_con:
                 cval = c_func(X).squeeze(-1)
                 feasible_mask &= (cval >= -atol).all(dim=-1) if has_q else (cval >= -atol)
 
         return feasible_mask
 
     def is_output_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
-        """ Checks if the objective/constraint outputs Y satisfy the performance constraints.
+        """ Checks if the objective/constraint outputs Y satisfy the performance ineq_Y_con_cfg.
             Y is expected to be [batch_shape, num_objectives + num_constraints]. """
 
-        if not hasattr(self, 'constraints') or self.constraints is None:
+        if not hasattr(self, 'ineq_Y_con_cfg') or self.ineq_Y_con is None:
             return torch.ones(Y.shape[:-1], dtype=torch.bool, device=Y.device)
 
-        # Each c in self.constraints is a callable that returns <= 0 for feasible
+        # Each c in self.ineq_Y_con_cfg is a callable that returns <= 0 for feasible
         # We stack them and check if all are satisfied
         feasible_mask = torch.stack(
-            [c(Y) >= -atol for c in self.constraints]
+            [c(Y) >= -atol for c in self.ineq_Y_con]
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
-    def __init__(self, best_value: float | None = None, *args, **kwargs):
+    def __init__(
+            self,
+            best_value: float | None = None,
+            device: torch.device = None,
+            dtype: torch.dtype = None,
+            obj_cfg: list[ObjCfg] = None,
+            par_cfg: list[ParCfg] = None,
+            trk_cfg: list[TrkCfg] = None,
+            lin_eq_X_con_cfg: list[LinEqXConCfg] = None,
+            lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
+            nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
+            ineq_Y_con_cfg: list[IneqYConCfg] = None,
+            gt_noise_std: float | list[float] | None = None,
+            add_noise_to_gt: bool = False,
+    ):
         ABC.__init__(self)
         MCAcquisitionObjective.__init__(self)
-        MCObjectiveBase.__init__(self, *args, **kwargs)
+        MCObjectiveBase.__init__(
+            self,
+            device=device,
+            dtype=dtype,
+            obj_cfg=obj_cfg,
+            par_cfg=par_cfg,
+            trk_cfg=trk_cfg,
+            lin_eq_X_con_cfg=lin_eq_X_con_cfg,
+            lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
+            nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
+            ineq_Y_con_cfg=ineq_Y_con_cfg,
+            gt_noise_std=gt_noise_std,
+            add_noise_to_gt=add_noise_to_gt,
+        )
         self.best_value = best_value
 
-    # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
         Transform Monte Carlo samples from the model's posterior according
@@ -486,17 +501,39 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
 
 
 class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
-    def __init__(self, max_hv: float | None = None, *args, **kwargs):
+    def __init__(
+            self,
+            max_hv: float | None = None,
+            device: torch.device = None,
+            dtype: torch.dtype = None,
+            obj_cfg: list[ObjCfg] = None,
+            par_cfg: list[ParCfg] = None,
+            trk_cfg: list[TrkCfg] = None,
+            lin_eq_X_con_cfg: list[LinEqXConCfg] = None,
+            lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
+            nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
+            ineq_Y_con_cfg: list[IneqYConCfg] = None,
+            gt_noise_std: float | list[float] | None = None,
+            add_noise_to_gt: bool = False,
+    ):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
-        MCObjectiveBase.__init__(self, *args, **kwargs)
-        self.ref_point = [item.ref_point for item in self.Obj]
+        MCObjectiveBase.__init__(
+            self,
+            device=device,
+            dtype=dtype,
+            obj_cfg=obj_cfg,
+            par_cfg=par_cfg,
+            trk_cfg=trk_cfg,
+            lin_eq_X_con_cfg=lin_eq_X_con_cfg,
+            lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
+            nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
+            ineq_Y_con_cfg=ineq_Y_con_cfg,
+            gt_noise_std=gt_noise_std,
+            add_noise_to_gt=add_noise_to_gt,
+        )
+        self.ref_point = [cfg.ref_point for cfg in self.obj_cfg]
         self.max_hv = max_hv
-
-    """
-    - The reference point is used only for multi objective problems to compute the Hypervolume.
-    - The max hypervolume may be known a priori. When passed, it is plotted by the Plotter as a target optimization value.
-    """
 
     @property
     def ref_point(self) -> Tensor:
@@ -514,12 +551,14 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             value = value.to(self.device, dtype=self.dtype)
         self._ref_point = value
 
-    def evaluate_true_objective(self, X: torch.Tensor, add_noise=False) -> torch.Tensor:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
-        return torch.stack([f1, f2], dim=-1)
+    def evaluate_true_objective(self, X: Tensor) -> Tensor:
+        """ Evaluates and stacks all objectives in the order of their defined index. """
+        # Sort the configuration objects by their index
+        sorted_objs = sorted(self.obj_cfg, key=lambda obj: obj.index)
+        # Evaluate and stack along the last dimension
+        # This ensures column 0 is the obj with index 0, column 1 is index 1, etc.
+        return torch.stack([obj.f(X) for obj in sorted_objs], dim=-1)
 
-    # === MONTE CARLO METHODS ===
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
         Transform Monte Carlo samples from the model's posterior according
@@ -531,5 +570,5 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
+        selected[..., self.to_minimize] *= -1
         return selected
