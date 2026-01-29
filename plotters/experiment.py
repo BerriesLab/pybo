@@ -10,7 +10,9 @@ from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
-NameLike = Union[str, Enum, int]
+import warnings
+
+warnings.filterwarnings("ignore", message="You passed both c and facecolor")
 
 
 class Experiment1DPlotter(PlotterBase):
@@ -82,7 +84,7 @@ class Experiment1DPlotter(PlotterBase):
 
         if Y_con_gt is not None:
             Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective._ineq_Y_con]).all(dim=0).squeeze()
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.ineq_Y_con]).all(dim=0).squeeze()
         else:
             feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
 
@@ -387,6 +389,7 @@ class ParetoFront2DPlotter(PlotterBase):
         self.n_grid_points = 100
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.mappable = None  # To store the scatter for the colorbar
+        self.cbar = None  # To store the color bar
 
         self.ax.set_xlabel(self.x_cfg.label)
         self.ax.set_ylabel(self.y_cfg.label)
@@ -398,12 +401,13 @@ class ParetoFront2DPlotter(PlotterBase):
         if hasattr(self.z_cfg, 'bounds') and self.z_cfg.bounds is not None:
             self.vmin, self.vmax = self.z_cfg.bounds
 
-    def _get_data(self, cfg, X_gt, Y_obj, Y_con, Y_track):
+    @staticmethod
+    def _get_data(cfg, X_gt, Y_obj, Y_con, Y_trk):
         """ Extracts the correct column from the correct tensor based on the Config type. """
         if cfg is None: return None
         if isinstance(cfg, ParCfg): return X_gt[..., cfg.index]
         if isinstance(cfg, ObjCfg): return Y_obj[..., cfg.index]
-        if isinstance(cfg, TrkCfg): return Y_track[..., cfg.index]
+        if isinstance(cfg, TrkCfg): return Y_trk[..., cfg.index]
         if isinstance(cfg, IneqYConCfg): return Y_con[..., cfg.index]
 
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
@@ -414,12 +418,12 @@ class ParetoFront2DPlotter(PlotterBase):
         input_mask = self.bo.objective.is_X_feasible(X_gt)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraints(X_gt)
-        Y_track = self.bo.objective.evaluate_trackers(X_gt)
+        Y_trk = self.bo.objective.evaluate_trackers(X_gt)
 
         # Slice data for axes
-        x_vals = self._get_data(self.x_cfg, X_gt, Y_obj, Y_con, Y_track)
-        y_vals = self._get_data(self.y_cfg, X_gt, Y_obj, Y_con, Y_track)
-        z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_track)
+        x_vals = self._get_data(self.x_cfg, X_gt, Y_obj, Y_con, Y_trk)
+        y_vals = self._get_data(self.y_cfg, X_gt, Y_obj, Y_con, Y_trk)
+        z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_trk)
 
         # Feasibility masking
         output_mask = self.bo.objective.is_Y_feasible(Y_obj)
@@ -446,8 +450,8 @@ class ParetoFront2DPlotter(PlotterBase):
             self.ax.scatter(
                 x=x_vals[is_infeasible].cpu().numpy(),
                 y=y_vals[is_infeasible].cpu().numpy(),
-                vmin=self.vmin,
-                vmax=self.vmax,
+                vmin=self.vmin if self.vmin is not None else None,
+                vmax=self.vmax if self.vmax is not None else None,
                 cmap=self.cmap if z_vals is not None else None,
                 **experiment_scatter_gnd_truth_infeasible
             )
@@ -458,8 +462,8 @@ class ParetoFront2DPlotter(PlotterBase):
                 x=x_vals[mask_exclusive_feasible].cpu().numpy(),
                 y=y_vals[mask_exclusive_feasible].cpu().numpy(),
                 c=z_vals[mask_exclusive_feasible].cpu().numpy() if z_vals is not None else None,
-                vmin=self.vmin,
-                vmax=self.vmax,
+                vmin=self.vmin if z_vals is not None else None,
+                vmax=self.vmax if z_vals is not None else None,
                 **experiment_scatter_gnd_truth_feasible
             )
 

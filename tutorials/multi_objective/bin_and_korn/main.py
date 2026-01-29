@@ -5,6 +5,7 @@ from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
+from plotters.acqf import Acqf2DPlotter
 from plotters.evolution import EvolutionPlotter
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
@@ -58,54 +59,28 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        # Plot experiment
-        exp_plt = ParetoFront2DPlotter(
+        ParetoFront2DPlotter(
             bo=bo,
-            y=("obj", "Korn"),
-            x=("obj", "Binh"),
-            z=("par", "P2")
-        )
-        exp_plt.plot().save_figure().close_figure()
+            x=("obj", "Korn"),
+            y=("obj", "Binh"),
+            # z=("par", "P2")
+        ).plot().save_figure().close_figure()
+
+        # TODO: update acqf plotter
+        Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
 
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumePlotter(bo=bo).plot().save_figure().close_figure()
         HypervolumeImprovementPlotter(bo=bo).plot().save_figure().close_figure()
 
-        # Plot parameters evolution
-        if bo.objective.par_cfg is not None:
-            for par in bo.objective.par_cfg:
-                evo_plt = EvolutionPlotter(
-                    bo=bo,
-                    y=("par", par.label)
-                )
-                evo_plt.plot().save_figure().close_figure()
-
-        # Plot objectives evolution
-        if bo.objective.obj_cfg is not None:
-            for obj in bo.objective.obj_cfg:
-                evo_plt = EvolutionPlotter(
-                    bo=bo,
-                    y=("obj", obj.label)
-                )
-                evo_plt.plot().save_figure().close_figure()
-
-        # Plot constraints evolution
-        if bo.objective.ineq_Y_con_cfg is not None:
-            for con in bo.objective.ineq_Y_con_cfg:
-                evo_plt = EvolutionPlotter(
-                    bo=bo,
-                    y=("con", con.label)
-                )
-                evo_plt.plot().save_figure().close_figure()
-
-        # Plot trackers evolution
-        if bo.objective.trk_cfg is not None:
-            for trk in objective.trk_cfg:
-                evo_plt = EvolutionPlotter(
-                    bo=bo,
-                    y=("trk", trk.label)
-                )
-                evo_plt.plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_par):
+            EvolutionPlotter(bo=bo, y=("par", idx)).plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_obj):
+            EvolutionPlotter(bo=bo, y=("obj", idx)).plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_con):
+            EvolutionPlotter(bo=bo, y=("con", idx)).plot().save_figure().close_figure()
+        for idx in range(bo.objective.num_trk):
+            EvolutionPlotter(bo=bo, y=("trk", idx)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

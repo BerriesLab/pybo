@@ -65,12 +65,14 @@ class Acqf1DPlotter(PlotterBase):
 
 class Acqf2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, x: VariableRegistry, y: VariableRegistry):
+    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] | None = None,
+                 y: tuple[str, str | int] | None = None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
+        # TODO: by default the method should plot p0 vs p1.
         # self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         # self.ax.set_xlabel(
         #     self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")

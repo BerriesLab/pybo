@@ -313,7 +313,7 @@ class BayesianOptimizer:
     @Y_track.setter
     def Y_track(self, Y_track: torch.Tensor | None):
         if not isinstance(Y_track, torch.Tensor | None):
-            raise ValueError("Y_track must be of type torch.Tensor or None.")
+            raise ValueError("Y_trk must be of type torch.Tensor or None.")
         self._Y_track = Y_track
 
     @Y_track_var.setter

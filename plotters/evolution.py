@@ -19,8 +19,6 @@ class EvolutionPlotter(PlotterBase):
         """
         super().__init__(bo=bo)
 
-        # 1. Resolve the config using our base class method
-        # This gives the IDE a generic Cfg, but we can refine it
         raw_cfg = bo.objective.get_config(*y)
         self.category = y[0].lower()
 
