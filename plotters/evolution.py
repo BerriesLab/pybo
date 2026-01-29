@@ -1,41 +1,70 @@
-import torch
 from pathlib import Path
-import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib.pyplot import axvline
 
+import torch
+import numpy as np
+from typing import cast
+from matplotlib import pyplot as plt
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.variable_registry import VariableRegistry
+from objectives.variable_registry import ParCfg
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 
 
 class EvolutionPlotter(PlotterBase):
-    def __init__(self, bo: BayesianOptimizer, data_obj: VariableRegistry, data_tensor: torch.Tensor, prefix: str):
+    def __init__(self, bo: BayesianOptimizer, y: tuple[str, str | int]):
+        """
+        Args:
+            bo: The BayesianOptimizer instance.
+            y: Tuple like ("par", "P1"), ("obj", 0), or ("trk", "Time").
+        """
         super().__init__(bo=bo)
-        self.config = data_obj.cfg
-        self.idx = self.config.index
-        self.data_tensor = data_tensor
-        self.prefix = prefix
+
+        # 1. Resolve the config using our base class method
+        # This gives the IDE a generic Cfg, but we can refine it
+        raw_cfg = bo.objective.get_config(*y)
+        self.category = y[0].lower()
+
+        # 2. Select the correct data tensor based on category
+        self.data_tensor = self._map_tensor(self.category)
+        self.config = raw_cfg
+        self.idx = raw_cfg.index
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel("Number of observations (beyond initial points)")
-        self.ax.set_ylabel(self.config.label or f"{prefix.capitalize()} {self.idx:02d}")
+        self.ax.set_xlabel("Number of observations")
+        self.ax.set_ylabel(self.config.label)
+
+    def _map_tensor(self, category: str) -> torch.Tensor:
+        """ Maps the category string to the corresponding BO tensor. """
+        mapping = {
+            "par": self.bo.X,
+            "obj": self.bo.Y_obj,
+            "con_y": self.bo.Y_con,
+            "con_x": self.bo.Y_con,  # Assuming all constraints are in Y_con for plotting
+            "trk": self.bo.Y_track
+        }
+        tensor = mapping.get(category)
+        if tensor is None:
+            raise ValueError(f"No tensor found for category: {category}")
+        return tensor
 
     def _prepare_xy(self):
-        if self.data_tensor is None:
+        if self.data_tensor is None or self.data_tensor.numel() == 0:
             return 0, np.array([]), np.array([])
 
         n_init = self.bo.n_initial_samples
         q = self.bo.batch_size
+        # Extract the specific column for this parameter/objective
         y_raw = self.data_tensor[..., self.idx].detach().cpu().numpy()
 
-        # X-coords: Initial points at n_init, BO points at their respective counts
+        # Handle X-axis coordinates logic
         x_init = n_init * np.ones(n_init)
         n_bo_points = len(y_raw) - n_init
-        n_iter = n_bo_points // q
 
-        x_next_steps = np.linspace(n_init + q, len(y_raw), n_iter)
+        if n_bo_points <= 0:
+            return 0, x_init, y_raw
+
+        n_iter = n_bo_points // q
+        x_next_steps = np.linspace(n_init + q, n_init + (n_iter * q), n_iter)
         x_next = np.repeat(x_next_steps, q)
 
         return n_iter, np.concatenate([x_init, x_next]), y_raw
@@ -45,7 +74,7 @@ class EvolutionPlotter(PlotterBase):
         q = self.bo.batch_size
 
         for i in range(n_iter):
-            # Slicing logic for "web" connections
+            # Connect initial points to first batch, then batch to batch
             start, mid = (0, n_init) if i == 0 else (n_init + (i - 1) * q, n_init + i * q)
             end = n_init + (i + 1) * q
 
@@ -61,34 +90,20 @@ class EvolutionPlotter(PlotterBase):
         if len(y_all) > 0:
             self._connect_subsequent_batches(n_iter, x_all, y_all)
             self.ax.scatter(x_all, y_all, label=self.config.label, **evolution_scatter)
+
+            # Vertical line showing end of initialisation
             self.ax.axvline(x=self.bo.n_initial_samples, **general_axline)
-            if hasattr(self.config, 'bounds') and self.config.bounds:
-                self.ax.axhline(y=self.config.bounds[0], **general_axline)
-                self.ax.axhline(y=self.config.bounds[1], **general_axline)
-            return self
+
+            # Plot horizontal bounds if they exist (Common for parameters/constraints)
+            # Use 'cast' so the IDE sees the bounds attribute
+            cfg_with_bounds = cast(ParCfg, self.config)
+            if hasattr(cfg_with_bounds, 'bounds') and cfg_with_bounds.bounds:
+                self.ax.axhline(y=cfg_with_bounds.bounds[0], color='r', linestyle='--', alpha=0.5)
+                self.ax.axhline(y=cfg_with_bounds.bounds[1], color='r', linestyle='--', alpha=0.5)
+
         return self
 
     def save_figure(self, filename: str | Path | None = None):
         clean_label = self.config.label.lower().replace(" ", "_")
-        filename = filename or f"{self.prefix}_{clean_label}.png"
+        filename = filename or f"evolution_{self.category}_{clean_label}.png"
         return super().save_figure(filename=filename)
-
-
-class ParameterEvolution(EvolutionPlotter):
-    def __init__(self, bo: BayesianOptimizer, par: VariableRegistry):
-        super().__init__(bo, par, bo.X, "parameter")
-
-
-class ObjectiveEvolution(EvolutionPlotter):
-    def __init__(self, bo: BayesianOptimizer, obj: VariableRegistry):
-        super().__init__(bo, obj, bo.Y_obj, "objective")
-
-
-class ConstraintEvolution(EvolutionPlotter):
-    def __init__(self, bo: BayesianOptimizer, con: VariableRegistry):
-        super().__init__(bo, con, bo.Y_con, "constraint")
-
-
-class TrackerEvolution(EvolutionPlotter):
-    def __init__(self, bo: BayesianOptimizer, trk: VariableRegistry):
-        super().__init__(bo, trk, bo.Y_track, "tracker")

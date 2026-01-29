@@ -28,23 +28,23 @@ class BinhAndKorn(MCMultiObjectiveBase):
         )
 
     def _binh(self, X: torch.Tensor) -> torch.Tensor:
-        x1 = X[..., self.get_idx("P1")]
-        x2 = X[..., self.get_idx("P2")]
+        x1 = X[..., self.get_par_idx("P1")]
+        x2 = X[..., self.get_par_idx("P2")]
         return 4 * x1 ** 2 + 4 * x2 ** 2
 
     def _korn(self, X: torch.Tensor) -> torch.Tensor:
-        x1 = X[..., self.get_idx("P1")]
-        x2 = X[..., self.get_idx("P2")]
+        x1 = X[..., self.get_par_idx("P1")]
+        x2 = X[..., self.get_par_idx("P2")]
         return (x1 - 5) ** 2 + (x2 - 5) ** 2
 
     def _input_c1(self, X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 5)^2 + x1^2 <= 25 """
-        x1 = X[..., self.get_idx("P1")]
-        x2 = X[..., self.get_idx("P2")]
+        x1 = X[..., self.get_par_idx("P1")]
+        x2 = X[..., self.get_par_idx("P2")]
         return 25 - ((x1 - 5) ** 2 + x2 ** 2)
 
     def _input_c2(self, X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 """
-        x1 = X[..., self.get_idx("P1")]
-        x2 = X[..., self.get_idx("P2")]
+        x1 = X[..., self.get_par_idx("P1")]
+        x2 = X[..., self.get_par_idx("P2")]
         return (x1 - 8) ** 2 + (x2 + 3) ** 2 - 7.7

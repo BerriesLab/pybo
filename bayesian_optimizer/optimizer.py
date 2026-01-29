@@ -27,7 +27,7 @@ from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
 from gpytorch.constraints import GreaterThan
-from objectives.base_class import MCObjectiveBase
+from objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
 from samplers.samplers import SamplerBase, SobolSampler
 from gpytorch.mlls import SumMarginalLogLikelihood
 
@@ -44,7 +44,7 @@ class BayesianOptimizer:
             self,
             device: torch.device,
             dtype: torch.device.type,
-            objective: MCObjectiveBase,
+            objective: MCSingleObjectiveBase | MCMultiObjectiveBase,
             X: torch.Tensor | None = None,
             Y_obj: torch.Tensor | None = None,
             Y_obj_var: torch.Tensor | None = None,

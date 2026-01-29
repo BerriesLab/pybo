@@ -1,11 +1,11 @@
-from enum import Enum
 from typing import Union
 import torch
 import numpy as np
+from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from objectives.variable_registry import VariableRegistry
+from objectives.variable_registry import *
 from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
@@ -186,14 +186,6 @@ class Experiment2DPlotter(PlotterBase):
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
-        # self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        # self.ax.set_xlabel(
-        #     self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
-        # self.ax.set_ylabel(
-        #     self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
-        # self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
-        # self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
-
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.x = x
         self.y = y
@@ -372,110 +364,112 @@ class Experiment2DPlotter(PlotterBase):
 
 
 class ParetoFront2DPlotter(PlotterBase):
-
-    def __init__(self, bo: BayesianOptimizer, x: VariableRegistry, y: VariableRegistry,
-                 z: VariableRegistry | None = None, cmap='viridis'):
+    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
+                 z: tuple[str, str | int] | None = None, cmap='viridis'):
+        """
+        Initialises the 2D Pareto Plotter.
+        Args:
+            bo: The BayesianOptimizer instance.
+            x: Tuple of (category, y) e.g., ("par", "P1") or ("obj", 0).
+            y: Tuple of (category, y).
+            z: Optional tuple for the color map (Heatmap).
+        """
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.n_grid_points = 100
+        self.x_cfg = bo.objective.get_config(*x)
+        self.y_cfg = bo.objective.get_config(*y)
+        self.z_cfg = bo.objective.get_config(*z) if z else None
+
         self.cmap = cmap
+        self.n_grid_points = 100
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.mappable = None  # To store the scatter for the colorbar
 
-        self.x = x
-        self.y = y
-        self.z = z
+        self.ax.set_xlabel(self.x_cfg.label)
+        self.ax.set_ylabel(self.y_cfg.label)
 
-        # Lock X and Y scales from VariableRegistry bounds
-        if self.x.bounds is not None:
-            self.ax.set_xlim(self.x.bounds)
-        if self.y.bounds is not None:
-            self.ax.set_ylim(self.y.bounds)
+        if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
+            self.ax.set_xlim(self.x_cfg.bounds)
+        if hasattr(self.y_cfg, 'bounds') and self.y_cfg.bounds is not None:
+            self.ax.set_ylim(self.y_cfg.bounds)
+        if hasattr(self.z_cfg, 'bounds') and self.z_cfg.bounds is not None:
+            self.vmin, self.vmax = self.z_cfg.bounds
 
-        self.ax.set_xlabel(x.label)
-        self.ax.set_ylabel(y.label)
+    def _get_data(self, cfg, X_gt, Y_obj, Y_con, Y_track):
+        """ Extracts the correct column from the correct tensor based on the Config type. """
+        if cfg is None: return None
+        if isinstance(cfg, ParCfg): return X_gt[..., cfg.index]
+        if isinstance(cfg, ObjCfg): return Y_obj[..., cfg.index]
+        if isinstance(cfg, TrkCfg): return Y_track[..., cfg.index]
+        if isinstance(cfg, IneqYConCfg): return Y_con[..., cfg.index]
 
-    def _get_data(self, axis_config, X_gt, Y_obj, Y_con, Y_track):
-        if axis_config is None:
-            return None
-        if isinstance(axis_config, self.bo.objective.Obj):
-            return Y_obj[..., axis_config.index]
-        if isinstance(axis_config, self.bo.objective.Trk):
-            return Y_track[..., axis_config.index]
-        if isinstance(axis_config, self.bo.objective.Con):
-            return Y_con[..., axis_config.index]
-        if isinstance(axis_config, self.bo.objective.Par):
-            return X_gt[..., axis_config.index]
-        raise TypeError(f"Unrecognised type: {type(axis_config)}")
+        raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
     def plot_ground_truth(self):
+        # Generate grid and evaluate
         X_gt = self._generate_uniform_grid()
         input_mask = self.bo.objective.is_X_feasible(X_gt)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
-        Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
+        Y_con = self.bo.objective.evaluate_true_constraints(X_gt)
         Y_track = self.bo.objective.evaluate_trackers(X_gt)
 
-        x_gt = self._get_data(self.x, X_gt, Y_obj, Y_con, Y_track)
-        y_gt = self._get_data(self.y, X_gt, Y_obj, Y_con, Y_track)
-        z_gt = self._get_data(self.z, X_gt, Y_obj, Y_con, Y_track)
+        # Slice data for axes
+        x_vals = self._get_data(self.x_cfg, X_gt, Y_obj, Y_con, Y_track)
+        y_vals = self._get_data(self.y_cfg, X_gt, Y_obj, Y_con, Y_track)
+        z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_track)
 
+        # Feasibility masking
         output_mask = self.bo.objective.is_Y_feasible(Y_obj)
         is_feasible = torch.logical_and(input_mask, output_mask)
         is_infeasible = torch.logical_and(input_mask, torch.logical_not(output_mask))
 
-        # Identify Pareto
-        Y_max_space = Y_obj.clone()
-        Y_max_space[..., self.bo.objective.to_minimize] *= -1
+        # Identify Pareto Points
         is_pareto = torch.zeros_like(is_feasible, dtype=torch.bool)
         feasible_indices = torch.where(is_feasible)[0]
+
         if feasible_indices.numel() > 0:
-            from botorch.utils.multi_objective.pareto import is_non_dominated
-            pareto_sub_mask = is_non_dominated(Y_max_space[is_feasible])
+            Y_max_space = Y_obj[is_feasible].clone()
+            # Flip sign for minimization objectives to use non-dominated logic
+            Y_max_space[..., self.bo.objective.to_minimize] *= -1
+            pareto_sub_mask = is_non_dominated(Y_max_space)
             is_pareto[feasible_indices[pareto_sub_mask]] = True
 
         mask_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
-        # === Render ===
+        # === Render Layers ===
 
-        # Layer 1: Infeasible ground truth
+        # Layer 1: Infeasible
         if is_infeasible.any():
             self.ax.scatter(
-                x_gt[is_infeasible].cpu().numpy(),
-                y_gt[is_infeasible].cpu().numpy(),
+                x=x_vals[is_infeasible].cpu().numpy(),
+                y=y_vals[is_infeasible].cpu().numpy(),
+                vmin=self.vmin,
+                vmax=self.vmax,
+                cmap=self.cmap if z_vals is not None else None,
                 **experiment_scatter_gnd_truth_infeasible
             )
 
-        # Layer 2: Feasible dominated ground truth
-        kwargs = experiment_scatter_gnd_truth_feasible.copy()
-        kwargs.pop("facecolor")
+        # Layer 2: Feasible but Dominated
         if mask_exclusive_feasible.any():
-            self.ax.scatter(
-                x_gt[mask_exclusive_feasible].cpu().numpy(),
-                y_gt[mask_exclusive_feasible].cpu().numpy(),
-                c=z_gt[mask_exclusive_feasible].cpu().numpy() if z_gt is not None else
-                experiment_scatter_gnd_truth_feasible[
-                    "facecolor"],
-                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
-                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
-                cmap=self.cmap if z_gt is not None else None,
-                **kwargs
+            self.mappable = self.ax.scatter(
+                x=x_vals[mask_exclusive_feasible].cpu().numpy(),
+                y=y_vals[mask_exclusive_feasible].cpu().numpy(),
+                c=z_vals[mask_exclusive_feasible].cpu().numpy() if z_vals is not None else None,
+                vmin=self.vmin,
+                vmax=self.vmax,
+                **experiment_scatter_gnd_truth_feasible
             )
 
-        # Layer 3: Pareto ground truth
-        kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
-        kwargs.pop("facecolor")
+        # Layer 3: Pareto Front
         if is_pareto.any():
             self.ax.scatter(
-                x_gt[is_pareto].cpu().numpy(),
-                y_gt[is_pareto].cpu().numpy(),
-                c=z_gt[is_pareto].cpu().numpy() if z_gt is not None else experiment_scatter_gnd_truth_pareto_front[
-                    "facecolor"],
-                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
-                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
-                cmap=self.cmap if z_gt is not None else None,
-                **kwargs
+                x=x_vals[is_pareto].cpu().numpy(),
+                y=y_vals[is_pareto].cpu().numpy(),
+                c=z_vals[is_pareto].cpu().numpy() if z_vals is not None else None,
+                **experiment_scatter_gnd_truth_pareto_front
             )
         return self
 
@@ -483,56 +477,79 @@ class ParetoFront2DPlotter(PlotterBase):
         X, Y_obj = self.bo.X, self.bo.Y_obj
         Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
 
-        x_obs = self._get_data(self.x, X, Y_obj, Y_con, Y_track)
-        y_obs = self._get_data(self.y, X, Y_obj, Y_con, Y_track)
-        z_obs = self._get_data(self.z, X, Y_obj, Y_con, Y_track)
+        x_obs = self._get_data(self.x_cfg, X, Y_obj, Y_con, Y_track)
+        y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
+        z_obs = self._get_data(self.z_cfg, X, Y_obj, Y_con, Y_track)
 
-        is_feasible = torch.logical_and(self.bo.objective.is_X_feasible(X),
-                                        self.bo.objective.is_Y_feasible(Y_obj))
+        is_feasible = torch.logical_and(
+            self.bo.objective.is_X_feasible(X),
+            self.bo.objective.is_Y_feasible(Y_obj)
+        )
 
+        # Identify Observed Pareto
         is_pareto = torch.zeros(X.shape[0], dtype=torch.bool, device=X.device)
         f_idx = torch.where(is_feasible)[0]
         if f_idx.numel() > 0:
-            from botorch.utils.multi_objective.pareto import is_non_dominated
             Y_ms = Y_obj[is_feasible].clone()
             Y_ms[..., self.bo.objective.to_minimize] *= -1
             is_pareto[f_idx[is_non_dominated(Y_ms)]] = True
 
+        # Render
         mask_infeasible = torch.logical_not(is_feasible)
         mask_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
-        # Render Observations
         if mask_infeasible.any():
-            self.ax.scatter(x_obs[mask_infeasible].cpu().numpy(), y_obs[mask_infeasible].cpu().numpy(),
-                            zorder=zorder, **experiment_scatter_observations_infeasible)
+            self.ax.scatter(
+                x=x_obs[mask_infeasible].cpu().numpy(),
+                y=y_obs[mask_infeasible].cpu().numpy(),
+                zorder=zorder,
+                **experiment_scatter_observations_infeasible)
 
         if mask_dominated.any():
-            self.ax.scatter(
-                x_obs[mask_dominated].cpu().numpy(),
-                y_obs[mask_dominated].cpu().numpy(),
+            scatter_obs = self.ax.scatter(
+                x=x_obs[mask_dominated].cpu().numpy(),
+                y=y_obs[mask_dominated].cpu().numpy(),
                 c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
-                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
-                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
-                cmap=self.cmap if z_obs is not None else None,
-                edgecolors="black",
-                zorder=zorder, s=20
-            )
+                **{"zorder": zorder, "s": 20, "edgecolors": "black"})
+
+            # If ground truth didn't set the mappable, we do it here
+            if self.mappable is None:
+                self.mappable = scatter_obs
 
         if is_pareto.any():
             self.ax.scatter(
-                x_obs[is_pareto].cpu().numpy(),
-                y_obs[is_pareto].cpu().numpy(),
-                c=z_obs[is_pareto].cpu().numpy() if z_obs is not None else None,
-                vmin=self.z.bounds[0] if self.z and self.z.bounds else None,
-                vmax=self.z.bounds[1] if self.z and self.z.bounds else None,
-                cmap=self.cmap if z_obs is not None else None,
+                x=x_obs[is_pareto].cpu().numpy(),
+                y=y_obs[is_pareto].cpu().numpy(),
                 edgecolors='black', linewidths=1.5, s=50, zorder=zorder + 1, label='Observed Pareto'
             )
         return self
 
+    def add_colorbar(self):
+        """ Adds a colorbar to the right of the plot based on the Z configuration. """
+        # Only add if a Z dimension was requested and we have a mappable object
+        if self.z_cfg is None or self.mappable is None:
+            return
+
+        # Check if colorbar already exists to avoid duplicates
+        if hasattr(self, 'cbar') and self.cbar is not None:
+            return
+
+        # Create the colorbar
+        self.cbar = self.fig.colorbar(
+            self.mappable,
+            ax=self.ax,
+            fraction=0.046,
+            pad=0.04
+        )
+
+        # Set the label from our Cfg object
+        self.cbar.set_label(self.z_cfg.label, fontsize='small', fontweight='bold')
+        self.cbar.ax.tick_params(labelsize='x-small')
+
     def plot(self):
         self.plot_ground_truth()
         self.plot_observations()
+        self.add_colorbar()
         self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
         return self
 

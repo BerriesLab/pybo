@@ -10,10 +10,8 @@ from plotters.styles import *
 class BestValuePlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
-
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
-
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.ax.set_xlabel("Number of observations (beyond initial points)")
         self.ax.set_ylabel("Best value")
@@ -22,7 +20,6 @@ class BestValuePlotter(PlotterBase):
         best_values = np.array(self.bo.best_values)
         x = self.bo.n_initial_samples + np.arange(len(best_values)) * self.bo.batch_size
         self.ax.plot(x, best_values, **metrics_line2d)
-
         if self.bo.objective.best_value is not None:
             self.ax.axhline(y=self.bo.objective.best_value, linestyle='--', color='black', label='Max HV')
         return self

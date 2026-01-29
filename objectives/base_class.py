@@ -1,12 +1,7 @@
-import inspect
-from collections.abc import Callable
-
-import torch
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
-from botorch.exceptions import InputDataError
 from constraints.output_constraints import *
 from objectives.variable_registry import *
 
@@ -301,7 +296,7 @@ class MCObjectiveBase(ABC):
         """
         if self._gt_noise_std is None:
             raise ValueError("noise_std is required to add_noise.")
-        noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
+        noise = self._gt_noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
 
     def is_X_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
@@ -359,12 +354,39 @@ class MCObjectiveBase(ABC):
 
         return feasible_mask
 
-    def get_idx(self, label: str) -> int:
+    def get_par_idx(self, label: str) -> int:
         """ Returns the integer index for a given parameter label. """
         for item in self.par_cfg:
             if item.label == label:
                 return item.index
         raise ValueError(f"Label '{label}' not found in par_cfg")
+
+    def get_config(self, category: str, identifier: str | int):
+        """
+        Finds a configuration object based on its category and label/index.
+
+        Args:
+            category: One of 'par', 'obj', 'trk', 'con'
+            identifier: The label (string) or the index (integer)
+        """
+        mapping = {
+            "par": self.par_cfg,
+            "obj": self.obj_cfg,
+            "trk": self.trk_cfg,
+            "con": self.ineq_Y_con_cfg,
+        }
+
+        cfg_list = mapping.get(category.lower())
+        if cfg_list is None:
+            raise ValueError(f"Invalid category '{category}'. Use: {list(mapping.keys())}")
+
+        for cfg in cfg_list:
+            if isinstance(identifier, str) and cfg.label == identifier:
+                return cfg
+            if isinstance(identifier, int) and cfg.index == identifier:
+                return cfg
+
+        raise ValueError(f"Could not find '{identifier}' in category '{category}'")
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
