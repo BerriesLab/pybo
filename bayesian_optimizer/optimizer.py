@@ -532,14 +532,14 @@ class BayesianOptimizer:
             self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
 
     def _compute_feasible_input_mask(self):
-        return self.objective.is_input_feasible(self.X)
+        return self.objective.is_X_feasible(self.X)
 
     def _compute_feasible_output_mask(self):
         if self.objective.ineq_Y_con is None:
             Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
-            Y_feasible = self.objective.is_output_feasible(Y_full)
+            Y_feasible = self.objective.is_Y_feasible(Y_full)
         return Y_feasible
 
     def _compute_metrics(self, verbose=True):

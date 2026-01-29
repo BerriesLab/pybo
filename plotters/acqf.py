@@ -97,7 +97,7 @@ class Acqf2DPlotter(PlotterBase):
         Y_np = X_grid[:, self.y.index].reshape(N, N).cpu().numpy()
         with torch.no_grad():
             Z_np = self.bo.acqf_instance(X_grid.unsqueeze(1)).reshape(N, N).cpu().numpy()
-        feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
+        feas_mask_np = self.bo.objective.is_X_feasible(X_grid).reshape(N, N).cpu().numpy()
         Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
 
         cp = self.ax.contourf(

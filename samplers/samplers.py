@@ -37,7 +37,7 @@ class SamplerBase(ABC):
 
             norm_X = self._generate_base_samples(n=n)
             X = unnormalize(norm_X, self.objective.bounds)
-            feasible_mask = self.objective.is_input_feasible(X=X)
+            feasible_mask = self.objective.is_X_feasible(X=X)
             feasible_norm_X = norm_X[feasible_mask]
             if feasible_norm_X.shape[0] > 0:
                 feasible_X = unnormalize(feasible_norm_X, self.objective.bounds)

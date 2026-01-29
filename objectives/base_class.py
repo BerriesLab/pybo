@@ -23,9 +23,18 @@ class MCObjectiveBase(ABC):
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
             gt_noise_std: float | list[float] | None = None,
-            add_noise_to_gt: bool = False,
     ):
-        r"""Args:
+        r"""
+        Args:
+        -obj_cfg: Configuration for objectives. It receives a list of ObjCfg.
+        These objects are internally stored for optimization and visualization.
+
+        -par_cfg: Configuration for parameters. It receives a list of ParCfg.
+        These objects are internally stored for optimization and visualization.
+
+        -trk_cfg: Configuration for trackers. It receives a list of TrkCfg.
+        These objects are internally stored for optimization and visualization.
+
         - lin_eq_X_con_cfg: Configuration for linear equality input constraints.
         It receives a list of LinEqXConCfg. These objects are internally converted
         to a list of tuples (idxs,coeffs, rhs), with each tuple encoding
@@ -43,18 +52,19 @@ class MCObjectiveBase(ABC):
         - nonlin_ineq_X_con_cfg: Configuration for non-linear inequality input constrsints.
         It receives a list of NonLinIneqXConCfg. These objects are internally converted
         to a list of tuples (f, intra). Here, the first element is a callable
-        representing a constraint of the form `callable(x) >= 0`. The second element
-        is a boolean defining intra-point constraints (True) or intra-point constraints (False).,
-        In case of an intra-point constraint, `callable()` takes in a one-dimensional
-        tensor of shape `d` and returns a scalar. In case of an intra-point constraint,
-        `callable()` takes a two-dimensional tensor of shape `q x d` and again returns a scalar.
+        representing a constraint of the form `callable(x) >= 0` (feasible if non-negative).
+        The second element is a boolean defining intra-point constraints (True) or
+        intra-point constraints (False). In the case of an intra-point constraint,
+        `callable()` takes in a one-dimensional tensor of shape `d` and returns a scalar.
+        In the case of an intra-point constraint, `callable()` takes a two-dimensional
+        tensor of shape `q x d` and again returns a scalar.
 
         - ineq_Y_con_cfg: Configuretion for inequality output constraints.
-        It receives a list of IneqYConfg. These objects are internally converted to...
+        It receives a list of IneqYConfg. These objects are internally converted to
+        a list of functions representing a constraint of the form `callable(x) >= 0`
+        (feasible if non-negative).
 
-        Output ineq_Y_con_cfg must be cast in callable form and are
-        satisfied if
-        f(x) >= 0 (feasible if non-negative).
+        -gt_noise_std: ...
         """
         super().__init__()
 
@@ -72,33 +82,27 @@ class MCObjectiveBase(ABC):
         self.output_con_cfg = ineq_Y_con_cfg
 
         # === Derived Objective Attributes ===
-        self.dim = len(self.par_cfg) if self.par_cfg is not None else 0
-        self.num_objectives = len(self.obj_cfg) if self.obj_cfg is not None else 0
-        self.num_constraints = len(self.output_con_cfg) if self.output_con_cfg is not None else 0
-        self.num_trackers = len(self.trk_cfg) if trk_cfg is not None else 0
+        self._dim = len(self.par_cfg) if self.par_cfg is not None else 0
+        self._num_objectives = len(self.obj_cfg) if self.obj_cfg is not None else 0
+        self._num_constraints = len(self.output_con_cfg) if self.output_con_cfg is not None else 0
+        self._num_trackers = len(self.trk_cfg) if trk_cfg is not None else 0
 
         # === Assigned Attributes ===
-        self.to_minimize = [cfg.to_minimize for cfg in self.obj_cfg]
-        self.bounds = self.get_bounds_from_pars()
-        self.outcomes = [cfg.index for cfg in self.obj_cfg]
-        self.num_outcomes = len(self.obj_cfg)
-        self.gt_noise_std = gt_noise_std
-        self.add_noise_to_gt = add_noise_to_gt
+        self._to_minimize = [cfg.to_minimize for cfg in self.obj_cfg]
+        self._bounds = self.get_bounds_from_pars()
+        self._outcomes = [cfg.index for cfg in self.obj_cfg]
+        self._num_outcomes = len(self.obj_cfg)
+        self._gt_noise_std = gt_noise_std
 
+        # TODO: convert setters to methods
         # === Constraints ===
         self.lin_eq_X_con = lin_eq_X_con_cfg
         self.lin_ineq_X_con = lin_ineq_X_con_cfg
         self.nonlin_ineq_X_con = nonlin_ineq_X_con_cfg
         self.ineq_Y_con = ineq_Y_con_cfg
 
-    def get_idx(self, label: str) -> int:
-        """ Returns the integer index for a given parameter label. """
-        for item in self.par_cfg:
-            if item.label == label:
-                return item.index
-        raise ValueError(f"Label '{label}' not found in par_cfg")
+    # === Properties: CUDA ===
 
-    # === CUDA Properties ===
     @property
     def device(self) -> torch.device:
         return self._device
@@ -119,54 +123,23 @@ class MCObjectiveBase(ABC):
             raise ValueError("dtype must be of type torch.dtype")
         self._dtype = dtype
 
-    # === Objective Properties ===
+    # ===== Properties: General =====
+
     @property
     def dim(self) -> int:
         return self._dim
-
-    @dim.setter
-    def dim(self, dim: int):
-        if not isinstance(dim, int) or dim < 0:
-            raise ValueError("'dim' must be a positive integer")
-        self._dim = dim
 
     @property
     def num_objectives(self) -> int:
         return self._num_objectives
 
-    @num_objectives.setter
-    def num_objectives(self, num_objectives: int):
-        if not isinstance(num_objectives, int) or num_objectives < 0:
-            raise ValueError("'num_objectives' must be a positive integer")
-        self._num_objectives = num_objectives
-
     @property
     def num_constraints(self) -> int:
         return self._num_constraints
 
-    @num_constraints.setter
-    def num_constraints(self, num_constraints: int):
-        if not isinstance(num_constraints, int) or num_constraints < 0:
-            raise ValueError("'num_constraints' must be a positive integer")
-        self._num_constraints = num_constraints
-
     @property
     def to_minimize(self) -> Tensor:
         return self._obj_to_minimize
-
-    @to_minimize.setter
-    def to_minimize(self, value: list[bool] | torch.Tensor):
-        if isinstance(value, list):
-            if len(value) != self.num_objectives:
-                raise ValueError("The length of obj_to_minimize must be equal to the number of objectives.")
-            value = torch.tensor(value, dtype=torch.bool, device=self.device)
-        elif isinstance(value, torch.Tensor):
-            if value.size(0) != self.num_objectives:
-                raise ValueError("The length of obj_to_minimize must be equal to the number of objectives.")
-            value = value.to(self.device, dtype=torch.bool)
-        else:
-            raise TypeError("negate must be a list of bools or a torch.Tensor")
-        self._obj_to_minimize = value
 
     @property
     def bounds(self) -> torch.Tensor:
@@ -180,66 +153,19 @@ class MCObjectiveBase(ABC):
         ub = [p.bounds[1] for p in sorted_pars]
         return torch.tensor([lb, ub], device=self.device, dtype=self.dtype)
 
-    @bounds.setter
-    def bounds(self, value: list[tuple[float, float]] | torch.Tensor):
-        if not torch.is_tensor(value):
-            value = torch.tensor(value, device=self._device, dtype=self.dtype)
-            if value.shape != (self.dim, 2):
-                raise InputDataError(
-                    f"Expected list of {self.dim} (lb, ub) tuples, got shape {value.shape}"
-                )
-            self._bounds = value.transpose(0, 1)
-        else:
-            if value.shape != (2, self.dim):
-                raise InputDataError(
-                    f"Expected tensor of shape (2, {self.dim}), got {value.shape}"
-                )
-            self._bounds = value.to(device=self.device, dtype=self.dtype)
-
     @property
     def outcomes(self) -> torch.Tensor:
         return self._outcomes
 
-    @outcomes.setter
-    def outcomes(self, value: list[int] | torch.Tensor):
-        """
-        Indices of model outputs used as objectives. If None, use all model outputs.
-        """
-        if torch.is_tensor(value):
-            value = value.tolist()
-        elif isinstance(value, list):
-            pass
-        else:
-            raise TypeError("outcomes must be a list of ints or a torch.Tensor")
-
-        value = torch.tensor(value, device=self.device, dtype=torch.long)
-        self._outcomes = value
+    @property
+    def num_outcomes(self) -> int:
+        return self._num_outcomes
 
     @property
     def gt_noise_std(self) -> torch.Tensor | None:
         return self._noise_std
 
-    @gt_noise_std.setter
-    def gt_noise_std(self, value: float | int | list[float] | None):
-        if value is None:
-            self._noise_std = None
-            return
-
-        if isinstance(value, list):
-            if len(value) != self.num_objectives:
-                raise ValueError(
-                    f"noise_std list must have length {self.num_objectives}, "
-                    f"but got {len(value)}"
-                )
-            value = torch.tensor(value, dtype=self.dtype)
-        elif isinstance(value, (float, int)):
-            value = torch.tensor([value] * self.num_objectives, dtype=self.dtype)
-        else:
-            raise TypeError("noise_std must be a float, int, or list of floats.")
-
-        self._noise_std = value
-
-    # ===== X Constraint Properties =====
+    # ===== Properties: Constraints on X =====
 
     @property
     def lin_eq_X_con(self):
@@ -317,7 +243,7 @@ class MCObjectiveBase(ABC):
         else:
             self._nonlin_ineq_X_con = None
 
-    # === Output Constraints ===
+    # ===== Properties: Constraints on Y =====
 
     @property
     def ineq_Y_con(self):
@@ -340,15 +266,11 @@ class MCObjectiveBase(ABC):
         else:
             self._ineq_Y_con = None
 
-    # === GROUND TRUTH METHODS ===
+    # ===== Methods =====
 
     def evaluate_true_objective(self, X: Tensor) -> Tensor:
         """
-        Evaluate the true, unnegated objective function at the given input
-        locations X. This method serves as the ground-truth evaluation of the
-        problem and is typically used for benchmarking, visualization (e.g.,
-        plotting the true Pareto front), or performance assessment of
-        optimization algorithms.
+        Evaluate the true objective at the given input locations X.
         """
         pass
 
@@ -358,12 +280,14 @@ class MCObjectiveBase(ABC):
         return Y
 
     def evaluate_true_constraints(self, X: Tensor) -> Tensor:
-        """Evaluates and stacks all nonlinear input ineq_Y_con_cfg."""
+        """
+        Evaluates and stacks all nonlinear input ineq_Y_con_cfg.
+        """
         if not self.ineq_Y_con:
             return torch.empty((*X.shape[:-1], 0), device=self.device, dtype=self.dtype)
         return torch.stack([f(X) for f, _ in self.ineq_Y_con], dim=-1)
 
-    def evaluate_true_constraint_with_noise(self, X: Tensor) -> Tensor:
+    def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
         Y = self.evaluate_true_constraints(X)
         Y = self.add_noise(Y)
         return Y
@@ -388,17 +312,15 @@ class MCObjectiveBase(ABC):
         """
         A method to add noise to the observations.
         """
-        if self.gt_noise_std is None:
+        if self._gt_noise_std is None:
             raise ValueError("noise_std is required to add_noise.")
         noise = self._noise_std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
 
-    # === FEASIBILITY ===
-
-    def is_input_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
-        """ Supports X (..., d) and q-btach X (..., q, d) for inter and intra-point
+    def is_X_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
+        """ Supports X (..., d) and q-btach X (..., q, d) for inter- and intra-point
         input constraints. Returns mask of shape (...) (one per batch item / restart)."""
-        has_q = (X.dim() >= 3)  # interpret last two dims as (q, d)
+        has_q = (X.dim() >= 3)  # interpret the last two dims as (q, d)
         base_shape = X.shape[:-2] if has_q else X.shape[:-1]
         feasible_mask = torch.ones(base_shape, dtype=torch.bool, device=X.device)
 
@@ -435,7 +357,7 @@ class MCObjectiveBase(ABC):
 
         return feasible_mask
 
-    def is_output_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
+    def is_Y_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
         """ Checks if the objective/constraint outputs Y satisfy the performance ineq_Y_con_cfg.
             Y is expected to be [batch_shape, num_objectives + num_constraints]. """
 
@@ -449,6 +371,13 @@ class MCObjectiveBase(ABC):
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
+
+    def get_idx(self, label: str) -> int:
+        """ Returns the integer index for a given parameter label. """
+        for item in self.par_cfg:
+            if item.label == label:
+                return item.index
+        raise ValueError(f"Label '{label}' not found in par_cfg")
 
 
 class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
@@ -465,7 +394,6 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
             gt_noise_std: float | list[float] | None = None,
-            add_noise_to_gt: bool = False,
     ):
         ABC.__init__(self)
         MCAcquisitionObjective.__init__(self)
@@ -481,7 +409,6 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
             gt_noise_std=gt_noise_std,
-            add_noise_to_gt=add_noise_to_gt,
         )
         self.best_value = best_value
 
@@ -496,7 +423,7 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.to_minimize] *= -1
+        selected[..., self._to_minimize] *= -1
         return selected.squeeze(-1)
 
 
@@ -514,7 +441,6 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
             gt_noise_std: float | list[float] | None = None,
-            add_noise_to_gt: bool = False,
     ):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
@@ -530,7 +456,6 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
             gt_noise_std=gt_noise_std,
-            add_noise_to_gt=add_noise_to_gt,
         )
         self.ref_point = [cfg.ref_point for cfg in self.obj_cfg]
         self.max_hv = max_hv
@@ -570,5 +495,5 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
         selected = samples.clone()
         if self.outcomes is not None:
             selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.to_minimize] *= -1
+        selected[..., self._to_minimize] *= -1
         return selected

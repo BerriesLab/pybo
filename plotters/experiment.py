@@ -212,7 +212,7 @@ class Experiment2DPlotter(PlotterBase):
         X_np = X_grid[:, self.x.index].reshape(N, N).cpu().numpy()
         Y_np = X_grid[:, self.y.index].reshape(N, N).cpu().numpy()
         Z_np = Y_obj_gt.reshape(N, N).cpu().numpy()
-        feas_mask_np = self.bo.objective.is_input_feasible(X_grid).reshape(N, N).cpu().numpy()
+        feas_mask_np = self.bo.objective.is_X_feasible(X_grid).reshape(N, N).cpu().numpy()
         Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
 
         cp = self.ax.contourf(
@@ -412,7 +412,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
     def plot_ground_truth(self):
         X_gt = self._generate_uniform_grid()
-        input_mask = self.bo.objective.is_input_feasible(X_gt)
+        input_mask = self.bo.objective.is_X_feasible(X_gt)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
         Y_track = self.bo.objective.evaluate_trackers(X_gt)
@@ -421,7 +421,7 @@ class ParetoFront2DPlotter(PlotterBase):
         y_gt = self._get_data(self.y, X_gt, Y_obj, Y_con, Y_track)
         z_gt = self._get_data(self.z, X_gt, Y_obj, Y_con, Y_track)
 
-        output_mask = self.bo.objective.is_output_feasible(Y_obj)
+        output_mask = self.bo.objective.is_Y_feasible(Y_obj)
         is_feasible = torch.logical_and(input_mask, output_mask)
         is_infeasible = torch.logical_and(input_mask, torch.logical_not(output_mask))
 
@@ -487,8 +487,8 @@ class ParetoFront2DPlotter(PlotterBase):
         y_obs = self._get_data(self.y, X, Y_obj, Y_con, Y_track)
         z_obs = self._get_data(self.z, X, Y_obj, Y_con, Y_track)
 
-        is_feasible = torch.logical_and(self.bo.objective.is_input_feasible(X),
-                                        self.bo.objective.is_output_feasible(Y_obj))
+        is_feasible = torch.logical_and(self.bo.objective.is_X_feasible(X),
+                                        self.bo.objective.is_Y_feasible(Y_obj))
 
         is_pareto = torch.zeros(X.shape[0], dtype=torch.bool, device=X.device)
         f_idx = torch.where(is_feasible)[0]

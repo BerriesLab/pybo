@@ -9,7 +9,7 @@ def compute_feasible_mask(objective, X, Y_obj, Y_con):
 
 
 def compute_feasible_input_mask(objective, X):
-    return objective.is_input_feasible(X)
+    return objective.is_X_feasible(X)
 
 
 def compute_feasible_output_mask(objective, Y_obj, Y_con):
@@ -17,5 +17,5 @@ def compute_feasible_output_mask(objective, Y_obj, Y_con):
         Y_feasible = torch.ones(Y_obj, dtype=torch.bool, device=self._device)
     else:
         Y_full = torch.cat([Y_obj, Y_con], dim=-1)
-        Y_feasible = objective.is_output_feasible(Y_full)
+        Y_feasible = objective.is_Y_feasible(Y_full)
     return Y_feasible
