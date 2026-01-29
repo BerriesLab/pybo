@@ -535,7 +535,7 @@ class BayesianOptimizer:
         return self.objective.is_X_feasible(self.X)
 
     def _compute_feasible_output_mask(self):
-        if self.objective.ineq_Y_con is None:
+        if self.objective._ineq_Y_con is None:
             Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
@@ -546,7 +546,7 @@ class BayesianOptimizer:
         """ Compute optimization metrics depending on problem dimensionality
         Single-objective: _best_f
         Multi-objective: hypervolume."""
-        if self._objective.num_objectives == 1:
+        if self._objective.num_obj == 1:
             self._compute_best_value(verbose=verbose)
         else:
             self._compute_hypervolume(verbose=verbose)
@@ -714,7 +714,7 @@ class BayesianOptimizer:
         """Compute the reference value for the acquisition function.
         Single-objective: best value (_best_f)
         Multi-objective: reference point in high dimensional space."""
-        if self._objective.num_objectives == 1:
+        if self._objective.num_obj == 1:
             self._compute_best_f(verbose=verbose)
         else:
             self._compute_reference_point(verbose=verbose)
@@ -782,7 +782,7 @@ class BayesianOptimizer:
         if verbose:
             print("Finding Pareto front... ", end="")
 
-        if self._objective.num_objectives == 1:
+        if self._objective.num_obj == 1:
             raise ValueError("Pareto front cannot be computed for single-objective problems.")
 
         if self._feasible_mask is None:
@@ -855,10 +855,10 @@ class BayesianOptimizer:
         prediction = self._model.posterior(self.X).mean
 
         # Filter feasible points if ineq_Y_con_cfg exist
-        if self._objective.ineq_Y_con is None:
+        if self._objective._ineq_Y_con is None:
             feasible_Y = prediction
         else:
-            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective.ineq_Y_con]).all(dim=0)
+            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective._ineq_Y_con]).all(dim=0)
             feasible_Y = prediction[feasible_maks]
 
         # Cast feasible points in maximization space
@@ -916,7 +916,7 @@ class BayesianOptimizer:
         if verbose:
             print("Computing infeasible X and Y... ", end="")
 
-        if self._objective.num_objectives != 1:
+        if self._objective.num_obj != 1:
             raise ValueError("Only single objective is currently supported.")
 
         if self._feasible_mask is None:
@@ -1203,12 +1203,12 @@ class BayesianOptimizer:
                     options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
                     sequential=True,
                     ic_generator=self._ic_generator
-                    if self._objective.nonlin_ineq_X_con is not None
+                    if self._objective._nonlin_ineq_X_con is not None
                     else None,
                     **{
                         "fraction_of_previous_X": 0.8,
                         "noise_scale": 0,
-                    } if self.objective.nonlin_ineq_X_con is not None
+                    } if self.objective._nonlin_ineq_X_con is not None
                     else {}
                 )
 
@@ -1226,7 +1226,7 @@ class BayesianOptimizer:
             print("Checking convergence... ", end="")
 
         # Select the relevant metric
-        if self._objective.num_objectives == 1:
+        if self._objective.num_obj == 1:
             metrics_list = self._best_values
         else:
             metrics_list = self._hypervolume
@@ -1274,7 +1274,7 @@ class BayesianOptimizer:
             n_requested = int(frac_prev * num_restarts)
 
             # LOGIC SPLIT: Multi-Objective vs Single-Objective
-            if self.objective.num_objectives > 1:
+            if self.objective.num_obj > 1:
                 # Multi-objective: use Pareto front
                 mask = is_non_dominated(Y)
                 X_candidates = X[mask]

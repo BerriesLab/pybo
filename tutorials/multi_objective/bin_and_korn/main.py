@@ -24,7 +24,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = BinhAndKorn(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
+    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_obj))
 
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)

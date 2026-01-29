@@ -82,7 +82,7 @@ class Experiment1DPlotter(PlotterBase):
 
         if Y_con_gt is not None:
             Y_full = torch.cat([Y_obj_gt, Y_con_gt], dim=-1)
-            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective.ineq_Y_con]).all(dim=0).squeeze()
+            feasible_mask = torch.stack([c(Y_full) <= 0 for c in self.bo.objective._ineq_Y_con]).all(dim=0).squeeze()
         else:
             feasible_mask = torch.ones_like(X_grid, dtype=torch.bool, device=X_grid.device)
 
