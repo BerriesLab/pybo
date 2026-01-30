@@ -7,13 +7,23 @@ from plotters.base_class import PlotterBase
 from plotters.styles import *
 
 
+def plot_and_save_metrics(bo: BayesianOptimizer):
+    """ A helper function to plot and save all metrics. """
+    ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+    if isinstance(bo.objective, MCSingleObjectiveBase):
+        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+    if isinstance(bo.objective, MCMultiObjectiveBase):
+        HypervolumePlotter(bo=bo).plot().save_figure().close_figure()
+        HypervolumeImprovementPlotter(bo=bo).plot().save_figure().close_figure()
+
+
 class BestValuePlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Best value")
 
     def plot(self):

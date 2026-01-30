@@ -168,18 +168,26 @@ arrow_past = {
 
 experiment_scatter_observations_infeasible = {
     'marker': 'X',
-    'facecolor': 'red',
+    'facecolor': C_INFEASIBLE,
     'edgecolor': 'black',
     's': ms ** 2,
-    'label': "Infeasible obs.",
+    'label': "Infeasible Obs",
     'alpha': 0.8,
 }
 experiment_scatter_observations_feasible = {
     'marker': 'o',
-    'facecolor': 'white',
+    'facecolor': C_FEASIBLE,
     'edgecolor': 'black',
     's': ms ** 2,
-    'label': "Feasible obs.",
+    'label': "Feasible Obs",
+    'alpha': 0.8,
+}
+experiment_scatter_observations_pareto_front = {
+    'marker': '*',
+    'facecolor': C_PARETO,
+    'edgecolor': "black",
+    's': 3 * ms ** 2,
+    'label': "Pareto Obs",
     'alpha': 0.8,
 }
 experiment_scatter_gnd_truth_feasible = {
@@ -191,19 +199,19 @@ experiment_scatter_gnd_truth_feasible = {
     'alpha': 0.25,
 }
 experiment_scatter_gnd_truth_infeasible = {
-    "marker": "o",
-    'facecolors': C_INFEASIBLE,
+    "marker": "x",
+    'facecolor': C_INFEASIBLE,
     "edgecolor": None,
     's': S_GT,
     'label': "Infeasible GT",
-    'alpha': 0.18,
+    'alpha': 0.15,
 }
 experiment_scatter_gnd_truth_pareto_front = {
-    "marker": "o",
+    "marker": "*",
     "facecolor": C_PARETO,
-    "edgecolors": EDGE_DARK,
+    "edgecolor": EDGE_DARK,
     "linewidths": 0.6,
-    "s": S_GT,
+    "s": 3 * S_GT,
     "alpha": 0.70,
     "label": "Pareto GT",
 }

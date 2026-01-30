@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import torch
 import numpy as np
 from typing import cast
@@ -8,6 +7,18 @@ from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.variable_registry import ParCfg
 from plotters.base_class import PlotterBase
 from plotters.styles import *
+
+
+def plot_and_save_evolutions(bo: BayesianOptimizer, ):
+    """ A helper functions to plot and sav all evolution plots. """
+    for idx in range(bo.objective.num_par):
+        EvolutionPlotter(bo=bo, y=("par", idx)).plot().save_figure().close_figure()
+    for idx in range(bo.objective.num_obj):
+        EvolutionPlotter(bo=bo, y=("obj", idx)).plot().save_figure().close_figure()
+    for idx in range(bo.objective.num_con):
+        EvolutionPlotter(bo=bo, y=("con", idx)).plot().save_figure().close_figure()
+    for idx in range(bo.objective.num_trk):
+        EvolutionPlotter(bo=bo, y=("trk", idx)).plot().save_figure().close_figure()
 
 
 class EvolutionPlotter(PlotterBase):

@@ -12,6 +12,8 @@ from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 import warnings
 
+from samplers.samplers import SobolSampler
+
 warnings.filterwarnings("ignore", message="You passed both c and facecolor")
 
 
@@ -367,7 +369,7 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
-                 z: tuple[str, str | int] | None = None, cmap='viridis'):
+                 z: tuple[str, str | int] | None = None, cmap='viridis', grid=False, seed=None):
         """
         Initialises the 2D Pareto Plotter.
         Args:
@@ -390,14 +392,20 @@ class ParetoFront2DPlotter(PlotterBase):
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.mappable = None  # To store the scatter for the colorbar
         self.cbar = None  # To store the color bar
+        self.grid = grid
+        self.seed = seed
 
         self.ax.set_xlabel(self.x_cfg.label)
         self.ax.set_ylabel(self.y_cfg.label)
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
-            self.ax.set_xlim(self.x_cfg.bounds)
+            low, high = self.x_cfg.bounds
+            padding = (high - low) * 0.05
+            self.ax.set_xlim(low - padding, high + padding)
         if hasattr(self.y_cfg, 'bounds') and self.y_cfg.bounds is not None:
-            self.ax.set_ylim(self.y_cfg.bounds)
+            low, high = self.y_cfg.bounds
+            padding = (high - low) * 0.05
+            self.ax.set_ylim(low - padding, high + padding)
         if hasattr(self.z_cfg, 'bounds') and self.z_cfg.bounds is not None:
             self.vmin, self.vmax = self.z_cfg.bounds
 
@@ -413,9 +421,17 @@ class ParetoFront2DPlotter(PlotterBase):
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
     def plot_ground_truth(self):
-        # Generate grid and evaluate
-        X_gt = self._generate_uniform_grid()
-        input_mask = self.bo.objective.is_X_feasible(X_gt)
+        # Generate ground truth X
+        if self.grid:
+            X_gt = self._generate_uniform_grid()
+        else:
+            sampler = SobolSampler(
+                device=self.bo.device,
+                dtype=self.bo.dtype,
+                objective=self.bo.objective,
+                seed=self.seed if isinstance(self.seed, int) else None
+            )
+            X_gt = sampler.draw_samples(self.n_grid_points ** 2)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraints(X_gt)
         Y_trk = self.bo.objective.evaluate_trackers(X_gt)
@@ -426,6 +442,7 @@ class ParetoFront2DPlotter(PlotterBase):
         z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_trk)
 
         # Feasibility masking
+        input_mask = self.bo.objective.is_X_feasible(X_gt)
         output_mask = self.bo.objective.is_Y_feasible(Y_obj)
         is_feasible = torch.logical_and(input_mask, output_mask)
         is_infeasible = torch.logical_and(input_mask, torch.logical_not(output_mask))
@@ -447,33 +464,41 @@ class ParetoFront2DPlotter(PlotterBase):
 
         # Layer 1: Infeasible
         if is_infeasible.any():
+            kwargs = experiment_scatter_gnd_truth_infeasible.copy()
+            if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_infeasible].cpu().numpy(),
                 y=y_vals[is_infeasible].cpu().numpy(),
+                c=self.cmap if z_vals is not None else None,
                 vmin=self.vmin if self.vmin is not None else None,
                 vmax=self.vmax if self.vmax is not None else None,
-                cmap=self.cmap if z_vals is not None else None,
-                **experiment_scatter_gnd_truth_infeasible
+                **kwargs
             )
 
         # Layer 2: Feasible but Dominated
         if mask_exclusive_feasible.any():
+            kwargs = experiment_scatter_gnd_truth_feasible.copy()
+            if z_vals is not None: kwargs.pop("facecolor")
             self.mappable = self.ax.scatter(
                 x=x_vals[mask_exclusive_feasible].cpu().numpy(),
                 y=y_vals[mask_exclusive_feasible].cpu().numpy(),
                 c=z_vals[mask_exclusive_feasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if z_vals is not None else None,
                 vmax=self.vmax if z_vals is not None else None,
-                **experiment_scatter_gnd_truth_feasible
+                **kwargs
             )
 
         # Layer 3: Pareto Front
         if is_pareto.any():
+            kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
+            if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_pareto].cpu().numpy(),
                 y=y_vals[is_pareto].cpu().numpy(),
                 c=z_vals[is_pareto].cpu().numpy() if z_vals is not None else None,
-                **experiment_scatter_gnd_truth_pareto_front
+                vmin=self.vmin if z_vals is not None else None,
+                vmax=self.vmax if z_vals is not None else None,
+                **kwargs
             )
         return self
 
@@ -503,29 +528,45 @@ class ParetoFront2DPlotter(PlotterBase):
         mask_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
         if mask_infeasible.any():
+            kwargs = experiment_scatter_observations_infeasible.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[mask_infeasible].cpu().numpy(),
                 y=y_obs[mask_infeasible].cpu().numpy(),
-                zorder=zorder,
-                **experiment_scatter_observations_infeasible)
+                c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
+                vmin=self.vmin if z_obs is not None else None,
+                vmax=self.vmax if z_obs is not None else None,
+                **kwargs
+            )
 
         if mask_dominated.any():
+            kwargs = experiment_scatter_observations_feasible.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
             scatter_obs = self.ax.scatter(
                 x=x_obs[mask_dominated].cpu().numpy(),
                 y=y_obs[mask_dominated].cpu().numpy(),
                 c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
-                **{"zorder": zorder, "s": 20, "edgecolors": "black"})
+                vmin=self.vmin if z_obs is not None else None,
+                vmax=self.vmax if z_obs is not None else None,
+                **kwargs
+            )
 
             # If ground truth didn't set the mappable, we do it here
             if self.mappable is None:
                 self.mappable = scatter_obs
 
         if is_pareto.any():
+            kwargs = experiment_scatter_observations_pareto_front.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[is_pareto].cpu().numpy(),
                 y=y_obs[is_pareto].cpu().numpy(),
-                edgecolors='black', linewidths=1.5, s=50, zorder=zorder + 1, label='Observed Pareto'
+                c=z_obs[is_pareto].cpu().numpy() if z_obs is not None else None,
+                vmin=self.vmin if z_obs is not None else None,
+                vmax=self.vmax if z_obs is not None else None,
+                **kwargs
             )
+
         return self
 
     def add_colorbar(self):
@@ -547,7 +588,7 @@ class ParetoFront2DPlotter(PlotterBase):
         )
 
         # Set the label from our Cfg object
-        self.cbar.set_label(self.z_cfg.label, fontsize='small', fontweight='bold')
+        self.cbar.set_label(self.z_cfg.label, fontsize='small')
         self.cbar.ax.tick_params(labelsize='x-small')
 
     def plot(self):

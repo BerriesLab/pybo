@@ -5,11 +5,10 @@ from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from plotters.acqf import Acqf2DPlotter
-from plotters.evolution import EvolutionPlotter
+from plotters.evolution import plot_and_save_evolutions
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
-from plotters.metrics import HypervolumePlotter, ElapsedTimePlotter, HypervolumeImprovementPlotter
+from plotters.metrics import plot_and_save_metrics
 from tutorials.multi_objective.bin_and_korn.objective import BinhAndKorn
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,24 +62,11 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
             bo=bo,
             x=("obj", "Korn"),
             y=("obj", "Binh"),
-            # z=("par", "P2")
+            z=("par", "P1"),
+            seed=254,
         ).plot().save_figure().close_figure()
-
-        # TODO: update acqf plotter
-        Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
-
-        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
-        HypervolumePlotter(bo=bo).plot().save_figure().close_figure()
-        HypervolumeImprovementPlotter(bo=bo).plot().save_figure().close_figure()
-
-        for idx in range(bo.objective.num_par):
-            EvolutionPlotter(bo=bo, y=("par", idx)).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_obj):
-            EvolutionPlotter(bo=bo, y=("obj", idx)).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_con):
-            EvolutionPlotter(bo=bo, y=("con", idx)).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_trk):
-            EvolutionPlotter(bo=bo, y=("trk", idx)).plot().save_figure().close_figure()
+        plot_and_save_metrics(bo=bo)
+        plot_and_save_evolutions(bo=bo)
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
