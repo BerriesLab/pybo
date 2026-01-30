@@ -64,10 +64,3 @@ class BraninCurrin(MCMultiObjectiveBase):
         currin = self._currin(X=X)
         f = torch.stack([branin, currin], dim=-1)
         return f
-
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.to_minimize] *= -1
-        return selected

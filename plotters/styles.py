@@ -215,6 +215,7 @@ experiment_scatter_gnd_truth_pareto_front = {
     "alpha": 0.70,
     "label": "Pareto GT",
 }
+
 experiment_contour_gnd_truth = {
     "levels": 50,
     "cmap": 'viridis',

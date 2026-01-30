@@ -58,8 +58,9 @@ class MCObjectiveBase(ABC):
 
         - ineq_Y_con_cfg: Configuration for inequality output constraints.
         It receives a list of IneqYConfg. These objects are internally converted to
-        a list of functions representing a constraint of the form `callable(x) >= 0`
-        (feasible if non-negative).
+        a list of functions representing a constraint of the form `callable(x) <= 0`
+        (feasible if negative). ATTENTION: the sign convention for Y constraints is
+        the opposite of the sign convention for X constraints.
 
         -gt_noise_std: The noise std. dev. added to the ground truth.
         """
@@ -169,6 +170,11 @@ class MCObjectiveBase(ABC):
     def ineq_Y_con(self):
         return self._ineq_Y_con
 
+    @property
+    def constraints(self):
+        # This is used by the acqf to retrieve Y constraints
+        return self._ineq_Y_con
+
     # ===== Internal Processing Methods (Private Helpers) =====
 
     def _process_bounds(self) -> torch.Tensor:
@@ -261,7 +267,7 @@ class MCObjectiveBase(ABC):
         Y = self.add_noise(Y)
         return Y
 
-    def evaluate_true_constraints(self, X: Tensor) -> Tensor:
+    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
         Evaluates and stacks all nonlinear input ineq_Y_con_cfg.
         """
@@ -270,7 +276,7 @@ class MCObjectiveBase(ABC):
         return torch.stack([f(X) for f, _ in self._ineq_Y_con], dim=-1)
 
     def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
-        Y = self.evaluate_true_constraints(X)
+        Y = self.evaluate_true_constraint(X)
         Y = self.add_noise(Y)
         return Y
 
@@ -288,7 +294,7 @@ class MCObjectiveBase(ABC):
         """
         if slack < 0:
             raise ValueError("slack must be positive")
-        return self.evaluate_true_constraints(X=X) - slack
+        return self.evaluate_true_constraint(X=X) - slack
 
     def add_noise(self, Y: Tensor) -> Tensor:
         """
@@ -349,7 +355,7 @@ class MCObjectiveBase(ABC):
         # Each c in self.ineq_Y_con_cfg is a callable that returns <= 0 for feasible
         # We stack them and check if all are satisfied
         feasible_mask = torch.stack(
-            [c(Y) >= -atol for c in self._ineq_Y_con]
+            [c(Y) <= atol for c in self._ineq_Y_con]
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
@@ -381,7 +387,7 @@ class MCObjectiveBase(ABC):
             raise ValueError(f"Invalid category '{category}'. Use: {list(mapping.keys())}")
 
         for cfg in cfg_list:
-            if isinstance(identifier, str) and cfg.label == identifier:
+            if isinstance(identifier, str) and cfg.label.lower() == identifier.lower():
                 return cfg
             if isinstance(identifier, int) and cfg.index == identifier:
                 return cfg

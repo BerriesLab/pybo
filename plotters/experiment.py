@@ -1,4 +1,3 @@
-from typing import Union
 import torch
 import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
@@ -10,11 +9,7 @@ from plotters.base_class import PlotterBase
 from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
-import warnings
-
 from samplers.samplers import SobolSampler
-
-warnings.filterwarnings("ignore", message="You passed both c and facecolor")
 
 
 class Experiment1DPlotter(PlotterBase):
@@ -394,6 +389,7 @@ class ParetoFront2DPlotter(PlotterBase):
         self.cbar = None  # To store the color bar
         self.grid = grid
         self.seed = seed
+        self.vmin, self.vmax = None, None
 
         self.ax.set_xlabel(self.x_cfg.label)
         self.ax.set_ylabel(self.y_cfg.label)
@@ -433,7 +429,7 @@ class ParetoFront2DPlotter(PlotterBase):
             )
             X_gt = sampler.draw_samples(self.n_grid_points ** 2)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
-        Y_con = self.bo.objective.evaluate_true_constraints(X_gt)
+        Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
         Y_trk = self.bo.objective.evaluate_trackers(X_gt)
 
         # Slice data for axes
@@ -442,8 +438,9 @@ class ParetoFront2DPlotter(PlotterBase):
         z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_trk)
 
         # Feasibility masking
+        Y_full = torch.cat([Y_obj, Y_con], dim=-1) if Y_con is not None else Y_obj
         input_mask = self.bo.objective.is_X_feasible(X_gt)
-        output_mask = self.bo.objective.is_Y_feasible(Y_obj)
+        output_mask = self.bo.objective.is_Y_feasible(Y_full)
         is_feasible = torch.logical_and(input_mask, output_mask)
         is_infeasible = torch.logical_and(input_mask, torch.logical_not(output_mask))
 
@@ -453,7 +450,6 @@ class ParetoFront2DPlotter(PlotterBase):
 
         if feasible_indices.numel() > 0:
             Y_max_space = Y_obj[is_feasible].clone()
-            # Flip sign for minimization objectives to use non-dominated logic
             Y_max_space[..., self.bo.objective.to_minimize] *= -1
             pareto_sub_mask = is_non_dominated(Y_max_space)
             is_pareto[feasible_indices[pareto_sub_mask]] = True
@@ -469,7 +465,7 @@ class ParetoFront2DPlotter(PlotterBase):
             self.ax.scatter(
                 x=x_vals[is_infeasible].cpu().numpy(),
                 y=y_vals[is_infeasible].cpu().numpy(),
-                c=self.cmap if z_vals is not None else None,
+                c=z_vals[is_infeasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if self.vmin is not None else None,
                 vmax=self.vmax if self.vmax is not None else None,
                 **kwargs
@@ -510,10 +506,11 @@ class ParetoFront2DPlotter(PlotterBase):
         y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
         z_obs = self._get_data(self.z_cfg, X, Y_obj, Y_con, Y_track)
 
-        is_feasible = torch.logical_and(
-            self.bo.objective.is_X_feasible(X),
-            self.bo.objective.is_Y_feasible(Y_obj)
-        )
+        # Feasibility mask
+        Y_full = torch.cat([Y_obj, Y_con], dim=-1) if Y_con is not None else Y_obj
+        input_mask = self.bo.objective.is_X_feasible(X)
+        output_mask = self.bo.objective.is_Y_feasible(Y_full)
+        is_feasible = torch.logical_and(input_mask, output_mask)
 
         # Identify Observed Pareto
         is_pareto = torch.zeros(X.shape[0], dtype=torch.bool, device=X.device)
@@ -533,7 +530,7 @@ class ParetoFront2DPlotter(PlotterBase):
             self.ax.scatter(
                 x=x_obs[mask_infeasible].cpu().numpy(),
                 y=y_obs[mask_infeasible].cpu().numpy(),
-                c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
+                c=z_obs[mask_infeasible].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
                 **kwargs
@@ -588,8 +585,8 @@ class ParetoFront2DPlotter(PlotterBase):
         )
 
         # Set the label from our Cfg object
-        self.cbar.set_label(self.z_cfg.label, fontsize='small')
-        self.cbar.ax.tick_params(labelsize='x-small')
+        self.cbar.set_label(self.z_cfg.label)
+        self.cbar.ax.tick_params()
 
     def plot(self):
         self.plot_ground_truth()

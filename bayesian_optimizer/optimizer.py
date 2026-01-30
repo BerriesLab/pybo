@@ -535,7 +535,7 @@ class BayesianOptimizer:
         return self.objective.is_X_feasible(self.X)
 
     def _compute_feasible_output_mask(self):
-        if self.objective._ineq_Y_con is None:
+        if self.objective.ineq_Y_con is None:
             Y_feasible = torch.ones(self._Y_obj.shape[0], dtype=torch.bool, device=self._device)
         else:
             Y_full = torch.cat([self._Y_obj, self._Y_con], dim=-1)
@@ -657,58 +657,32 @@ class BayesianOptimizer:
 
     def _fit_model(self, restart_on_error=True, verbose=True):
         if not isinstance(self._model, ModelListGP):
-            raise ValueError("Model must be initialized before fitting.")
+            raise ValueError("Model must be initialised before fitting.")
 
-        restart_count = 0
-        last_error = None
+        max_attempts = self._n_model_fit_restarts + 1
 
-        while restart_count <= self._n_model_fit_restarts:
-
+        for attempt in range(1, max_attempts + 1):
             try:
-                # === Fit ===
                 if verbose:
-                    print("Fitting model... ", end="")
+                    print(f"Fitting model (Attempt {attempt}/{max_attempts})... ", end="")
 
-                with warnings.catch_warnings(record=True) as caught:
-                    botorch.fit_gpytorch_mll(self._mll)
-                self._warnings.extend(caught)
+                botorch.fit_gpytorch_mll(self._mll)
 
                 if verbose:
                     self._print_success()
-                    self._print_caught_warnings()
-                    self._clear_warnings()
 
-                # TODO
-                # === Validation ===
-                # with warnings.catch_warnings(record=True) as caught:
-                #     self._validate_models(verbose=verbose)
-                # self._warnings.extend(caught)
-                #
-                # if self._warnings:
-                #     raise RuntimeError("Unphysical model parameters.")
-
-                break
+                return
 
             except Exception as e:
-                last_error = e
-                # self._print_failed()
-                self._print_caught_warnings()
-                self._clear_warnings()
-                restart_count += 1
-
-                if not restart_on_error or restart_count >= self._n_model_fit_restarts:
-                    raise RuntimeError(
-                        f"Model validation failed after {self._n_model_fit_restarts} attempts. "
-                        f"Last error: {last_error}"
-                    )
+                # If we aren't allowed to restart, or we've run out of attempts, raise the error
+                if not restart_on_error or attempt == max_attempts:
+                    raise RuntimeError(f"Fitting failed after {attempt} attempts. Last error: {e}")
 
                 if verbose:
-                    print(f"Reinitializing and retrying... "
-                          f"(Attempt {restart_count}/{self._n_model_fit_restarts})")  #
+                    print(f"Encountered error: {e}. Reinitializing model...")
 
-                # self._initialize_kernel(verbose=verbose)
-                # self._initialize_model(verbose=verbose)
-                # self._randomize_hyperparameters(issues)
+                # Re-initialize the model to get new random starting hyperparameters
+                self._initialize_model(verbose=False)
 
     def _compute_acquisition_function_reference(self, verbose=True):
         """Compute the reference value for the acquisition function.
@@ -884,7 +858,6 @@ class BayesianOptimizer:
         if verbose:
             self._print_success()
 
-    # TODO: is there a better logic for this?
     def compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
         """ Computes feasible X and Y """
 
@@ -937,243 +910,6 @@ class BayesianOptimizer:
             print("✓")
 
         return infeasible_X, infeasible_Y
-
-    # def _randomize_hyperparameters_bak(self):
-    #     """Randomize hyperparameters for a fresh optimization start."""
-    #     for m in self._model.models:
-    #         # Sample in log space for better coverage
-    #         # Lengthscale: log-uniform in [0.1, 10] relative to default
-    #         log_ls = torch.empty_like(m.covar_module.base_kernel.lengthscale).uniform_(-1, 1)
-    #         m.covar_module.base_kernel.lengthscale = 10 ** log_ls
-    #
-    #         # Outputscale: log-uniform in [0.1, 10]
-    #         log_os = torch.empty(1, device=self._device).uniform_(-1, 1)
-    #         m.covar_module.outputscale = 10 ** log_os
-    #
-    #         # Noise: log-uniform in [1e-4, 1e-1]
-    #         log_noise = torch.empty(1, device=self._device).uniform_(-4, -1)
-    #         m.likelihood.noise = 10 ** log_noise
-
-    # TODO
-    # def _randomize_hyperparameters(self, issues):
-    #     """Randomize hyperparameters with log-uniform distribution.
-    #
-    #     Workflow should be:
-    #
-    #     raw = module.raw_outputscale
-    #     c = module.constraint_for_parameter_name("raw_outputscale")
-    #
-    #     # sample in transformed space (positive)
-    #     target = torch.empty_like(module.outputscale).uniform_(0.1, 10.0)
-    #
-    #     # write into raw space
-    #     raw.data = c.inverse_transform(target)
-    #
-    #
-    #     """
-    #     for model in self._model.models:
-    #         cm = model.covar_module
-    #         for full_name, raw_param in cm.named_parameters():
-    #             if not raw_param.requires_grad:
-    #                 continue
-    #
-    #             # match issue keys to transformed name
-    #             transformed_name = full_name.replace("raw_", "")
-    #             if transformed_name not in issues:
-    #                 continue
-    #
-    #             # find constraint on covar_module (works if constraint lookup supports dotted names)
-    #             c = cm.constraint_for_parameter_name(full_name)
-    #             if c is None:
-    #                 continue
-    #
-    #             with torch.no_grad():
-    #                 old_raw = raw_param.detach().clone()
-    #
-    #                 # sample target in transformed space
-    #                 target = torch.empty_like(raw_param).uniform_(0.01, 1.0)
-    #                 raw_param.copy_(c.inverse_transform(target))
-    #
-    #                 print(
-    #                     f"Randomized {full_name}: raw mean {old_raw.mean().item():.3e} → {raw_param.mean().item():.3e}")
-
-    # def _validate_models(self, verbose=False):
-    #     """ Collect and validate the model parameters in the transformed space. """
-    #     for model in self._model.models:
-    #         transformed_params = self._extract_transformed_params(model)
-    #         self._validate_transformed_params(params=transformed_params)
-    #         if verbose:
-    #             self._print_params(transformed_params)
-    #
-    # @staticmethod
-    # def _extract_transformed_params(model):
-    #     params = {}
-    #     for name, raw_param in model.named_parameters():
-    #         constraint = model.constraint_for_parameter_name(name)
-    #         if constraint is not None:
-    #             param_val = constraint.transform(raw_param).detach()
-    #             params[name] = param_val
-    #     return params
-    #
-    # @staticmethod
-    # def _print_params(params):
-    #     rows = []
-    #     for key, val in params.items():
-    #         row = {"Parameter": key, "Value": val}
-    #         rows.append(row)
-    #     df = pd.DataFrame(rows)
-    #
-    #     print(
-    #         tabulate(
-    #             df,
-    #             headers="keys",
-    #             tablefmt="grid",  # nice ASCII box with edges
-    #             showindex=False
-    #         ),
-    #     )
-    #
-    # @staticmethod
-    # def _group_params_by_type(kernel_params: dict):
-    #     """ Group hyperparameters by type for targeted validation.
-    #     Returns dict with keys:
-    #     - variance: These parameters control the output magnitude of the kernel — how much the GP function
-    #     can deviate from the mean. For example, the outputscale of the ScaleKernel is the variance of the
-    #     GP, since k(x, x) = sigma_f^2 = Var(f(x)).
-    #     - lengthscale: These parameters control the characteristic length of the kernel.
-    #     - period: These parameters control the period length of the kernel.
-    #     - mixture: These parameters control the mixture parameters of the kernel.
-    #     - other: Everything else.
-    #     """
-    #     groups = {
-    #         "variance": {},  # outputscale, variance, constant
-    #         "lengthscale": {},
-    #         "period": {},
-    #         "mixture": {},  # spectral mixture params
-    #         "other": {},
-    #     }
-    #
-    #     for key, val in kernel_params.items():
-    #         k = key.lower()
-    #         if "lengthscale" in k:
-    #             groups["lengthscale"][key] = val
-    #         elif "outputscale" in k or "variance" in k:
-    #             groups["variance"][key] = val
-    #         elif "period" in k:
-    #             groups["period"][key] = val
-    #         elif "mixture" in k:
-    #             groups["mixture"][key] = val
-    #         else:
-    #             groups["other"][key] = val
-    #
-    #     return groups
-    #
-    # def _validate_transformed_params(self, params: dict):
-    #     """Hard check: ensure hyperparameters and noise are finite."""
-    #     for param in params.items():
-    #         if "noise" in param[0]:
-    #             self._validate_transformed_noise(param)
-    #         elif "outputscale" in param[0]:
-    #             x = "likelihood.noise_covar.raw_noise"
-    #             noise = next((k, v) for k, v in params.items() if x in k)
-    #             self._validate_transformed_variance(param, noise)
-    #         elif "lengthscale" in param[0]:
-    #             self._validate_transformed_lengthscale(param)
-    #         elif "period" in param[0]:
-    #             self._validate_transformed_period(param)
-    #         elif "mixture" in param[0]:
-    #             self._validate_transformed_mixture(param)
-    #         else:
-    #             continue
-    #
-    # def _validate_transformed_noise(self, param: tuple[str, torch.Tensor]):
-    #     key, val = param
-    #     # issues = []
-    #     if not torch.isfinite(val).all():
-    #         msg = f"{key} is not finite: {val}"
-    #         warnings.warn(msg, RuntimeWarning)
-    #     # return issues
-    #
-    # # TODO: fix extraction of noise
-    # @staticmethod
-    # def _validate_transformed_variance(param: tuple[str, torch.Tensor], noise: torch.Tensor):
-    #     """ Validate variance/outputscale parameters. Specifically, checks whether the
-    #     model outputscale is not smaller than the noise.
-    #     Core principle: signal variance should exceed noise variance,
-    #     otherwise the GP is noise-dominated and predictions collapse to mean.
-    #     With standardized Y (std=1), outputscale ≈ 1.0 is expected. """
-    #     key, val = param
-    #     n_key, n_val = noise
-    #     # issues = []
-    #     if val < n_val:
-    #         msg = f"{key} ({val.item():.2e}) < noise ({n_val.item():.2e})"
-    #         warnings.warn(msg, RuntimeWarning)
-    #         # issues.append(key)
-    #         # warnings.warn(msg, RuntimeWarning)
-    #     # return issues
-    #
-    # @staticmethod
-    # def _validate_transformed_lengthscale(param: tuple[str, torch.Tensor]):
-    #     """ Validate lenghtscale/domain range. Specifically, checks whether the
-    #      lengthscale is larger than 100x the corresponding domain size. This method
-    #      assumes that the input domain is normalized between 0 and 1. """
-    #     # issues = []
-    #     key, val = param
-    #     if val > 100:
-    #         msg = f"{key} ({val.item():.2e}) > 100 → no correlation"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val > 10:
-    #         msg = f"{key} ({val.item():.2e}) > 10 → weak correlation"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val < 0.0001:
-    #         msg = f"{key} ({val.item():.2e}) < 0.0001 → overfitting"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val < 0.01:
-    #         msg = f"{key} ({val.item():.2e}) < 0.01 → possible overfitting"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     # return issues
-    #
-    # @staticmethod
-    # def _validate_transformed_period(param: tuple[str, torch.Tensor]):
-    #     """ Validate period parameters. With standardized inputs in [0, 1]:
-    #     - period = 1.0 means one full cycle in domain
-    #     - Too small → high frequency, overfitting
-    #     - Too large → effectively non-periodic. """
-    #     # issues = []
-    #     key, val = param
-    #     if val > 10:
-    #         msg = f"{key} ({val.item():.2e}) > 10 → effectively non-periodic"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val > 5:
-    #         msg = f"{key} ({val.item():.2e}) > 5 → weak periodicity"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val < 0.05:
-    #         msg = f"{key} ({val.item():.2e}) < 0.05 → likely overfitting"
-    #         # issues.appendæ(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     elif val < 0.1:
-    #         msg = f"{key} ({val.item():.2e}) < 0.1 → possible overfitting"
-    #         # issues.append(key)
-    #         warnings.warn(msg, RuntimeWarning)
-    #     # return issues
-    #
-    # @staticmethod
-    # def _validate_transformed_mixture(params):
-    #     """
-    #     Validate spectral mixture parameters.
-    #
-    #     Checks:
-    #     - Degenerate weights (all near zero)
-    #     - Single component dominance (wasted complexity)
-    #     """
-    #     issues = []
-    #     # Check on the mixture in not implemented yet.
-    #     return issues
 
     def _optimize_acquisition_function(self, verbose=True):
 

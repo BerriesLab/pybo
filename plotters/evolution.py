@@ -47,8 +47,7 @@ class EvolutionPlotter(PlotterBase):
         mapping = {
             "par": self.bo.X,
             "obj": self.bo.Y_obj,
-            "con_y": self.bo.Y_con,
-            "con_x": self.bo.Y_con,  # Assuming all constraints are in Y_con for plotting
+            "con": self.bo.Y_con,
             "trk": self.bo.Y_track
         }
         tensor = mapping.get(category)

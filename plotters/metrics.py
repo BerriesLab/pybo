@@ -47,7 +47,7 @@ class HypervolumePlotter(PlotterBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Hypervolume")
 
     def plot(self):
@@ -73,7 +73,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel(r"$\log_{10}(\mathrm{HVI})$")
 
     def plot(self, epsilon: float = 1e-6):
@@ -101,7 +101,7 @@ class ElapsedTimePlotter(PlotterBase):
         super().__init__(bo=bo)
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.ax.set_xlabel("Number of observations (beyond initial points)")
+        self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Elapsed Time")
 
     def plot(self):
