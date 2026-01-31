@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
+
+from plotters.metrics import *
 from tutorials.single_objective.quadratic.objective import Quadratic
 from plotters.acqf import Acqf1DPlotter
 from plotters.experiment import Experiment1DPlotter
@@ -26,12 +28,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     """ Generate initial dataset """
     # Create a random sampler and draw an initial set of points within the objective bounds.
     # Compute the true objective values at the sampled points.
-    sampler = SobolSampler(
-        device=DEVICE,
-        dtype=DTYPE,
-        objective=objective,
-        seed=42,
-    )
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=42, )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
@@ -40,7 +37,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acqf=qLogExpectedImprovement,
+        acqf=qLogNoisyExpectedImprovement,
         kernel=kernel,
         X=X,
         Y_obj=Y_obj,
@@ -62,18 +59,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lims, y_lims = (-1, 5), (-1, 10)
-        experiment_plotter = Experiment1DPlotter(bo=bo)
-        experiment_plotter.ax.set_xlim(x_lims)
-        experiment_plotter.ax.set_ylim(y_lims)
-        experiment_plotter.plot().save_figure().close_figure()
-        acqf_plotter = Acqf1DPlotter(bo=bo)
-        acqf_plotter.ax.set_xlim(x_lims)
-        acqf_plotter.plot().save_figure().close_figure()
+        Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
+        # Acqf1DPlotter(bo=bo).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        ParameterEvolution(bo=bo).plot().save_figure().close_figure()
-        ObjectiveEvolution(bo=bo).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

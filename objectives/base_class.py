@@ -427,6 +427,10 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
         )
         self.best_value = best_value
 
+    def evaluate_true_objective(self, X: Tensor) -> Tensor:
+        """ Evaluates and stacks all objectives in the order of their defined index. """
+        return self.obj_cfg[0].f(X)
+
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
         Transform Monte Carlo samples from the model's posterior according

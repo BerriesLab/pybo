@@ -825,24 +825,23 @@ class BayesianOptimizer:
         if verbose:
             print("Initializing partitioning... ", end="")
 
-        # Compute posterior mean of objectives
-        prediction = self._model.posterior(self.X).mean
+        # Make sure feasibility mask exists
+        if getattr(self, "_feasible_mask", None) is None:
+            self._feasible_mask = self._compute_feasible_output_mask()
 
-        # Filter feasible points if ineq_Y_con_cfg exist
-        if self._objective._ineq_Y_con is None:
-            feasible_Y = prediction
-        else:
-            feasible_maks = torch.stack([c(prediction) <= 0 for c in self._objective._ineq_Y_con]).all(dim=0)
-            feasible_Y = prediction[feasible_maks]
+        # Use observed objective values ONLY
+        Y_obj = self._Y_obj[self._feasible_mask]  # (n_feas, M)
+        if Y_obj.numel() == 0:
+            self._partitioning = None
+            return
 
-        # Cast feasible points in maximization space
-        Y = feasible_Y.clone()
+        # Convert to maximization space
+        Y = Y_obj.clone()
         Y[..., self.objective.to_minimize] *= -1
 
-        # Build partitioning with feasible objectives only
         self._partitioning = NondominatedPartitioning(
             ref_point=self._ref_point,
-            Y=Y,
+            Y=Y
         )
 
         if verbose:

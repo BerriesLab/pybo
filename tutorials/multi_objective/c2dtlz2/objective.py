@@ -30,7 +30,7 @@ class C2DTLZ2(MCMultiObjectiveBase):
         - The pareto front is completely concave. The goal is to minimize both objectives.
     """
 
-    def __init__(self, device: torch.device, dtype: torch.dtype, ):
+    def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device,
             dtype=dtype,
@@ -70,15 +70,15 @@ class C2DTLZ2(MCMultiObjectiveBase):
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         f1 = self._f1(X)
         f2 = self._f2(X)
+        a = 1 / math.sqrt(2)
         # Calculate squared distances minus radius squared
         term11 = (f1 - 1).pow(2) + f2.pow(2) - self._r ** 2
         term12 = f1.pow(2) + (f2 - 1).pow(2) - self._r ** 2
         term1 = torch.min(term11, term12)
-        term2 = (self._f1(X) - 1 / math.sqrt(2)).pow(2) + (self._f2(X) - 1 / math.sqrt(2)).pow(2) - self._r ** 2
+        term2 = (f1 - a).pow(2) + (f2 - a).pow(2) - self._r ** 2
         # Logic check:
         # If point is OUTSIDE spheres, torch.min(term1, term2) is POSITIVE.
         # We return -min, which is NEGATIVE (Feasible).
         # If point is INSIDE spheres, torch.min(term1, term2) is NEGATIVE.
         # We return -min, which is POSITIVE (Infeasible).
-        val = -torch.min(term1, term2)
         return -torch.min(term1, term2).unsqueeze(-1)
