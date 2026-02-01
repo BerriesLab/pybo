@@ -190,6 +190,14 @@ experiment_scatter_observations_pareto_front = {
     'label': "Pareto Obs",
     'alpha': 0.8,
 }
+experiment_scatter_observations_best_value = {
+    'marker': '*',
+    'facecolor': C_PARETO,
+    'edgecolor': "black",
+    's': 3 * ms ** 2,
+    'label': "Best Obs",
+    'alpha': 0.8,
+}
 experiment_scatter_gnd_truth_feasible = {
     'marker': "o",
     'facecolor': C_GT,
@@ -214,6 +222,16 @@ experiment_scatter_gnd_truth_pareto_front = {
     "s": 3 * S_GT,
     "alpha": 0.70,
     "label": "Pareto GT",
+}
+
+experiment_scatter_gnd_truth_best_value = {
+    "marker": "*",
+    "facecolor": C_PARETO,
+    "edgecolor": EDGE_DARK,
+    "linewidths": 0.6,
+    "s": 3 * S_GT,
+    "alpha": 0.70,
+    "label": "Best GT Value",
 }
 
 experiment_contour_gnd_truth = {

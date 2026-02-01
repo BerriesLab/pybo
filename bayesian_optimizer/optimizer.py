@@ -514,7 +514,7 @@ class BayesianOptimizer:
         self._elapsed_time.append(t1 - t0)
 
         if verbose:
-            print(f"Optimisation step completed in {t1 - t0:.2f}s")
+            print(f"Optimization step completed in {t1 - t0:.2f}s")
 
     def _compute_feasible_mask(self, verbose=True):
         """ Computes feasible mask for all observed data. A point is defined feasible only

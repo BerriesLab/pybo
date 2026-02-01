@@ -2,7 +2,6 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-
 from plotters.metrics import *
 from tutorials.single_objective.quadratic.objective import Quadratic
 from plotters.acqf import Acqf1DPlotter
@@ -26,8 +25,6 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     kernel = ScaleKernel(base_kernel=RBFKernel())
 
     """ Generate initial dataset """
-    # Create a random sampler and draw an initial set of points within the objective bounds.
-    # Compute the true objective values at the sampled points.
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=42, )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)

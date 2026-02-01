@@ -14,7 +14,7 @@ class Quadratic(MCSingleObjectiveBase):
                 ParCfg(label="P1", index=0, bounds=(-1.0, 5.0))
             ],
             obj_cfg=[
-                ObjCfg(label="f", index=0, f=self._f, bounds=(0.0, 9.0), to_minimize=True, ref_point=10)
+                ObjCfg(label="F", index=0, f=self._f, bounds=(0.0, 9.0), to_minimize=True, ref_point=10)
             ]
         )
 

@@ -295,7 +295,7 @@ class Experiment1DPlotter(PlotterBase):
 
         # Layer 3: Best
         if is_best.any():
-            kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
+            kwargs = experiment_scatter_gnd_truth_best_value.copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_best].cpu(),
@@ -428,7 +428,7 @@ class Experiment1DPlotter(PlotterBase):
                 self.mappable = scatter
 
         if is_best.any():
-            kwargs = experiment_scatter_observations_pareto_front.copy()
+            kwargs = experiment_scatter_observations_best_value.copy()
             if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[is_best].cpu(),
