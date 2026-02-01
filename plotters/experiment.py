@@ -445,11 +445,19 @@ class Experiment1DPlotter(PlotterBase):
 
     def plot_next_X(self, zorder: int = 30):
         if self.bo.new_X is not None:
-            for x in self.bo.new_X.detach().cpu().numpy().flatten():
+            kwargs = next_X_1d.copy()
+            label = kwargs.pop("label")  # Get label if it exists
+            new_x_np = self.bo.new_X.detach().cpu().numpy().flatten()
+
+            for i, x in enumerate(new_x_np):
+                # Only apply the label to the very first line
+                current_label = label if i == 0 else "_nolegend_"
+
                 self.ax.axvline(
                     x=x,
                     zorder=zorder,
-                    **next_X_1d
+                    label=current_label,
+                    **kwargs
                 )
         return self
 
