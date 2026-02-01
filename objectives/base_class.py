@@ -269,11 +269,17 @@ class MCObjectiveBase(ABC):
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
-        Evaluates and stacks all nonlinear input ineq_Y_con_cfg.
+        Evaluates and stacks all inequality Y constraints.
+
+        Args:
+            X: torch.Tensor (q, dim, n_samples)
+
+        Returns:
+            torch.Tensor (q, dim, n_samples)
         """
         if not self._ineq_Y_con:
             return torch.empty((*X.shape[:-1], 0), device=self.device, dtype=self.dtype)
-        return torch.stack([f(X) for f, _ in self._ineq_Y_con], dim=-1)
+        return torch.stack([f(X) for f in self._ineq_Y_con], dim=-1)
 
     def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
         Y = self.evaluate_true_constraint(X)
@@ -346,8 +352,16 @@ class MCObjectiveBase(ABC):
         return feasible_mask
 
     def is_Y_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
-        """ Checks if the objective/constraint outputs Y satisfy the performance ineq_Y_con_cfg.
-            Y is expected to be [batch_shape, num_objectives + num_constraints]. """
+        """
+        Checks if Y satisfies the inequality Y constraints.
+
+        Args:
+            Y: torch.tensor [q, num_objectives + num_constraints, n_samples].
+
+        Returns:
+            torch.tensor [q, num_objectives + num_constraints].
+
+        """
 
         if not hasattr(self, 'ineq_Y_con_cfg') or self._ineq_Y_con is None:
             return torch.ones(Y.shape[:-1], dtype=torch.bool, device=Y.device)

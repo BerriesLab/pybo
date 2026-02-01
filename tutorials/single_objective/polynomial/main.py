@@ -4,8 +4,9 @@ from botorch.acquisition import *
 from gpytorch.kernels import *
 from tutorials.single_objective.polynomial.objective import Polynomial
 from plotters.acqf import Acqf1DPlotter
-from plotters.experiment import Experiment1DPlotter
 from samplers.samplers import *
+from plotters.experiment import *
+from plotters.acqf import *
 from plotters.evolution import *
 from plotters.metrics import *
 
@@ -56,8 +57,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf1DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
+        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()

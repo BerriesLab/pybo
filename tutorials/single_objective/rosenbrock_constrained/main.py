@@ -2,11 +2,12 @@ import os
 from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.kernels import *
-from plotters.acqf import Acqf2DPlotter
-from plotters.experiment import *
-from samplers.samplers import *
-from plotters.evolution import *
 from tutorials.single_objective.rosenbrock_constrained.objective import RosenbrockConstrained
+from samplers.samplers import *
+from plotters.experiment import *
+from plotters.acqf import *
+from plotters.evolution import *
+from plotters.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -21,7 +22,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = RosenbrockConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
+    kernel = ScaleKernel(base_kernel=RBFKernel())
 
     """ Generate initial dataset """
     sampler = SobolSampler(
@@ -30,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         objective=objective,
         seed=45,
     )
-    X = sampler.draw_samples(n=3 * (objective.dim + 1))
+    X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -61,13 +62,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Plot """
         Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        for idx in range(bo.objective.dim):
-            ParameterEvolution(bo=bo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(bo.objective.num_objectives):
-            ObjectiveEvolution(bo=bo).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 1)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

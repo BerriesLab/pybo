@@ -159,138 +159,166 @@ class Acqf1DPlotter(PlotterBase):
 
 class Acqf2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] | None = None,
-                 y: tuple[str, str | int] | None = None):
+    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
+                 y: tuple[str, str | int] = ("par", 1), z: tuple[str, str | int] | None = None,
+                 cmap='viridis', grid=True):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
-        # TODO: by default the method should plot p0 vs p1.
-        # self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        # self.ax.set_xlabel(
-        #     self.bo.objective.objective_names[0] if bo.objective.objective_names is not None else r"$x_1$")
-        # self.ax.set_ylabel(
-        #     self.bo.objective.objective_names[1] if bo.objective.objective_names is not None else r"$x_2$")
-        # self.ax.set_xlim(self.bo.objective.bounds[:, 0].detach().cpu().numpy())
-        # self.ax.set_ylim(self.bo.objective.bounds[:, 1].detach().cpu().numpy())
+        self.x_cfg = bo.objective.get_config(*x)
+        self.y_cfg = bo.objective.get_config(*y)
+        self.z_cfg = bo.objective.get_config(*z) if z else None
 
+        self.cmap = cmap
+        self.n_grid_points = 100
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
-        self.x = x
-        self.y = y
+        self.mappable = None
+        self.grid = grid
 
-        # Lock X and Y scales from VariableRegistry bounds
-        self.ax.set_xlim(self.x.bounds)
-        self.ax.set_ylim(self.y.bounds)
+        self.ax.set_xlabel(self.x_cfg.label)
+        self.ax.set_ylabel(self.y_cfg.label)
 
-        self.ax.set_xlabel(x.label)
-        self.ax.set_ylabel(y.label)
+        if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
+            low, high = self.x_cfg.bounds
+            self.ax.set_xlim(low, high)
+        if hasattr(self.y_cfg, 'bounds') and self.y_cfg.bounds is not None:
+            low, high = self.y_cfg.bounds
+            self.ax.set_ylim(low, high)
+
+    @staticmethod
+    def _get_data(cfg, X_gt, Y_obj, Y_con, Y_trk):
+        """ Extracts the correct column from the correct tensor. """
+        if cfg is None: return None
+        if isinstance(cfg, ParCfg): return X_gt[..., cfg.index]
+        if isinstance(cfg, ObjCfg): return Y_obj[..., cfg.index]
+        if isinstance(cfg, TrkCfg): return Y_trk[..., cfg.index]
+        if isinstance(cfg, IneqYConCfg): return Y_con[..., cfg.index]
+        raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
     def plot_acquisition(self, zorder: int = 0):
-        N = self.n_grid_points
+        # Generate grid
         X_grid = self._generate_uniform_grid()
-        X_np = X_grid[:, self.x.index].reshape(N, N).cpu().numpy()
-        Y_np = X_grid[:, self.y.index].reshape(N, N).cpu().numpy()
+        N = self.n_grid_points
+
+        # Evaluate Acquisition Function
         with torch.no_grad():
-            Z_np = self.bo.acqf_instance(X_grid.unsqueeze(1)).reshape(N, N).cpu().numpy()
+            # (N*N, 1) -> (N, N)
+            acq_values = self.bo.acqf_instance(X_grid.unsqueeze(1))
+
+        # Extract X, Y coordinates for plotting
+        X_grid_np = X_grid[..., self.x_cfg.index].reshape(N, N).cpu().numpy()
+        Y_grid_np = X_grid[..., self.y_cfg.index].reshape(N, N).cpu().numpy()
+        Z_np = acq_values.reshape(N, N).cpu().numpy()
+
+        # Handle Log Scaling if necessary
+        if getattr(self.bo.acqf, "_log", False):
+            Z_np = -np.log(np.abs(Z_np))
+
+        # Check feasibility for masking
         feas_mask_np = self.bo.objective.is_X_feasible(X_grid).reshape(N, N).cpu().numpy()
         Z_masked_np = np.ma.masked_where(np.logical_not(feas_mask_np), Z_np)
 
         cp = self.ax.contourf(
-            X_np,
-            Y_np,
+            X_grid_np,
+            Y_grid_np,
             Z_masked_np,
+            levels=20,
+            cmap=self.cmap,
             zorder=zorder,
-            **experiment_contour_gnd_truth
+            alpha=0.8
         )
-        self.fig.colorbar(
-            cp,
-            ax=self.ax
-        )
-
+        self.mappable = cp
         return self
 
-    def plot_observations(self, zorder: int = 1):
-        X_best, Y_best = self.bo.best_feasible_X, self.bo.best_feasible_Y
-        X_f, Y_f = self.bo.compute_feasible_XY()
-        X_i, Y_i = self.bo.compute_infeasible_XY()
+    def plot_observations(self, zorder: int = 10):
+        if self.bo.X is None: return self
 
-        X_f_plot, Y_f_plot = X_f, Y_f
-        if X_f is not None and X_best is not None:
-            # Create a mask for all points that are NOT the current best
-            # This assumes X_f and X_best are torch tensors; use np.equal for numpy
-            mask = torch.logical_not(X_f == X_best).all(dim=-1)
-            X_f_plot, Y_f_plot = X_f[mask], Y_f[mask]
+        X, Y_obj = self.bo.X, self.bo.Y_obj
+        Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
 
-        # Plot feasible observations (excluding the optimum)
-        if X_f_plot is not None and X_f_plot.nelement() > 0:
+        x_obs = self._get_data(self.x_cfg, X, Y_obj, Y_con, Y_track)
+        y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
+
+        Y_full = torch.cat([Y_obj, Y_con], dim=-1) if Y_con is not None else Y_obj
+        is_feasible = self.bo.objective.is_Y_feasible(Y_full)
+        is_infeasible = torch.logical_not(is_feasible)
+
+        # Identify Best
+        is_best = torch.zeros_like(is_feasible, dtype=torch.bool)
+        feasible_indices = torch.where(is_feasible)[0]
+        if feasible_indices.numel() > 0:
+            Y_max_space = Y_obj[is_feasible].clone()
+            Y_max_space[..., self.bo.objective.to_minimize] *= -1
+            is_best_idx = torch.argmax(Y_max_space)
+            is_best[feasible_indices[is_best_idx]] = True
+
+        is_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_best))
+
+        if is_infeasible.any():
             self.ax.scatter(
-                x=X_f_plot[..., self.x.index].detach().cpu().numpy(),
-                y=X_f_plot[..., self.y.index].detach().cpu().numpy(),
-                zorder=zorder,
-                **experiment_scatter_observations_feasible
-            )
-
-        # Plot infeasible observations
-        if X_i is not None:
-            self.ax.scatter(
-                x=X_i[..., self.x.index].detach().cpu().numpy(),
-                y=X_i[..., self.y.index].detach().cpu().numpy(),
+                x=x_obs[is_infeasible].cpu().numpy(),
+                y=y_obs[is_infeasible].cpu().numpy(),
                 zorder=zorder,
                 **experiment_scatter_observations_infeasible
             )
 
-        # Plot optimum
-        if X_best is not None:
+        if is_exclusive_feasible.any():
             self.ax.scatter(
-                x=X_best[..., self.x.index].detach().cpu().numpy(),
-                y=X_best[..., self.y.index].detach().cpu().numpy(),
-                zorder=zorder,
-                **optimum,
+                x=x_obs[is_exclusive_feasible].cpu().numpy(),
+                y=y_obs[is_exclusive_feasible].cpu().numpy(),
+                zorder=zorder + 1,
+                **experiment_scatter_observations_feasible
+            )
+
+        if is_best.any():
+            self.ax.scatter(
+                x=x_obs[is_best].cpu().numpy(),
+                y=y_obs[is_best].cpu().numpy(),
+                zorder=zorder + 2,
+                **experiment_scatter_observations_best_value,
             )
 
         return self
 
-    def plot_new_X(self, zorder: int = 2):
+    def plot_new_X(self, zorder: int = 20):
         if self.bo.new_X is not None:
             X = self.bo.new_X.detach().cpu().numpy()
             self.ax.scatter(
-                x=X[:, self.x.index],
-                y=X[:, self.y.index],
-                color='red', marker='*', s=200,
-                edgecolor='white', label="Next X", zorder=zorder,
+                x=X[:, self.x_cfg.index],
+                y=X[:, self.y_cfg.index],
+                zorder=zorder,
+                **next_X_2d
             )
         return self
 
-    def plot_trajectory(self, zorder: int = 3):
+    def plot_trajectory(self, zorder: int = 5):
         """
-        Batch-aware trajectory:
-          - init -> first BO batch (n_init x q)
-          - BO batch i -> BO batch i+1 (q x q), for all adjacent observed batches
-          - last observed batch -> pending new_X (q x q) as "future"
+        Batch-aware trajectory logic connecting observations to new_X.
         """
         X_np = self.bo.X.detach().cpu().numpy()
         n_pts = X_np.shape[0]
         n_init = self.bo.n_initial_samples
         q = self.bo.batch_size
-        X_new = self.bo.new_X.detach().cpu().numpy()  # returns (q,2) or None
+        X_new = self.bo.new_X.detach().cpu().numpy() if self.bo.new_X is not None else None
 
-        # If X includes only the initial dataset, connect all X to New_X.
+        idx_x = self.x_cfg.index
+        idx_y = self.y_cfg.index
+
         if n_pts == n_init:
-            for i in range(n_init):
-                for j in range(len(X_new)):
-                    self.ax.annotate(
-                        text="",
-                        xy=(X_new[j, self.x.index], X_new[j, self.y.index]),
-                        xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
-                        zorder=zorder,
-                        arrowprops=arrow_future,
-                    )
+            if X_new is not None:
+                for i in range(n_init):
+                    for j in range(len(X_new)):
+                        self.ax.annotate(
+                            text="",
+                            xy=(X_new[j, idx_x], X_new[j, idx_y]),
+                            xytext=(X_np[i, idx_x], X_np[i, idx_y]),
+                            zorder=zorder,
+                            arrowprops=arrow_future,
+                        )
             return self
 
-        # If X includes also Bayesian optimized points, connect the initial dataset
-        # to the first q-batch (1), then iteratively connect the k-th batch to
-        # the k-th + 1 batch, and finally connect the last observed batch to the New_X.
         n_bo_obs = n_pts - n_init
         n_batches = int(n_bo_obs / q)
         batches = []
@@ -305,13 +333,13 @@ class Acqf2DPlotter(PlotterBase):
             for j in range(first_batch.shape[0]):
                 self.ax.annotate(
                     text="",
-                    xy=(first_batch[j, self.x.index], first_batch[j, self.y.index]),
-                    xytext=(X_np[i, self.x.index], X_np[i, self.y.index]),
+                    xy=(first_batch[j, idx_x], first_batch[j, idx_y]),
+                    xytext=(X_np[i, idx_x], X_np[i, idx_y]),
                     zorder=zorder,
                     arrowprops=arrow_past,
                 )
 
-        # 2) connect observed batch k -> batch k+1 (fully connected)
+        # 2) connect observed batches
         for k in range(len(batches) - 1):
             A = batches[k]
             B = batches[k + 1]
@@ -319,35 +347,53 @@ class Acqf2DPlotter(PlotterBase):
                 for j in range(B.shape[0]):
                     self.ax.annotate(
                         text="",
-                        xy=(float(B[j, self.x.index]), float(B[j, self.y.index])),
-                        xytext=(float(A[i, self.x.index]), float(A[i, self.y.index])),
+                        xy=(float(B[j, idx_x]), float(B[j, idx_y])),
+                        xytext=(float(A[i, idx_x]), float(A[i, idx_y])),
                         zorder=zorder,
                         arrowprops=arrow_past,
                     )
 
-        # 3) last observed batch -> pending new_X (fully connected "future")
+        # 3) last observed batch -> pending new_X
         if X_new is not None and len(X_new) > 0:
             last_batch = batches[-1]
             for i in range(last_batch.shape[0]):
                 for j in range(len(X_new)):
                     self.ax.annotate(
                         text="",
-                        xy=(float(X_new[j, self.x.index]), float(X_new[j, self.y.index])),
-                        xytext=(float(last_batch[i, self.x.index]), float(last_batch[i, self.y.index])),
+                        xy=(float(X_new[j, idx_x]), float(X_new[j, idx_y])),
+                        xytext=(float(last_batch[i, idx_x]), float(last_batch[i, idx_y])),
                         zorder=zorder + 2,
                         arrowprops=arrow_future,
                     )
 
         return self
 
+    def add_colorbar(self):
+        """ Adds a colorbar for the acquisition values. """
+        if self.mappable is None:
+            return
+
+        if hasattr(self, 'cbar') and self.cbar is not None:
+            return
+
+        self.cbar = self.fig.colorbar(
+            self.mappable,
+            ax=self.ax,
+            fraction=0.046,
+            pad=0.04
+        )
+        self.cbar.set_label(self.bo.acqf.__name__)
+        self.cbar.ax.tick_params()
+
     def plot(self):
         self.plot_acquisition()
         self.plot_observations()
         self.plot_trajectory()
         self.plot_new_X()
+        self.add_colorbar()
         self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
         return self
 
     def save_figure(self, filename: str | Path | None = None):
-        filename = filename or "acquisition.png"
+        filename = filename or "acquisition_2d.png"
         return super().save_figure(filename=filename)

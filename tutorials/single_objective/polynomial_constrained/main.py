@@ -7,6 +7,7 @@ from tutorials.single_objective.polynomial_constrained.objective import Polynomi
 from plotters.experiment import Experiment1DPlotter
 from samplers.samplers import *
 from plotters.evolution import *
+from plotters.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -24,14 +25,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     kernel = ScaleKernel(base_kernel=RBFKernel())
 
     """ Generate initial dataset """
-    # Create a random sampler and draw an initial set of points within the objective bounds.
-    # Compute the true objective values at the sampled points.
-    sampler = SobolSampler(
-        device=DEVICE,
-        dtype=DTYPE,
-        objective=objective,
-        seed=42,
-    )
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=42, )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
     Y_con = objective.evaluate_true_constraint(X)
@@ -41,7 +35,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acqf=qLogExpectedImprovement,
+        acqf=qLogNoisyExpectedImprovement,
         kernel=kernel,
         X=X,
         Y_obj=Y_obj,
@@ -53,7 +47,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        if i > 0 and bo.is_converged(patience=20):
+        if i > 0 and bo.is_converged(patience=10):
             break
 
         print("\n\n")
@@ -63,18 +57,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        x_lim, y_lim = (0, 1), (-0.2, 0.5)
-        experiment_plotter = Experiment1DPlotter(bo=bo)
-        experiment_plotter.ax.set_xlim(x_lim)
-        experiment_plotter.ax.set_ylim(y_lim)
-        experiment_plotter.plot().save_figure().close_figure()
-        acqf_plotter = Acqf1DPlotter(bo=bo)
-        acqf_plotter.ax.set_xlim(x_lim)
-        acqf_plotter.plot().save_figure().close_figure()
+        Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf1DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        ParameterEvolution(bo=bo).plot().save_figure().close_figure()
-        ObjectiveEvolution(bo=bo).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("con", 0)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

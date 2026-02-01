@@ -1,6 +1,7 @@
-from objectives.base_class import MCSingleObjectiveBase
 import torch
-from torch import Tensor
+from objectives.base_class import MCSingleObjectiveBase
+
+from objectives.variable_registry import *
 
 
 class Periodic(MCSingleObjectiveBase):
@@ -8,21 +9,14 @@ class Periodic(MCSingleObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=1,
-            num_objectives=1,
-            num_constraints=0,
-            num_trackers=0,
-            obj_to_minimize=[True],
-            bounds=[(-3.0, 3.0)],
-            outcomes=[0],
-            gt_noise_std=0.0,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=None,
-            add_noise_to_gt=False,
-            best_value=None,
+            par_cfg=[
+                ParCfg(label="P1", index=0, bounds=(-3.0, 3.0))
+            ],
+            obj_cfg=[
+                ObjCfg(label="F1", index=0, bounds=(-2.0, 2.0), to_minimize=True, f=self._f1)
+            ],
         )
 
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
+    @staticmethod
+    def _f1(X: torch.Tensor) -> torch.Tensor:
         return torch.sin(2 * torch.pi * 2 * X) + 0.5 * torch.sin(4 * torch.pi * 2 * X)

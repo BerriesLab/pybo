@@ -1,6 +1,7 @@
-from objectives.base_class import MCSingleObjectiveBase
 import torch
-from torch import Tensor
+from objectives.base_class import MCSingleObjectiveBase
+
+from objectives.variable_registry import ParCfg, ObjCfg
 
 
 class WavePacket(MCSingleObjectiveBase):
@@ -8,19 +9,12 @@ class WavePacket(MCSingleObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=1,
-            num_objectives=1,
-            num_constraints=0,
-            num_trackers=0,
-            obj_to_minimize=[True],
-            bounds=[(-1.0, 1.0)],
-            outcomes=[0],
-            gt_noise_std=0.0,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=None,
-            add_noise_to_gt=False,
+            par_cfg=[
+                ParCfg(label="P1", index=0, bounds=(-1.0, 1.0))
+            ],
+            obj_cfg=[
+                ObjCfg(label="F1", index=0, to_minimize=True, bounds=(-1.5, 1.5), f=self._f1)
+            ],
         )
 
         self.p = 1 / 2
@@ -28,14 +22,14 @@ class WavePacket(MCSingleObjectiveBase):
         self.k0 = 2 * torch.pi / self.p
         self.x0 = 0
 
-    def _f1(self, X: torch.Tensor) -> torch.Tensor:
+    def _f11(self, X: torch.Tensor) -> torch.Tensor:
         return torch.exp(-0.5 * ((X - self.x0) / self.sigma) ** 2)
 
-    def _f2(self, X: torch.Tensor) -> torch.Tensor:
+    def _f12(self, X: torch.Tensor) -> torch.Tensor:
         return torch.sin(self.k0 * X)
 
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
+    def _f1(self, X: torch.Tensor) -> torch.Tensor:
+        f1 = self._f11(X=X)
+        f2 = self._f12(X=X)
         f = f1 * f2
         return f

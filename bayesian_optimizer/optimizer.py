@@ -936,14 +936,17 @@ class BayesianOptimizer:
                     num_restarts=self._n_acqf_opt_restarts,
                     raw_samples=self._num_raw_samples,
                     options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
+                    inequality_constraints=self.objective.lin_ineq_X_con,
+                    equality_constraints=self.objective.lin_eq_X_con,
+                    nonlinear_inequality_constraints=self.objective.nonlin_ineq_X_con,
                     sequential=True,
                     ic_generator=self._ic_generator
-                    if self._objective._nonlin_ineq_X_con is not None
+                    if self.objective.nonlin_ineq_X_con is not None
                     else None,
                     **{
                         "fraction_of_previous_X": 0.8,
                         "noise_scale": 0,
-                    } if self.objective._nonlin_ineq_X_con is not None
+                    } if self.objective.nonlin_ineq_X_con is not None
                     else {}
                 )
 
