@@ -179,19 +179,18 @@ from samplers.samplers import SobolSampler
 class Experiment1DPlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
                  y: tuple[str, str | int] = ("obj", 0), z: tuple[str, str | int] | None = None,
-                 cmap='viridis', grid=True, seed=None):
+                 cmap='coolwarm', grid=True, seed=None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
 
-        # Configuration mapping (Identical to 2D)
         self.x_cfg = bo.objective.get_config(*x)
         self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
         self.cmap = cmap
-        self.n_grid_points = 200
+        self.n_grid_points = 100000
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.mappable = None
         self.cbar = None
@@ -223,13 +222,17 @@ class Experiment1DPlotter(PlotterBase):
         if isinstance(cfg, IneqYConCfg): return Y_con[..., cfg.index]
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
-    def plot_ground_truth(self):
+    def plot_ground_truth(self, zorder: int = 10):
         # 1. Generate Samples
         if self.grid:
             X_gt = self._generate_uniform_grid()
         else:
-            sampler = SobolSampler(device=self.bo.device, dtype=self.bo.dtype,
-                                   objective=self.bo.objective, seed=self.seed)
+            sampler = SobolSampler(
+                device=self.bo.device,
+                dtype=self.bo.dtype,
+                objective=self.bo.objective,
+                seed=self.seed
+            )
             X_gt = sampler.draw_samples(self.n_grid_points)
 
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
@@ -246,7 +249,19 @@ class Experiment1DPlotter(PlotterBase):
         is_feasible = self.bo.objective.is_Y_feasible(Y_full)
         is_infeasible = torch.logical_not(is_feasible)
 
-        # Render Layers
+        is_best = torch.zeros_like(is_feasible, dtype=torch.bool)
+        feasible_indices = torch.where(is_feasible)[0]
+        if feasible_indices.numel() > 0:
+            Y_max_space = Y_obj[is_feasible].clone()
+            Y_max_space[..., self.bo.objective.to_minimize] *= -1
+            is_best_idx = torch.argmax(Y_max_space)
+            is_best[feasible_indices[is_best_idx]] = True
+
+        is_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_best))
+
+        # === Render Layers ===
+
+        # Layer 1: Infeasible
         if is_infeasible.any():
             kwargs = experiment_scatter_gnd_truth_infeasible.copy()
             if z_vals is not None: kwargs.pop("facecolor")
@@ -254,30 +269,42 @@ class Experiment1DPlotter(PlotterBase):
                 x=x_vals[is_infeasible].cpu(),
                 y=y_vals[is_infeasible].cpu(),
                 c=z_vals[is_infeasible].cpu() if z_vals is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
+                vmin=self.vmin,
+                vmax=self.vmax,
+                zorder=zorder,
                 **kwargs
             )
 
+        # Layer 2: Feasible but not best
         if is_feasible.any():
             kwargs = experiment_scatter_gnd_truth_feasible.copy()
             if z_vals is not None: kwargs.pop("facecolor")
-            self.mappable = self.ax.scatter(
-                x=x_vals[is_feasible].cpu(),
-                y=y_vals[is_feasible].cpu(),
-                c=z_vals[is_feasible].cpu() if z_vals is not None else None,
+            scatter = self.ax.scatter(
+                x=x_vals[is_exclusive_feasible].cpu(),
+                y=y_vals[is_exclusive_feasible].cpu(),
+                c=z_vals[is_exclusive_feasible].cpu() if z_vals is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
                 vmin=self.vmin,
                 vmax=self.vmax,
+                zorder=zorder + 1,
                 **kwargs
             )
+            if self.mappable is None:
+                self.mappable = scatter
 
+        # Layer 3: Best
         if is_best.any():
             kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_best].cpu(),
                 y=y_vals[is_best].cpu(),
-                c=z_vals[is_feasible].cpu() if z_vals is not None else None,
+                c=z_vals[is_best].cpu() if z_vals is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
                 vmin=self.vmin,
                 vmax=self.vmax,
+                zorder=zorder + 2,
                 **kwargs
             )
 
@@ -287,26 +314,65 @@ class Experiment1DPlotter(PlotterBase):
         if self.bo.model is None or not isinstance(self.y_cfg, ObjCfg):
             return self
 
-        X_grid = self._generate_uniform_grid()
+        if self.grid:
+            X = self._generate_uniform_grid()
+        else:
+            sampler = SobolSampler(
+                device=self.bo.device,
+                dtype=self.bo.dtype,
+                objective=self.bo.objective,
+                seed=self.seed
+            )
+            X = sampler.draw_samples(self.n_grid_points)
 
         with torch.no_grad():
-            posterior = self.bo.model.posterior(X_grid)
-            # Use y_cfg.index to ensure we plot the mean of the correct objective
+            posterior = self.bo.model.posterior(X)
             mean = posterior.mean[..., self.y_cfg.index].squeeze()
             std = posterior.variance.sqrt()[..., self.y_cfg.index].squeeze()
 
-        X_np = X_grid.squeeze().cpu().numpy()
+        X_np = X.squeeze().cpu().numpy()
         m_np, s_np = mean.cpu().numpy(), std.cpu().numpy()
 
-        self.ax.plot(X_np, m_np, zorder=zorder, **gp_mean)
-        for i, style in enumerate([gp_confidence_interval_1sigma,
-                                   gp_confidence_interval_2sigma,
-                                   gp_confidence_interval_3sigma], 1):
-            self.ax.fill_between(X_np, m_np - i * s_np, m_np + i * s_np, zorder=zorder, **style)
+        # === Render Layers ===
+
+        # Layer 1: GP Mean
+        self.ax.plot(
+            X_np,
+            m_np,
+            zorder=zorder + 3,
+            **gp_mean
+        )
+
+        # Layer 2: GP 1 * sigma
+        self.ax.fill_between(
+            x=X_np,
+            y1=m_np - s_np,
+            y2=m_np + s_np,
+            zorder=zorder + 2,
+            **gp_confidence_interval_1sigma
+        )
+
+        # Layer 2: GP 2 * sigma
+        self.ax.fill_between(
+            x=X_np,
+            y1=m_np - 2 * s_np,
+            y2=m_np + 2 * s_np,
+            zorder=zorder + 1,
+            **gp_confidence_interval_2sigma
+        )
+
+        # Layer 2: GP 3 * sigma
+        self.ax.fill_between(
+            x=X_np,
+            y1=m_np - 3 * s_np,
+            y2=m_np + 3 * s_np,
+            zorder=zorder,
+            **gp_confidence_interval_3sigma
+        )
 
         return self
 
-    def plot_observations(self, zorder=4):
+    def plot_observations(self, zorder: int = 20):
         if self.bo.X is None: return self
 
         X, Y_obj = self.bo.X, self.bo.Y_obj
@@ -316,60 +382,110 @@ class Experiment1DPlotter(PlotterBase):
         y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
         z_obs = self._get_data(self.z_cfg, X, Y_obj, Y_con, Y_track)
 
-        X_best = self.bo.best_feasible_X
-        is_best = torch.isclose(X, X_best, atol=1e-6).all(dim=-1) if X_best is not None else torch.zeros(X.shape[0],
-                                                                                                         dtype=torch.bool)
-
         Y_full = torch.cat([Y_obj, Y_con], dim=-1) if Y_con is not None else Y_obj
         is_feasible = self.bo.objective.is_Y_feasible(Y_full)
-        mask_infeasible = ~is_feasible
-        mask_dominated = is_feasible & ~is_best
+        is_infeasible = torch.logical_not(is_feasible)
 
-        mask_style = zip(
-            [
-                mask_infeasible,
-                mask_dominated,
-                is_best
-            ],
-            [
-                experiment_scatter_observations_infeasible,
-                experiment_scatter_observations_feasible,
-                optimum
-            ]
-        )
-        for mask, style in mask_style:
-            if mask.any():
-                kwargs = style.copy()
-                if z_obs is not None: kwargs.pop("facecolor")
-                sc = self.ax.scatter(
-                    x=x_obs[mask].cpu(),
-                    y=y_obs[mask].cpu(),
-                    c=z_obs[mask].cpu() if z_obs is not None else None,
-                    zorder=zorder,
-                    **kwargs
-                )
-                if self.mappable is None and mask is mask_dominated: self.mappable = sc
+        # Identify Best
+        is_best = torch.zeros_like(is_feasible, dtype=torch.bool)
+        feasible_indices = torch.where(is_feasible)[0]
+        if feasible_indices.numel() > 0:
+            Y_max_space = Y_obj[is_feasible].clone()
+            Y_max_space[..., self.bo.objective.to_minimize] *= -1
+            is_best_idx = torch.argmax(Y_max_space)
+            is_best[feasible_indices[is_best_idx]] = True
+
+        is_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_best))
+
+        if is_infeasible.any():
+            kwargs = experiment_scatter_observations_infeasible.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
+            self.ax.scatter(
+                x=x_obs[is_infeasible].cpu(),
+                y=y_obs[is_infeasible].cpu(),
+                c=z_obs[is_infeasible].cpu() if z_obs is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
+                vmin=self.vmin,
+                vmax=self.vmax,
+                zorder=zorder,
+                **kwargs
+            )
+
+        if is_exclusive_feasible.any():
+            kwargs = experiment_scatter_observations_feasible.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
+            scatter = self.ax.scatter(
+                x=x_obs[is_exclusive_feasible].cpu(),
+                y=y_obs[is_exclusive_feasible].cpu(),
+                c=z_obs[is_exclusive_feasible].cpu() if z_obs is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
+                vmin=self.vmin,
+                vmax=self.vmax,
+                zorder=zorder + 1,
+                **kwargs
+            )
+            if self.mappable is None:
+                self.mappable = scatter
+
+        if is_best.any():
+            kwargs = experiment_scatter_observations_pareto_front.copy()
+            if z_obs is not None: kwargs.pop("facecolor")
+            self.ax.scatter(
+                x=x_obs[is_best].cpu(),
+                y=y_obs[is_best].cpu(),
+                c=z_obs[is_best].cpu() if z_obs is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
+                vmin=self.vmin,
+                vmax=self.vmax,
+                zorder=zorder + 2,
+                **kwargs
+            )
+
         return self
 
-    def plot_next_X(self, zorder: int = 5):
+    def plot_next_X(self, zorder: int = 30):
         if self.bo.new_X is not None:
             for x in self.bo.new_X.detach().cpu().numpy().flatten():
-                self.ax.axvline(x=x, zorder=zorder, **next_X_1d)
+                self.ax.axvline(
+                    x=x,
+                    zorder=zorder,
+                    **next_X_1d
+                )
         return self
 
     def add_colorbar(self):
-        if self.z_cfg is None or self.mappable is None: return
-        if not hasattr(self, 'cbar') or self.cbar is None:
-            self.cbar = self.fig.colorbar(self.mappable, ax=self.ax, fraction=0.046, pad=0.04)
-            self.cbar.set_label(self.z_cfg.label)
+        """ Adds a colorbar to the right of the plot based on the Z configuration. """
+        # Only add if a Z dimension was requested and we have a mappable object
+        if self.z_cfg is None or self.mappable is None:
+            return
+
+        # Check if colorbar already exists to avoid duplicates
+        if hasattr(self, 'cbar') and self.cbar is not None:
+            return
+
+        # Create the colorbar
+        self.cbar = self.fig.colorbar(
+            self.mappable,
+            ax=self.ax,
+            fraction=0.046,
+            pad=0.04
+        )
+
+        # Set the label from our Cfg object
+        self.cbar.set_label(self.z_cfg.label)
+        self.cbar.ax.tick_params()
+
+    def plot_legend(self, zorder: int = 100):
+        leg = self.ax.legend(loc='upper right', frameon=True)
+        leg.set_zorder(zorder)
 
     def plot(self):
-        self.plot_gp_posterior(zorder=0)
+        self.plot_gp_posterior()
         self.plot_ground_truth()
-        self.plot_observations(zorder=4)
-        self.plot_next_X(zorder=5)
+        self.plot_observations()
+        self.plot_next_X()
         self.add_colorbar()
-        self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
+        self.plot_legend()
         return self
 
     def save_figure(self, filename: str | Path | None = None):
@@ -564,7 +680,7 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
-                 z: tuple[str, str | int] | None = None, cmap='viridis', grid=False, seed=None):
+                 z: tuple[str, str | int] | None = None, cmap='coolwarm', grid=False, seed=None):
         """
         Initializes the 2D Pareto Plotter.
         Args:
@@ -668,6 +784,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[is_infeasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if self.vmin is not None else None,
                 vmax=self.vmax if self.vmax is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
 
@@ -681,6 +798,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[mask_exclusive_feasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if z_vals is not None else None,
                 vmax=self.vmax if z_vals is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
 
@@ -694,6 +812,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[is_pareto].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if z_vals is not None else None,
                 vmax=self.vmax if z_vals is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
         return self
@@ -733,6 +852,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[mask_infeasible].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
 
@@ -745,6 +865,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
 
@@ -761,6 +882,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[is_pareto].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
+                cmap=self.cmap if self.cmap is not None else None,
                 **kwargs
             )
 

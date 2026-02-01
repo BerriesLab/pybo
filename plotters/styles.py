@@ -7,7 +7,7 @@ C_FUTURE = "#9b59b6"  # Amethyst Purple (Next X / Trajectory)
 C_EVOLUTION = C_PARETO
 
 ms = 8
-ms_gt = ms / 2
+ms_gt = ms / 8
 S_OBS = ms ** 2
 S_GT = ms_gt ** 2
 EDGE_DARK = C_GT
@@ -143,7 +143,7 @@ optimum = {
 }
 acqf_1d = {
     'color': 'black',
-    'linewidth': 1.5,
+    "s": S_GT,
     'label': 'Acqf.'
 }
 arrow_future = {
