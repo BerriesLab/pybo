@@ -15,7 +15,7 @@ class Rosenbrock(MCSingleObjectiveBase):
                 ParCfg(label="P2", index=1, bounds=(-1.0, 3.0))
             ],
             obj_cfg=[
-                ObjCfg(label="Rosenbrock", index=0, f=self._f_1, bounds=None, to_minimize=True)
+                ObjCfg(label="Rosenbrock", index=0, f=self._f_1, bounds=(0, 2500), to_minimize=True)
             ],
         )
 

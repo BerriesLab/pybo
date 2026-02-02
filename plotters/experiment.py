@@ -1,8 +1,14 @@
 import torch
+from typing import TypeAlias
+
 import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
+
+from matplotlib.colors import LogNorm
+from sympy import false
+
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from objectives.variable_registry import *
 from plotters.base_class import PlotterBase
@@ -10,6 +16,8 @@ from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 from samplers.samplers import SobolSampler
+
+AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 
 
 class Experiment1DPlotter(PlotterBase):
@@ -338,9 +346,16 @@ class Experiment1DPlotter(PlotterBase):
 
 
 class Experiment2DPlotter(PlotterBase):
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
-                 y: tuple[str, str | int] = ("par", 1), z: tuple[str, str | int] | None = ("obj", 0),
-                 cmap='coolwarm', grid=True, seed=None):
+    def __init__(
+            self,
+            bo: BayesianOptimizer,
+            x: AxisSpec = ("par", 0),
+            y: AxisSpec = ("par", 1),
+            z: AxisSpec | None = ("obj", 0),
+            cmap='coolwarm',
+            grid=True,
+            seed=None
+    ):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -351,7 +366,7 @@ class Experiment2DPlotter(PlotterBase):
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
         self.cmap = cmap
-        self.n_grid_points = 1000  # Resolution for 2D grid (100x100)
+        self.n_grid_points = 1000
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.mappable = None
         self.cbar = None
@@ -362,13 +377,16 @@ class Experiment2DPlotter(PlotterBase):
         self.ax.set_xlabel(self.x_cfg.label)
         self.ax.set_ylabel(self.y_cfg.label)
 
+        # --- bounds + scale validation ---
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
             low, high = self.x_cfg.bounds
             self.ax.set_xlim(low, high)
+
         if hasattr(self.y_cfg, 'bounds') and self.y_cfg.bounds is not None:
             low, high = self.y_cfg.bounds
             self.ax.set_ylim(low, high)
-        if hasattr(self.z_cfg, 'bounds') and self.z_cfg.bounds is not None:
+
+        if self.z_cfg is not None and hasattr(self.z_cfg, 'bounds') and self.z_cfg.bounds is not None:
             self.vmin, self.vmax = self.z_cfg.bounds
 
     @staticmethod
@@ -411,7 +429,7 @@ class Experiment2DPlotter(PlotterBase):
             X_grid_np,
             Y_grid_np,
             Z_masked_np,
-            levels=20,
+            levels=100,
             cmap=self.cmap,
             vmin=self.vmin,
             vmax=self.vmax,
@@ -477,7 +495,7 @@ class Experiment2DPlotter(PlotterBase):
                 **experiment_scatter_observations_best_value,
             )
 
-        return
+        return self
 
     def plot_next_X(self, zorder: int = 20):
         if self.bo.new_X is not None:

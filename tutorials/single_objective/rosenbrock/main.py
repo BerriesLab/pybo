@@ -1,13 +1,14 @@
 import os
 from datetime import datetime
 from botorch.acquisition import *
+from gpytorch.constraints import Interval
 from gpytorch.kernels import *
-from plotters.acqf import Acqf2DPlotter
-from plotters.experiment import *
+from tutorials.single_objective.rosenbrock.objective import Rosenbrock
 from samplers.samplers import *
+from plotters.experiment import *
+from plotters.acqf import *
 from plotters.evolution import *
 from plotters.metrics import *
-from tutorials.single_objective.rosenbrock.objective import Rosenbrock
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -22,7 +23,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = Rosenbrock(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_obj))
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
+    )
 
     """ Generate initial dataset """
     sampler = SobolSampler(

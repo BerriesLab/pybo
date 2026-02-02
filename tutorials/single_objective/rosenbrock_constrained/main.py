@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from botorch.acquisition import *
+from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from tutorials.single_objective.rosenbrock_constrained.objective import RosenbrockConstrained
 from samplers.samplers import *
@@ -22,7 +23,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = RosenbrockConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel())
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-4, 1e2),
+    )
 
     """ Generate initial dataset """
     sampler = SobolSampler(
@@ -61,7 +68,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Experiment2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         Acqf2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()

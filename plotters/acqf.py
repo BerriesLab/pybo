@@ -159,9 +159,14 @@ class Acqf1DPlotter(PlotterBase):
 
 class Acqf2DPlotter(PlotterBase):
 
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
-                 y: tuple[str, str | int] = ("par", 1), z: tuple[str, str | int] | None = None,
-                 cmap='viridis', grid=True):
+    def __init__(
+            self,
+            bo: BayesianOptimizer,
+            x: tuple[str, str | int] = ("par", 0),
+            y: tuple[str, str | int] = ("par", 1),
+            z: tuple[str, str | int] | None = None,
+            cmap='viridis', grid=True
+    ):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
