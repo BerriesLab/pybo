@@ -129,7 +129,7 @@ class FormACOConstrained(MCMultiObjectiveBase):
         c = 40 - self._orbiting_time(X=X)
         return c.unsqueeze(dim=-1)
 
-    def evaluate_trackers(self, X: Tensor) -> Tensor:
+    def evaluate_tracker(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)
 
 
@@ -274,5 +274,5 @@ class FormACO(MCMultiObjectiveBase):
         # orbiting_time_penalty = self._exponential_orbiting_penalty(X=X)
         return torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1)
 
-    def evaluate_trackers(self, X: Tensor) -> Tensor:
+    def evaluate_tracker(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)

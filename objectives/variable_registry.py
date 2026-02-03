@@ -7,30 +7,30 @@ class VariableRegistry(Enum):
     pass
 
 
-@dataclass(frozen=True)
-class Cfg:
+@dataclass(frozen=True, kw_only=True)
+class CfgBase:
     """Base configuration class"""
-    label: str
-    index: int
+    label: Optional[str] = None
+    index: Optional[int] = None
 
 
+# TODO: remove f
 @dataclass(frozen=True)
-class ObjCfg(Cfg):
+class ObjCfg(CfgBase):
     """Configuration for objectives"""
-    f: Callable
-    bounds: tuple[float, float] | None
-    to_minimize: bool = False
-    ref_point: float | None = None
+    to_minimize: bool
+    ref_point: float | None
+    bounds: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
-class ParCfg(Cfg):
+class ParCfg(CfgBase):
     """Configuration for parameters"""
-    bounds: tuple[float, float] | None
+    bounds: tuple[float, float]
 
 
 @dataclass(frozen=True)
-class LinEqXConCfg(Cfg):
+class LinEqXConCfg(CfgBase):
     r"""Configuration for linear equality X constraints.
     Example: if you want the constraint 3*X[0] + 2*X[2] = 5, you'd pass the
     tuple ([0, 2], [3, 2], 5), where idxs=[0, 2], coeff=[3, 2], and rhs=5"""
@@ -40,7 +40,7 @@ class LinEqXConCfg(Cfg):
 
 
 @dataclass(frozen=True)
-class LinIneqXConCfg(Cfg):
+class LinIneqXConCfg(CfgBase):
     r"""Configuration for linear inequality input constraints.
 
     Intra-point constraints are applied to each candidate individually.
@@ -58,20 +58,19 @@ class LinIneqXConCfg(Cfg):
 
 
 @dataclass(frozen=True)
-class NonLinIneqXConCfg(Cfg):
+class NonLinIneqXConCfg(CfgBase):
     """Configuration for nonlinear inequality input ineq_Y_con_cfg"""
     f: Callable
     intra: bool
 
 
 @dataclass(frozen=True)
-class IneqYConCfg(Cfg):
+class IneqYConCfg(CfgBase):
     """Configuration for output ineq_Y_con_cfg"""
     f: Callable
 
 
 @dataclass(frozen=True)
-class TrkCfg(Cfg):
+class TrkCfg(CfgBase):
     """Configuration for trackers """
-    bounds: tuple[float, float] | None
-    f: Callable
+    bounds: tuple[float, float] | None = None

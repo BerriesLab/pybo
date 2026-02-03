@@ -270,23 +270,15 @@ class MCObjectiveBase(ABC):
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
         Evaluates and stacks all inequality Y constraints.
-
-        Args:
-            X: torch.Tensor (q, dim, n_samples)
-
-        Returns:
-            torch.Tensor (q, dim, n_samples)
         """
-        if not self._ineq_Y_con:
-            return torch.empty((*X.shape[:-1], 0), device=self.device, dtype=self.dtype)
-        return torch.stack([f(X) for f in self._ineq_Y_con], dim=-1)
+        pass
 
     def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
         Y = self.evaluate_true_constraint(X)
         Y = self.add_noise(Y)
         return Y
 
-    def evaluate_trackers(self, X: Tensor) -> Tensor:
+    def evaluate_tracker(self, X: Tensor) -> Tensor:
         """
         Evaluate values to monitor but not to optimize.
         """
@@ -354,13 +346,11 @@ class MCObjectiveBase(ABC):
     def is_Y_feasible(self, Y: Tensor, atol=1e-6) -> Tensor:
         """
         Checks if Y satisfies the inequality Y constraints.
-
         Args:
             Y: torch.tensor [q, num_objectives + num_constraints, n_samples].
-
+            atol: A float defining the tolerance for inequality constraints.
         Returns:
             torch.tensor [q, num_objectives + num_constraints].
-
         """
 
         if not hasattr(self, 'ineq_Y_con_cfg') or self._ineq_Y_con is None:
@@ -441,10 +431,6 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
         )
         self.best_value = best_value
 
-    def evaluate_true_objective(self, X: Tensor) -> Tensor:
-        """ Evaluates and stacks all objectives in the order of their defined index. """
-        return self.obj_cfg[0].f(X)
-
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """
         Transform Monte Carlo samples from the model's posterior according
@@ -508,14 +494,6 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
                 raise ValueError("The number of objectives must match the dimensions of the reference point.")
             value = value.to(self.device, dtype=self.dtype)
         self._ref_point = value
-
-    def evaluate_true_objective(self, X: Tensor) -> Tensor:
-        """ Evaluates and stacks all objectives in the order of their defined index. """
-        # Sort the configuration objects by their index
-        sorted_objs = sorted(self.obj_cfg, key=lambda obj: obj.index)
-        # Evaluate and stack along the last dimension
-        # This ensures column 0 is the obj with index 0, column 1 is index 1, etc.
-        return torch.stack([obj.f(X) for obj in sorted_objs], dim=-1)
 
     def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
         """

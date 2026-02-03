@@ -1,12 +1,16 @@
 import os
 from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
+
+from samplers.samplers import LatinHypercubeSampler
 from tutorials.multi_objective.formaco.objective import FormACOConstrained
 from plotters.experiment import *
 from plotters.acqf import *
 from plotters.metrics import *
 from plotters.evolution import *
+from tutorials.multi_objective.spark_accelerator.objective import SparkAcceleratorConstrained
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -18,16 +22,19 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = FormACOConstrained(device=DEVICE, dtype=DTYPE)
+    objective = SparkAcceleratorConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
-            ard_num_dims=objective.num_par
-        )
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
     )
 
     """ Generate initial dataset """
+    # sampler = LatinHypercubeSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X=X)

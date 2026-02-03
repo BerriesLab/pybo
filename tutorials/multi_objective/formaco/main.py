@@ -31,7 +31,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X=X)
-    Y_track = objective.evaluate_trackers(X=X)
+    Y_track = objective.evaluate_tracker(X=X)
 
     """ Instantiate Bayesian optimizer """
     bo = BayesianOptimizer(
@@ -78,7 +78,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
-        new_Y_trk = objective.evaluate_trackers(new_X)
+        new_Y_trk = objective.evaluate_tracker(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_trk=new_Y_trk)
 

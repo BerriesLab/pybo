@@ -69,7 +69,7 @@ class Acqf1DPlotter(PlotterBase):
 
         Y_obj = self.bo.objective.evaluate_true_objective(X)
         Y_con = self.bo.objective.evaluate_true_constraint(X)
-        Y_trk = self.bo.objective.evaluate_trackers(X)
+        Y_trk = self.bo.objective.evaluate_tracker(X)
 
         z_vals = self._get_data(self.z_cfg, X, Y_obj, Y_con, Y_trk)
         if z_vals is not None:
@@ -140,7 +140,7 @@ class Acqf1DPlotter(PlotterBase):
             pad=0.04
         )
 
-        # Set the label from our Cfg object
+        # Set the label from our CfgBase object
         self.cbar.set_label(self.z_cfg.label)
         self.cbar.ax.tick_params()
 

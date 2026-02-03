@@ -81,7 +81,7 @@ class Experiment1DPlotter(PlotterBase):
 
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
-        Y_trk = self.bo.objective.evaluate_trackers(X_gt)
+        Y_trk = self.bo.objective.evaluate_tracker(X_gt)
 
         # 2. Slice Data
         x_vals = self._get_data(self.x_cfg, X_gt, Y_obj, Y_con, Y_trk)
@@ -323,7 +323,7 @@ class Experiment1DPlotter(PlotterBase):
             pad=0.04
         )
 
-        # Set the label from our Cfg object
+        # Set the label from our CfgBase object
         self.cbar.set_label(self.z_cfg.label)
         self.cbar.ax.tick_params()
 
@@ -409,7 +409,7 @@ class Experiment2DPlotter(PlotterBase):
 
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
-        Y_trk = self.bo.objective.evaluate_trackers(X_gt)
+        Y_trk = self.bo.objective.evaluate_tracker(X_gt)
 
         # Extract data for contour (Z axis)
         z_vals = self._get_data(self.z_cfg, X_gt, Y_obj, Y_con, Y_trk)
@@ -687,7 +687,7 @@ class ParetoFront2DPlotter(PlotterBase):
             X_gt = sampler.draw_samples(self.n_grid_points ** 2)
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
-        Y_trk = self.bo.objective.evaluate_trackers(X_gt)
+        Y_trk = self.bo.objective.evaluate_tracker(X_gt)
 
         # Slice data for axes
         x_vals = self._get_data(self.x_cfg, X_gt, Y_obj, Y_con, Y_trk)
@@ -847,7 +847,7 @@ class ParetoFront2DPlotter(PlotterBase):
             pad=0.04
         )
 
-        # Set the label from our Cfg object
+        # Set the label from our CfgBase object
         self.cbar.set_label(self.z_cfg.label)
         self.cbar.ax.tick_params()
 
