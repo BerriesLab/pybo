@@ -1,10 +1,11 @@
 import torch
 from torch import Tensor
 from constraints.output_constraints import Identity
-from objectives.base_class import MCMultiOutputBase
+from objectives.base_class import MCMultiObjectiveBase
+from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg, TrkCfg, IneqYConCfg
 
 
-class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
+class SparkAcceleratorConstrained(MCMultiObjectiveBase):
     """
     2x objectives:
         - Machining Time: Originally intended for minimization.
@@ -27,36 +28,25 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=3,
-            parameter_names=[
-                "Voltage Step (V)",
-                "Delay Time 1 (μs)",
-                "Delay Time 2 (μs)"
+            par_cfg=[
+                ParCfg(label="V0 (V)", index=0, bounds=(60, 150)),
+                ParCfg(label="dV (V)", index=1, bounds=(60, 85)),
+                ParCfg(label="Delay Time 1 (μs)", index=2, bounds=),
+                ParCfg(label="Delay Time 2 (μs)", index=3, bounds=),
             ],
-            num_objectives=2,
-            objective_names=[
-                "Machining Time (min)",
-                "Tool Wear (μm)",
+            obj_cfg=[
+                ObjCfg(label="Machining Time (min)", to_minimize=True, ref_point=300.0),
+                ObjCfg(label="Tool Wear (μm)", to_minimize=True, ref_point=150.0),
             ],
-            num_constraints=1,
-            constraint_names=[
-                "Orbiting Time (min)"
+            trk_cfg=[
+                TrkCfg(label="Orbiting Time (min)"),
             ],
-            num_trackers=1,
-            tracker_names=[
-                "Orbiting Time (min)"
+            lin_ineq_X_con_cfg=[
+                LinIneqXConCfg(idxs=[0, 1], coeff=[-1, -1], rhs=-180)
             ],
-            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
-            obj_to_minimize=[True, True],
-            ref_point=[300, 150],
-            num_outcomes=2,
-            outcomes=[0, 1],
-            gt_noise_std=None,
-            max_hv=None,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=[Identity(index=-1)],
+            ineq_Y_con_cfg=[
+                IneqYConCfg(label="Orbiting Time (min)", f=Identity(index=-1))
+            ]
         )
 
     @staticmethod
@@ -129,6 +119,11 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
             min=0
         )
 
+    @staticmethod
+    def _c1(X: Tensor) -> Tensor:
+        # V0 + dV <= 180
+        return X[..., 0] + X[..., 1] - 180
+
     def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
@@ -152,7 +147,7 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiOutputBase):
         return selected
 
 
-class SparkAcceleratorMCMultiOutputObjective(MCMultiOutputBase):
+class SparkAccelerator(MCMultiObjectiveBase):
     """
     3x objectives:
         - Machining Time: Originally intended for minimization.
