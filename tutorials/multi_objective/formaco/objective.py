@@ -1,12 +1,11 @@
-from enum import StrEnum
-
 import torch
 from torch import Tensor
 from constraints.output_constraints import Identity
 from objectives.base_class import MCMultiObjectiveBase
+from objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
 
 
-class FormACOMCMultiOutputConstrainedObjective(MCMultiObjectiveBase):
+class FormACOConstrained(MCMultiObjectiveBase):
     """
     2x objectives:
         - Machining Time: Originally intended for minimization.
@@ -29,36 +28,23 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=3,
-            parameter_names=[
-                "Maximum Current (A)",
-                "Pedestal Current (A)",
-                "Maximum Ramp Time (μs)"
+            par_cfg=[
+                ParCfg(label="Maximum Current (A)", index=0, bounds=(7.5, 15.0)),
+                ParCfg(label="Pedestal Current (A)", index=1, bounds=(3.0, 7.5)),
+                ParCfg(label="Maximum Ramp Time (μs)", index=2, bounds=(0.1 * 78, 78))
             ],
-            num_objectives=2,
-            objective_names=[
-                "Machining Time (min)",
-                "Electrode Wear (μm)",
+            obj_cfg=[
+                ObjCfg(label="Machining Time (min)", index=0, to_minimize=True, ref_point=360.0, bounds=(0, 350),
+                       f=self._machining_time),
+                ObjCfg(label="Electrode Wear (μm)", index=1, to_minimize=True, ref_point=160.0, bounds=(0, 150),
+                       f=self._electrode_wear)
             ],
-            num_constraints=1,
-            constraint_names=[
-                "Orbiting Time (min)"
+            ineq_Y_con_cfg=[
+                IneqYConCfg(label="Orbiting Time (min)", index=0, f=Identity(index=-1))
             ],
-            num_trackers=1,
-            tracker_names=[
-                "Orbiting Time (min)"
+            trk_cfg=[
+                TrkCfg(label="Orbiting Time (min)", index=0, f=self._orbiting_time, bounds=(30, 80))
             ],
-            bounds=[(7.5, 15), (3, 7.5), (0.1 * 78, 78)],
-            obj_to_minimize=[True, True],
-            ref_point=[300, 150],
-            num_outcomes=2,
-            outcomes=[0, 1],
-            gt_noise_std=None,
-            max_hv=None,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=[Identity(index=-1)],
         )
 
     @staticmethod
@@ -146,15 +132,8 @@ class FormACOMCMultiOutputConstrainedObjective(MCMultiObjectiveBase):
     def evaluate_trackers(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)
 
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
-        return selected
 
-
-class FormACOMCMultiOutputObjective(MCMultiObjectiveBase):
+class FormACO(MCMultiObjectiveBase):
     """
     3x objectives:
         - Machining Time: Originally intended for minimization.
@@ -173,56 +152,26 @@ class FormACOMCMultiOutputObjective(MCMultiObjectiveBase):
         - Orbiting Penalty Time: -50 min (see Note below)
     """
 
-    class ObjName(StrEnum):
-        MACHINING_TIME = "Machining Time (min)"
-        ELECTRODE_WEAR = "Electrode Wear (μm)"
-        ORBITING_TIME_PENALTY = "Orbiting Time Penalty (min)"
-
-    class TrkName(StrEnum):
-        ORBITING_TIME = "Orbiting Time (min)"
-
-    class ParName(StrEnum):
-        MAX_CURRENT = "Max Current (A)"
-        PEDESTAL_CURRENT = "Pedestal Current (A)"
-        MAX_RAMP_TIME = "Max Ramp Time (μs)"
-
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=3,
-            parameter_names=[
-                self.ParName.MAX_CURRENT,
-                self.ParName.PEDESTAL_CURRENT,
-                self.ParName.MAX_RAMP_TIME
+            par_cfg=[
+                ParCfg(label="Maximum Current (A)", index=0, bounds=(7.5, 15.0)),
+                ParCfg(label="Pedestal Current (A)", index=1, bounds=(3.0, 7.5)),
+                ParCfg(label="Maximum Ramp Time (μs)", index=2, bounds=(0.1 * 78, 78))
             ],
-            num_objectives=3,
-            objective_names=[
-                self.ObjName.MACHINING_TIME,
-                self.ObjName.ELECTRODE_WEAR,
-                self.ObjName.ORBITING_TIME_PENALTY,
+            obj_cfg=[
+                ObjCfg(label="Machining Time (min)", index=0, to_minimize=True, ref_point=360.0, bounds=(0, 350),
+                       f=self._machining_time),
+                ObjCfg(label="Electrode Wear (μm)", index=1, to_minimize=True, ref_point=160.0, bounds=(0, 150),
+                       f=self._electrode_wear),
+                ObjCfg(label="Orbiting Time Penalty (min)", index=2, to_minimize=False, ref_point=-50.0, bounds=None,
+                       f=self._linear_orbiting_penalty)
             ],
-            bounds=[
-                (7.5, 15),
-                (3, 7.5),
-                (0.1 * 78, 78)
+            trk_cfg=[
+                TrkCfg(label="Orbiting Time (min)", index=0, f=self._orbiting_time, bounds=(30, 80))
             ],
-            obj_to_minimize=[True, True, False],
-            ref_point=[300, 150, -50],
-            num_outcomes=3,
-            outcomes=[0, 1, 2],
-            num_trackers=1,
-            tracker_names=[
-                self.TrkName.ORBITING_TIME
-            ],
-            num_constraints=0,
-            constraint_names=None,
-            gt_noise_std=None,
-            max_hv=None,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=None,
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=None,
         )
 
     @staticmethod
@@ -327,10 +276,3 @@ class FormACOMCMultiOutputObjective(MCMultiObjectiveBase):
 
     def evaluate_trackers(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)
-
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
-        return selected

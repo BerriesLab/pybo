@@ -2,13 +2,13 @@ import os
 from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from tutorials.multi_objective.formaco.objective import FormACOConstrained
+from tutorials.multi_objective.formaco.objective import FormACO
 from plotters.experiment import *
 from plotters.acqf import *
 from plotters.metrics import *
 from plotters.evolution import *
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
@@ -18,7 +18,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = FormACOConstrained(device=DEVICE, dtype=DTYPE)
+    objective = FormACO(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -32,7 +32,6 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X=X)
     Y_track = objective.evaluate_trackers(X=X)
-    Y_con = objective.evaluate_true_constraint(X=X)
 
     """ Instantiate Bayesian optimizer """
     bo = BayesianOptimizer(
@@ -44,7 +43,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
-        Y_con=Y_con,
+        Y_con=None,
         Y_con_var=None,
         Y_track=Y_track,
         batch_size=q,
@@ -79,10 +78,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
-        new_Y_con = objective.evaluate_true_constraint(new_X)
         new_Y_trk = objective.evaluate_trackers(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con, new_Y_trk=new_Y_trk)
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_trk=new_Y_trk)
 
     print("Optimization Finished.")
 

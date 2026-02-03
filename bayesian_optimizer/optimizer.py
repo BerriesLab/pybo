@@ -583,8 +583,7 @@ class BayesianOptimizer:
         self._hypervolume.append(hv)
 
         if verbose:
-            print("✓")
-            print(f"Hypervolume = {self._hypervolume[-1]:>4.2f}")
+            self._print_success(msg=f"({hv:.4f})")
 
     def _initialize_model(self, verbose=True):
         """ Initialize Gaussian Process model(s) for the objectives and ineq_Y_con_cfg.
@@ -1073,14 +1072,14 @@ class BayesianOptimizer:
             print(f"Posterior variance at {X.detach().cpu().numpy()}: {posterior_var.detach().cpu().numpy()}")
         return posterior_var
 
-    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_track: torch.Tensor | None = None,
+    def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_trk: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
                   new_Y_con: torch.Tensor | None = None, new_Y_con_var=None,
                   new_Y_track_var: torch.Tensor | None = None) -> None:
         self.update_X(new_X)
         self.update_Y_obj(new_Y_obj, new_Y_obj_var)
         self.update_Y_con(new_Y_con, new_Y_con_var)
-        self.update_Y_track(new_Y_track, new_Y_track_var)
+        self.update_Y_track(new_Y_trk, new_Y_track_var)
 
     def update_X(self, new_X: torch.Tensor):
         if new_X is not None:
