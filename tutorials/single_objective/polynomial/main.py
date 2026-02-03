@@ -57,8 +57,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
+        Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf1DPlotter(bo=bo).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()

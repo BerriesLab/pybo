@@ -7,6 +7,7 @@ from plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
 from plotters.styles import *
+from samplers.samplers import SobolSampler
 
 
 class Acqf1DPlotter(PlotterBase):
@@ -71,6 +72,8 @@ class Acqf1DPlotter(PlotterBase):
         Y_trk = self.bo.objective.evaluate_trackers(X)
 
         z_vals = self._get_data(self.z_cfg, X, Y_obj, Y_con, Y_trk)
+        if z_vals is not None:
+            z_vals = z_vals.detach().cpu().numpy()
 
         with torch.no_grad():
             acq_values = self.bo.acqf_instance(X.unsqueeze(1))
