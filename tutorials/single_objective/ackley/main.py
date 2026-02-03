@@ -1,13 +1,14 @@
 import os
 from datetime import datetime
 from botorch.acquisition import *
+from gpytorch.constraints import Interval
 from gpytorch.kernels import *
-from plotters.acqf import Acqf2DPlotter
-from plotters.metrics import ElapsedTimePlotter, BestValuePlotter
 from tutorials.single_objective.ackley.objective import Ackley
-from plotters.experiment import *
 from samplers.samplers import *
+from plotters.experiment import *
+from plotters.acqf import *
 from plotters.evolution import *
+from plotters.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -22,18 +23,17 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = Ackley(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_objectives))
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
+    )
 
     """ Generate initial dataset """
-    # Create a random sampler and draw an initial set of points within the objective bounds.
-    # Compute the true objective values at the sampled points.
-    sampler = SobolSampler(
-        device=DEVICE,
-        dtype=DTYPE,
-        objective=objective,
-        seed=45,
-    )
-    X = sampler.draw_samples(n=3 * (objective.dim + 1))
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=45)
+    X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -63,14 +63,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         bo.optimize()
 
         """ Plot """
-        Experiment2DPlotter(bo=bo, x=objective.Par.P1, y=objective.Par.P2).plot().save_figure().close_figure()
-        Acqf2DPlotter(bo=bo, x=objective.Par.P1, y=objective.Par.P2).plot().save_figure().close_figure()
+        Experiment2DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf2DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        for par in objective.Par: ParameterEvolution(bo=bo, par=par).plot().save_figure().close_figure()
-        for obj in objective.Obj: ObjectiveEvolution(bo=bo, obj=obj).plot().save_figure().close_figure()
-        for con in objective.Con: ConstraintEvolution(bo=bo, con=con).plot().save_figure().close_figure()
-        for trk in objective.Trk: TrackerEvolution(bo=bo, trk=trk).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
+        EvolutionPlotter(bo=bo, y=("par", 1)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X

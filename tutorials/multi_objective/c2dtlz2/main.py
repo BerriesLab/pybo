@@ -1,9 +1,9 @@
 import os
 from datetime import datetime
-
 import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
@@ -25,7 +25,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = C2DTLZ2(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_par))
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
+    )
 
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)

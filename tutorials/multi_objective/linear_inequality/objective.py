@@ -1,9 +1,11 @@
 import torch
-from objectives.base_class import MCMultiOutputBase
+from objectives.base_class import MCMultiObjectiveBase
 from torch import Tensor
 
+from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg
 
-class LinearInequalityTestProblem(MCMultiOutputBase):
+
+class LinearInequalityTestProblem(MCMultiObjectiveBase):
     r"""
     Multi-objective optimization problem with two objectives and a linear constraint.
 
@@ -31,32 +33,17 @@ class LinearInequalityTestProblem(MCMultiOutputBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            dim=2,
-            num_objectives=2,
-            num_constraints=0,
-            num_trackers=0,
-            obj_to_minimize=torch.tensor(
-                [True, True]
-            ),
-            bounds=torch.tensor(
-                [[0.0, 0.0],
-                 [3.0, 3.0]]
-            ),
-            ref_point=torch.tensor(
-                [10.0, 6.0]
-            ),
-            num_outcomes=2,
-            outcomes=[0, 1],
-            gt_noise_std=None,
-            max_hv=None,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=[(
-                torch.tensor([0, 1], dtype=torch.long),  # Indices
-                torch.tensor([-1.0, -1.0], dtype=torch.float),  # Coefficients
-                -2.0,  # RHS
-            )],
-            nonlinear_inequality_input_constraints=None,
-            output_constraints=None,
+            par_cfg=[
+                ParCfg(label="P1", index=0, bounds=(0.0, 3.0)),
+                ParCfg(label="P2", index=1, bounds=(0.0, 3.0)),
+            ],
+            obj_cfg=[
+                ObjCfg(label="F1", index=0, bounds=None, to_minimize=True, ref_point=10.0, f=self._f1),
+                ObjCfg(label="F2", index=1, bounds=None, to_minimize=True, ref_point=6.0, f=self._f2)
+            ],
+            lin_ineq_X_con_cfg=[
+                LinIneqXConCfg(label="C1", index=0, idxs=[0, 1], coeff=[-1.0, -1.0], rhs=-2.0)
+            ]
         )
 
     @staticmethod
@@ -66,16 +53,3 @@ class LinearInequalityTestProblem(MCMultiOutputBase):
     @staticmethod
     def _f2(X: Tensor) -> Tensor:
         return (X[..., 0] - 2).pow(2) + (X[..., 1] - 1).pow(2)
-
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor | None:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
-        f = torch.stack([f1, f2], dim=-1)
-        return f
-
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
-        return selected

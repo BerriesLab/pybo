@@ -1,123 +1,103 @@
 import os
 import torch
 from pathlib import Path
+from datetime import datetime
+from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.constraints import Interval
+from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTestProblem
+from tutorials.multi_objective.linear_equality.objective import LinearEqualityTestProblem
 from samplers.samplers import SamplerBase
+from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTestProblem
 from utils.helpers import create_experiment_directory
 from utils.bo_types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective_experiment import MultiObjectivePlotter
-from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, \
-    ParameterEvolution, \
-    ObjectiveEvolution, TrackerEvolution, ConstraintEvolution
+from plotters.experiment import *
+from plotters.acqf import *
+from plotters.metrics import *
+from plotters.evolution import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples: int = 64, q: int = 1, ):
-    data_path = main_path / "data"
-    data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"linear_inequality_test"
-    directory = create_experiment_directory(data_path, experiment_name)
-    os.chdir(directory)
+def main(n_samples=64, q: int = 1, output_dir: Path = None):
+    run_dir = output_dir / f"batch_{q}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(run_dir)
 
     """ Define the objective """
-    objective = LinearInequalityTestProblem(
-        device=DEVICE,
-        dtype=DTYPE,
-    )
+    objective = LinearInequalityTestProblem(device=DEVICE, dtype=DTYPE)
 
-    """ Instantiate a random generator """
-    sampler = SamplerBase(
-        device=DEVICE,
-        dtype=DTYPE,
-        sampler_type=SamplerType.Sobol,
-        bounds=objective.bounds,
-        n_dimensions=objective.dim,
-        normalize=False,
-        linear_inequality_constraints=objective.linear_inequality_input_constraints,
+    """ Instantiate kernel """
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
     )
 
     """ Generate initial dataset """
-    X = sampler.draw_samples(n=2 * (objective.dim + 1))
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)
+    X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
-    """ Generate samples for ground truth evaluation """
-    # If ineq_Y_con_cfg apply to X, use a random generator for the ground truth,
-    # since make_grid cannot handle ineq_Y_con_cfg.
-    X_gt = sampler.draw_samples(n=1000)
-
-    """ Instantiate a Mobo object """
-    mobo = BayesianOptimizer(
-        experiment_name=experiment_name,
+    """ Instantiate Bayesian optimizer """
+    bo = BayesianOptimizer(
         device=DEVICE,
         dtype=DTYPE,
         objective=objective,
-        acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
+        acqf=qLogNoisyExpectedHypervolumeImprovement,
+        kernel=kernel,
         X=X,
         Y_obj=Y_obj,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
         batch_size=q,
     )
 
     """ Main optimization loop """
     for i in range(int(n_samples / q)):
-        print("\n")
+        if i > 0 and bo.is_converged(patience=32):
+            break
+
+        print("\n\n")
         print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
         """ Optimize and get new X """
-        mobo.optimize()
-        new_X = mobo.new_X
-        print(f"New X: {new_X.detach().cpu().numpy()}")
+        bo.optimize()
+
+        """ Plot """
+        ParetoFront2DPlotter(
+            bo=bo,
+            x=("obj", 0),
+            y=("obj", 1),
+            z=("par", "P1"),
+            seed=254,
+        ).plot().save_figure().close_figure()
+        plot_and_save_metrics(bo=bo)
+        plot_and_save_evolutions(bo=bo)
 
         """ Evaluate posterior and acquisition function at new X """
-        mobo.compute_acquisition_function_value_at_X(new_X)
-        mobo.compute_posterior_mean_at_X(new_X)
+        new_X = bo.new_X
+        bo.compute_acquisition_function_value_at_X(new_X)
+        bo.compute_posterior_mean_at_X(new_X)
 
         """ Simulate experiment at new X """
-        new_Yobj = objective.evaluate_true_objective(new_X)
-        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
-
-        """ Compute pareto front and hypervolume """
-        mobo.compute_pareto_front()
-        mobo.compute_hypervolume()
-
-        """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"bayesian_optimizer.dat")
-
-        """ Plots """
-        multi_objective_plotter = MultiObjectivePlotter(
-            title="Pareto Front",
-            bayesian_optimizer=mobo,
-            X_gt=X_gt,
-            idx_x=0,
-            idx_y=1,
-            idx_color=None,
-            use_tracker=True,
-            pareto_idxs=[0, 1],
-        )
-        multi_objective_plotter.plot_ground_truth()
-        multi_objective_plotter.plot_objectives()
-        multi_objective_plotter.save_figure()
-        ElapsedTimePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
-        HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
-        HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.dim):
-            ParameterEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_objectives):
-            ObjectiveEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_constraints):
-            ConstraintEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_trackers):
-            TrackerEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
     print(f"Running on {DEVICE}.")
-    main_path = Path.cwd().parent
+    date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    main_path = Path.cwd() / "data" / date_time
+    main_path.mkdir(parents=True, exist_ok=True)
+
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=64, q=batch_size)
+        main(n_samples=32, q=batch_size, output_dir=main_path)
