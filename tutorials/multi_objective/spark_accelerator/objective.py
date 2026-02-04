@@ -26,6 +26,11 @@ class SparkAcceleratorConstrained(MCMultiObjectiveBase):
         - Electrode Wear: 150 um
     """
 
+    # TODO: define technology
+    c = xxx
+    t_d100 = xxx
+    t_r = c * t_d100
+
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device,
@@ -33,8 +38,8 @@ class SparkAcceleratorConstrained(MCMultiObjectiveBase):
             par_cfg=[
                 ParCfg(label="V0 (V)", index=0, bounds=(60, 150)),
                 ParCfg(label="dV (V)", index=1, bounds=(60, 85)),
-                ParCfg(label="Delay Time 1 (μs)", index=2, bounds=),
-                ParCfg(label="Delay Time 2 (μs)", index=3, bounds=),
+                ParCfg(label="Delay Time 1 (μs)", index=2, bounds=(0.8 * self.t_r, 1.2 * self.t_r)),
+                ParCfg(label="Delay Time 2 (μs)", index=3, bounds=(0.8 * self.t_r, 1.2 * self.t_r)),
             ],
             obj_cfg=[
                 ObjCfg(label="Machining Time (min)", to_minimize=True, ref_point=300.0),
@@ -161,7 +166,7 @@ class SparkAccelerator(MCMultiObjectiveBase):
         - Orbiting Penalty Time: -50 min (see Note below)
     """
 
-    #TODO: define technology
+    # TODO: define technology
     c = xxx
     t_d100 = xxx
     t_r = c * t_d100
