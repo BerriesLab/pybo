@@ -1,7 +1,5 @@
-from objectives.base_class import MCSingleObjectiveBase
 import torch
-from torch import Tensor
-
+from objectives.base_class import MCSingleObjectiveBase
 from objectives.variable_registry import ParCfg, ObjCfg
 
 
@@ -11,13 +9,13 @@ class Quadratic(MCSingleObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="P1", index=0, bounds=(-1.0, 5.0))
+                ParCfg(bounds=(-1.0, 5.0))
             ],
             obj_cfg=[
-                ObjCfg(label="F", index=0, f=self._f, bounds=(0.0, 9.0), to_minimize=True, ref_point=10)
+                ObjCfg(bounds=(0.0, 9.0), to_minimize=True, ref_point=10)
             ]
         )
 
     @staticmethod
-    def _f(X: Tensor) -> Tensor:
+    def _f(X: torch.Tensor) -> torch.Tensor:
         return (X - 2).pow(2)

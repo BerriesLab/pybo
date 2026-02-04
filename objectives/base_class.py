@@ -71,9 +71,9 @@ class MCObjectiveBase(ABC):
         self._dtype = dtype
 
         # === Store cfg ===
-        self.par_cfg = par_cfg
-        self.obj_cfg = obj_cfg
-        self.trk_cfg = trk_cfg
+        self.par_cfg = self._process_par_cfg(par_cfg)
+        self.obj_cfg = self._process_obj_cfg(obj_cfg)
+        self.trk_cfg = self._process_trk_cfg(trk_cfg)
         self.lin_eq_X_con_cfg = lin_eq_X_con_cfg
         self.lin_ineq_X_con_cfg = lin_ineq_X_con_cfg
         self.nonlin_ineq_X_con_cfg = nonlin_ineq_X_con_cfg
@@ -177,6 +177,36 @@ class MCObjectiveBase(ABC):
 
     # ===== Internal Processing Methods (Private Helpers) =====
 
+    @staticmethod
+    def _process_par_cfg(cfgs: list) -> list:
+        """Fill missing label/index from list order."""
+        for pos, cfg in enumerate(cfgs):
+            if cfg.index is None:
+                cfg.index = pos
+            if cfg.label is None:
+                cfg.label = f"par {pos:02d}"
+        return cfgs
+
+    @staticmethod
+    def _process_obj_cfg(cfgs: list) -> list:
+        """Fill missing label/index from list order."""
+        for pos, cfg in enumerate(cfgs):
+            if cfg.index is None:
+                cfg.index = pos
+            if cfg.label is None:
+                cfg.label = f"obj {pos:02d}"
+        return cfgs
+
+    @staticmethod
+    def _process_trk_cfg(cfgs: list) -> list:
+        """Fill missing label/index from list order."""
+        for pos, cfg in enumerate(cfgs):
+            if cfg.index is None:
+                cfg.index = pos
+            if cfg.label is None:
+                cfg.label = f"trk {pos:02d}"
+        return cfgs
+
     def _process_bounds(self) -> torch.Tensor:
         """ Extracts bounds from ParCfg objects, sorted by their defined index.
         Returns a tensor of shape (2, dim). """
@@ -244,7 +274,8 @@ class MCObjectiveBase(ABC):
                 raise TypeError(f"nonlin_ineq_X_con must be a list of {NonLinIneqXConCfg.__name__}")
         return [(c.f, torch.tensor(c.intra, device=self.device, dtype=torch.bool)) for c in cfgs]
 
-    def _process_ineq_Y(self, cfgs: list[IneqYConCfg] | None):
+    @staticmethod
+    def _process_ineq_Y(cfgs: list[IneqYConCfg] | None):
         if not cfgs: return None
         if cfgs is not None:
             if not isinstance(cfgs, list):
