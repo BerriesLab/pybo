@@ -1,8 +1,7 @@
 import torch
 from objectives.base_class import MCSingleObjectiveBase
-from constraints.output_constraints import *
-
 from objectives.variable_registry import *
+from constraints.output_constraints import *
 
 
 class PolynomialConstrained(MCSingleObjectiveBase):
@@ -11,18 +10,17 @@ class PolynomialConstrained(MCSingleObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="P1", index=0, bounds=(-2.0, 2.0))
+                ParCfg(bounds=(-2.0, 2.0))
             ],
             obj_cfg=[
-                ObjCfg(label="F1", index=0, bounds=(-2.0, 8.0), to_minimize=False, ref_point=None, f=self._f)
+                ObjCfg(bounds=(-2.0, 8.0), to_minimize=False, ref_point=10)
             ],
             ineq_Y_con_cfg=[
-                IneqYConCfg(label="C1", index=0, f=Identity(index=-1))
+                IneqYConCfg(f=Identity(index=-1))
             ],
         )
 
-    @staticmethod
-    def _f(X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
         return X ** 4 - 2 * X ** 2 + 0.5 * X
 
     def evaluate_true_constraint(self, X: torch.Tensor) -> torch.Tensor:

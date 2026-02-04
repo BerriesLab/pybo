@@ -280,9 +280,13 @@ class MCObjectiveBase(ABC):
         if cfgs is not None:
             if not isinstance(cfgs, list):
                 raise TypeError(f"ineq_Y_con_cfg must be a list of {IneqYConCfg.__name__}")
-            for cfg in cfgs:
+            for pos, cfg in enumerate(cfgs):
                 if not isinstance(cfg, IneqYConCfg):
                     raise TypeError(f"ineq_Y_con_cfg must be a list of {IneqYConCfg.__name__}")
+                if cfg.index is None:
+                    cfg.index = pos
+                if cfg.label is None:
+                    cfg.label = f"con {pos:02d}"
         return [c.f for c in cfgs]
 
     # ===== Methods =====

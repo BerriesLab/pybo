@@ -16,6 +16,5 @@ class Quadratic(MCSingleObjectiveBase):
             ]
         )
 
-    @staticmethod
-    def _f(X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
         return (X - 2).pow(2)
