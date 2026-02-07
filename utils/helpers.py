@@ -82,3 +82,26 @@ def create_experiment_directory(main_directory: Path or str, experiment_name: st
     directory = main_directory / Path(f'{date_time} - {experiment_name}')
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def project_linear_equalities(X: Tensor, lin_eq_cons) -> Tensor:
+    # build stacked A,b (m x d), (m,)
+    A_rows, b_rows = [], []
+    d = X.shape[-1]
+    for indices, coeffs, rhs in lin_eq_cons:
+        a = torch.zeros(d, device=X.device, dtype=X.dtype)
+        a[indices] = coeffs.to(dtype=X.dtype)
+        A_rows.append(a)
+        if torch.is_tensor(rhs):
+            b_rows.append(rhs.to(dtype=X.dtype))
+        else:
+            b_rows.append(torch.tensor(rhs, device=X.device, dtype=X.dtype))
+    A = torch.stack(A_rows, dim=0)  # (m, d)
+    b = torch.stack(b_rows, dim=0).view(-1)  # (m,)
+
+    # X_proj = X - A^T (A A^T)^{-1} (A X - b)
+    # error: (n, m)
+    error = X @ A.T - b
+    # solve (A A^T) Y^T = error^T
+    Y = torch.linalg.solve(A @ A.T, error.T).T  # (n, m)
+    return X - Y @ A

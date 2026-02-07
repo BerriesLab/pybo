@@ -6,11 +6,10 @@ from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImpr
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from tutorials.multi_objective.linear_equality.objective import LinearEqualityTestProblem
+from tutorials.multi_objective.linear_equality.objective import LinearEqualityTest
 from samplers.samplers import SamplerBase
-from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTestProblem
+from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTest
 from utils.helpers import create_experiment_directory
-from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.experiment import *
 from plotters.acqf import *
 from plotters.metrics import *
@@ -26,7 +25,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the objective """
-    objective = LinearInequalityTestProblem(device=DEVICE, dtype=DTYPE)
+    objective = LinearInequalityTest(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -73,7 +72,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
             bo=bo,
             x=("obj", 0),
             y=("obj", 1),
-            z=("par", "P1"),
+            z=("par", 0),
             seed=254,
         ).plot().save_figure().close_figure()
         plot_and_save_metrics(bo=bo)

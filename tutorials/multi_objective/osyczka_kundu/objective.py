@@ -1,126 +1,72 @@
-import os
 import torch
-from pathlib import Path
-from bayesian_optimizer.optimizer import BayesianOptimizer
-from tutorials.multi_objective.osyczka_kundu.main import OsyczkaKundu
-from samplers.samplers import SamplerBase
-from utils.helpers import create_experiment_directory
-from utils.bo_types import AcquisitionFunctionType, SamplerType
-from plotters.multi_objective_experiment import MultiObjectivePlotter
-from plotters.evolution import ElapsedTimePlotter, HypervolumePlotter, HypervolumeImprovementPlotter, \
-    ParameterEvolution, \
-    ObjectiveEvolution, TrackerEvolution, ConstraintEvolution
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DTYPE = torch.float64
+from objectives.base_class import MCMultiObjectiveBase
+from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg, NonLinIneqXConCfg
 
 
-def main(n_samples=64, q: int = 1, ):
-    data_path = main_path / "data"
-    data_path.mkdir(parents=True, exist_ok=True)
-    experiment_name = f"osyczka_kundu"
-    directory = create_experiment_directory(data_path, experiment_name)
-    os.chdir(directory)
+class OsyczkaKundu(MCMultiObjectiveBase):
+    r"""
+    Two-objective problem with a set of linear inequality constraints on the input.
+    ref: https://en.wikipedia.org/wiki/Test_functions_for_optimization
+    """
 
-    """ Define the objective """
-    objective = OsyczkaKundu(
-        device=DEVICE,
-        dtype=DTYPE,
-    )
-
-    """ Instantiate a random generator """
-    sampler = SamplerBase(
-        device=DEVICE,
-        dtype=DTYPE,
-        sampler_type=SamplerType.Sobol,
-        bounds=objective.bounds,
-        n_dimensions=objective.dim,
-        normalize=False,
-        linear_inequality_constraints=objective.linear_inequality_input_constraints,
-        nonlinear_inequality_constraints=objective.nonlinear_inequality_input_constraints,
-    )
-
-    """ Generate initial dataset """
-    X = sampler.draw_samples(n=2 * (objective.dim + 1))
-    Y_obj = objective.evaluate_true_objective(X)
-
-    """ Generate samples for ground truth evaluation - random sampler or grid """
-    # When ineq_Y_con_cfg apply to the input X, build the ground truth by using
-    # a random generator subject to ineq_Y_con_cfg
-    X_gt = sampler.draw_samples(n=10_000)
-
-    """ Instantiate a Mobo object """
-    mobo = BayesianOptimizer(
-        experiment_name=experiment_name,
-        device=DEVICE,
-        dtype=DTYPE,
-        objective=objective,
-        acquisition_function_builder=AcquisitionFunctionType.qNEHVI,
-        X=X,
-        Y_obj=Y_obj,
-        n_acqf_opt_restarts=50,
-        raw_samples=1024,
-        batch_size=q,
-    )
-
-    """ Main optimization loop """
-    for i in range(int(n_samples / q)):
-        print("\n")
-        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
-
-        """ Optimize and get new X """
-        mobo.optimize()
-        new_X = mobo.new_X
-        print(f"New X: {new_X.detach().cpu().numpy()}")
-
-        """ Evaluate posterior and acquisition function at new X """
-        mobo.compute_acquisition_function_value_at_X(new_X)
-        mobo.compute_posterior_mean_at_X(new_X)
-
-        """ Simulate experiment at new X """
-        new_Yobj = objective.evaluate_true_objective(new_X)
-        print(f"New Yobj: {new_Yobj.detach().cpu().numpy()}")
-        mobo.update_XY(new_X=new_X, new_Y_obj=new_Yobj)
-
-        """ Compute pareto front and hypervolume """
-        mobo.compute_pareto_front()
-        mobo.compute_hypervolume()
-
-        """ Save"""
-        mobo.to_file(output_path=Path.cwd() / f"bayesian_optimizer.dat")
-
-        """ Plots """
-        multi_objective_plotter = MultiObjectivePlotter(
-            title="Pareto Front",
-            bayesian_optimizer=mobo,
-            X_gt=X_gt,
-            idx_x=0,
-            idx_y=1,
-            idx_color=None,
-            use_tracker=True,
-            pareto_idxs=[0, 1],
+    def __init__(self, device: torch.device, dtype: torch.dtype, ):
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            par_cfg=[
+                ParCfg(bounds=(0.0, 10)),
+                ParCfg(bounds=(0.0, 10.0)),
+                ParCfg(bounds=(1.0, 5.0)),
+                ParCfg(bounds=(0.0, 6.0)),
+                ParCfg(bounds=(1.0, 5.0)),
+                ParCfg(bounds=(0.0, 10.0)),
+            ],
+            obj_cfg=[
+                ObjCfg(label="Osyczka", to_minimize=True, ref_point=0.0),
+                ObjCfg(label="Kundu", to_minimize=True, ref_point=160)
+            ],
+            lin_ineq_X_con_cfg=[
+                LinIneqXConCfg(idxs=[0, 1], coeff=[1.0, 1.0], rhs=2.0),
+                LinIneqXConCfg(idxs=[0, 1], coeff=[-1.0, -1.0], rhs=-6.0),
+                LinIneqXConCfg(idxs=[0, 1], coeff=[1.0, -1.0], rhs=-2.0),
+                LinIneqXConCfg(idxs=[0, 1], coeff=[-1.0, 3.0], rhs=-2.0)
+            ],
+            nonlin_ineq_X_con_cfg=[
+                NonLinIneqXConCfg(f=self._nonlinear_c1, intra=True),
+                NonLinIneqXConCfg(f=self._nonlinear_c2, intra=True)
+            ]
         )
-        multi_objective_plotter.plot_ground_truth()
-        multi_objective_plotter.plot_objectives()
-        multi_objective_plotter.save_figure()
-        ElapsedTimePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
-        HypervolumePlotter(bayesian_optimizer=mobo).plot().save_figure().close_figure()
-        HypervolumeImprovementPlotter(mobo=mobo).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.dim):
-            ParameterEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_objectives):
-            ObjectiveEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_constraints):
-            ConstraintEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
-        for idx in range(mobo.objective.num_trackers):
-            TrackerEvolution(bayesian_optimizer=mobo, idx=idx).plot().save_figure().close_figure()
 
-    print("Optimization Finished.")
+    @staticmethod
+    def _f1(X: torch.Tensor) -> torch.Tensor:
+        return (
+                - 25 * (X[..., 0] - 2).pow(2)
+                - (X[..., 1] - 2).pow(2)
+                - (X[..., 2] - 1).pow(2)
+                - (X[..., 3] - 4).pow(2)
+                - (X[..., 4] - 1).pow(2)
+        )
 
+    @staticmethod
+    def _f2(X: torch.Tensor) -> torch.Tensor:
+        return (
+                + X[..., 0].pow(2)
+                + X[..., 1].pow(2)
+                + X[..., 2].pow(2)
+                + X[..., 3].pow(2)
+                + X[..., 4].pow(2)
+                + X[..., 5].pow(2)
+        )
 
-if __name__ == "__main__":
-    print(f"Running on {DEVICE}.")
-    main_path = Path.cwd().parent
-    batch_sizes = [1, 2, 4]
-    for batch_size in batch_sizes:
-        main(n_samples=64, q=batch_size)
+    @staticmethod
+    def _nonlinear_c1(X: torch.Tensor) -> torch.Tensor:
+        return 4 - (X[..., 2] - 3).pow(2) - X[..., 3]
+
+    @staticmethod
+    def _nonlinear_c2(X: torch.Tensor) -> torch.Tensor:
+        return (X[..., 4] - 3).pow(2) + X[..., 5] - 4
+
+    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+        f1 = self._f1(X=X)
+        f2 = self._f2(X=X)
+        return torch.stack([f1, f2], dim=-1)

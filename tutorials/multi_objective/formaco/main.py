@@ -23,8 +23,10 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     """ Instantiate kernel """
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
-            ard_num_dims=objective.num_par
-        )
+            ard_num_dims=objective.num_par,
+            lengthscale_constraint=Interval(1e-3, 1e0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e1),
     )
 
     """ Generate initial dataset """

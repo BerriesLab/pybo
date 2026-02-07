@@ -5,12 +5,14 @@ from objectives.base_class import MCMultiObjectiveBase
 from objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
 
 
-class FormACO(MCMultiObjectiveBase):
+class FormACOConstrained(MCMultiObjectiveBase):
     """
-    3x objectives:
+    2x objectives:
         - Machining Time: Originally intended for minimization.
         - Electrode Wear: Originally intended for minimization.
-        - Orbiting Time: Requires values > 40 mins -> intended for maximization.
+
+    1x ineq_Y_con_cfg:
+        - Orbiting Time: Requires values > 40 mins.
 
     3x parameters:
         - Maximum Current [7.5, 15]
@@ -20,8 +22,6 @@ class FormACO(MCMultiObjectiveBase):
     Reference point:
         - Machining Time: 300 min
         - Electrode Wear: 150 um
-        - Orbiting Time: 10 min
-        - Orbiting Penalty Time: -50 min (see Note below)
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
@@ -34,12 +34,11 @@ class FormACO(MCMultiObjectiveBase):
                 ParCfg(label="Maximum Ramp Time (μs)", bounds=(0.1 * 78, 78))
             ],
             obj_cfg=[
-                ObjCfg(label="Machining Time (min)", to_minimize=True, ref_point=360.0, bounds=(0, 350),
-                       f=self._machining_time),
-                ObjCfg(label="Electrode Wear (μm)", to_minimize=True, ref_point=160.0, bounds=(0, 150),
-                       f=self._electrode_wear),
-                ObjCfg(label="Orbiting Time Penalty (min)", to_minimize=False, ref_point=-50.0, bounds=None,
-                       f=self._linear_orbiting_penalty)
+                ObjCfg(label="Machining Time (min)", to_minimize=True, ref_point=360.0, bounds=(0, 350)),
+                ObjCfg(label="Electrode Wear (μm)", to_minimize=True, ref_point=160.0, bounds=(0, 150))
+            ],
+            ineq_Y_con_cfg=[
+                IneqYConCfg(label="Orbiting Time (min)", f=Identity(index=-1))
             ],
             trk_cfg=[
                 TrkCfg(label="Orbiting Time (min)", bounds=(30, 80))
@@ -116,35 +115,17 @@ class FormACO(MCMultiObjectiveBase):
             min=0
         )
 
-    def _linear_orbiting_penalty(self, X: Tensor) -> Tensor:
-        """
-        Define a linear orbiting penalty for X < 40.
-        """
-        orbiting_time = self._orbiting_time(X)
-        return torch.clamp(orbiting_time - 40.0, max=0.0)
-
-    def _exponential_orbiting_penalty(self, X: Tensor, k: float = 1) -> Tensor:
-        """
-        Define an exponential orbiting penalty for X < 40.
-        """
-        orbiting_time = self._orbiting_time(X)
-        violation = 40.0 - orbiting_time
-        return - torch.clamp(input=torch.exp(violation / k), max=1000)
-
-    def _quadratic_orbiting_penalty(self, X: Tensor) -> Tensor:
-        """
-        Define a quadratic orbiting penalty for X < 40.
-        """
-        orbiting_time = self._orbiting_time(X)
-        return -torch.square(input=torch.clamp(input=orbiting_time - 40.0, max=0.0))
-
-    def evaluate_true_objective(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
         machining_time = self._machining_time(X=X)
         electrode_wear = self._electrode_wear(X=X)
-        orbiting_time_penalty = self._linear_orbiting_penalty(X=X)
-        # orbiting_time_penalty = self._quadratic_orbiting_penalty(X=X)
-        # orbiting_time_penalty = self._exponential_orbiting_penalty(X=X)
-        return torch.stack([machining_time, electrode_wear, orbiting_time_penalty], dim=-1)
+        return torch.stack([machining_time, electrode_wear], dim=-1)
+
+    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
+        """
+        orbiting_time >= 40 min -> 40 - orbiting_time <= 0
+        """
+        c = 40 - self._orbiting_time(X=X)
+        return c.unsqueeze(dim=-1)
 
     def evaluate_tracker(self, X: Tensor) -> Tensor:
         return self._orbiting_time(X=X).unsqueeze(dim=-1)

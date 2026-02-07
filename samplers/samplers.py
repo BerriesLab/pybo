@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
 from objectives.base_class import MCObjectiveBase
+from utils.helpers import project_linear_equalities
 
 
 class SamplerBase(ABC):
@@ -29,19 +30,24 @@ class SamplerBase(ABC):
     def draw_samples(self, n: int) -> torch.Tensor:
         """ Draws n random samples of shape [n, dim] subject to X constraints."""
         valid_X = []
+        n_valid = 0
         num_attempts = 0
         max_attempts = 1000
 
-        while len(valid_X) < n and num_attempts < max_attempts:
+        while n_valid < n and num_attempts < max_attempts:
             num_attempts += 1
 
             norm_X = self._generate_base_samples(n=n)
             X = unnormalize(norm_X, self.objective.bounds)
+
+            if self.objective.lin_eq_X_con:
+                X = project_linear_equalities(X=X, lin_eq_cons=self.objective.lin_eq_X_con)
+
             feasible_mask = self.objective.is_X_feasible(X=X)
-            feasible_norm_X = norm_X[feasible_mask]
-            if feasible_norm_X.shape[0] > 0:
-                feasible_X = unnormalize(feasible_norm_X, self.objective.bounds)
+            feasible_X = X[feasible_mask]
+            if feasible_X.shape[0] > 0:
                 valid_X.append(feasible_X)
+                n_valid += feasible_X.shape[0]
 
         if not valid_X:
             raise RuntimeError(f"No valid samples found after {max_attempts} attempts.")

@@ -4,7 +4,7 @@ import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
-from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
@@ -28,9 +28,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.dim,
-            lengthscale_constraint=Interval(1e-3, 1.0),
+            lengthscale_constraint=Interval(1e-4, 1),
         ),
-        outputscale_constraint=Interval(1e-3, 1e2),
+        outputscale_constraint=Interval(1e-4, 1e1),
     )
 
     """ Generate initial dataset """
@@ -68,8 +68,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         """ Plot """
         ParetoFront2DPlotter(
             bo=bo,
-            x=("obj", "F1"),
-            y=("obj", "F2"),
+            x=("obj", 0),
+            y=("obj", 1),
             # z=("par", "P2"),
             seed=254,
         ).plot().save_figure().close_figure()
@@ -98,4 +98,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1]
     for batch_size in batch_sizes:
-        main(n_samples=64, q=batch_size, output_dir=main_path)
+        main(n_samples=128, q=batch_size, output_dir=main_path)

@@ -5,11 +5,11 @@ from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
+from samplers.samplers import SobolSampler
+from tutorials.multi_objective.bin_and_korn.objective import BinhAndKorn
 from plotters.evolution import plot_and_save_evolutions
 from plotters.experiment import ParetoFront2DPlotter
-from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics
-from tutorials.multi_objective.bin_and_korn.objective import BinhAndKorn
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -62,7 +62,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
             bo=bo,
             x=("obj", "Korn"),
             y=("obj", "Binh"),
-            z=("par", "P1"),
+            z=("par", 0),
             seed=254,
         ).plot().save_figure().close_figure()
         plot_and_save_metrics(bo=bo)

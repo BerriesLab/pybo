@@ -3,13 +3,18 @@ from datetime import datetime
 import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
-from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.constraints import Interval
+from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel
 from bayesian_optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics
 from plotters.evolution import plot_and_save_evolutions
-from tutorials.multi_objective.branin_currin.objective import BraninCurrin
+from tutorials.multi_objective.c2dtlz2.objective import C2DTLZ2
+
+import matplotlib.pyplot as plt
+
+from tutorials.multi_objective.tanaka.objective import Tanaka
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -21,15 +26,22 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Instantiate true objective """
-    objective = BraninCurrin(device=DEVICE, dtype=DTYPE)
+    objective = Tanaka(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_par))
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e1),
+    )
 
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)
     X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
+    Y_con = objective.evaluate_true_constraint(X)
 
     """ Instantiate Bayesian optimizer """
     bo = BayesianOptimizer(
@@ -41,7 +53,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         X=X,
         Y_obj=Y_obj,
         Y_obj_var=None,
-        Y_con=None,
+        Y_con=Y_con,
         Y_con_var=None,
         batch_size=q,
     )
@@ -60,9 +72,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         """ Plot """
         ParetoFront2DPlotter(
             bo=bo,
-            x=("obj", "Branin"),
-            y=("obj", "Currin"),
-            z=("par", 1),
+            x=("obj", 0),
+            y=("obj", 1),
+            # z=("par", "P2"),
             seed=254,
         ).plot().save_figure().close_figure()
         plot_and_save_metrics(bo=bo)
@@ -75,8 +87,9 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
+        new_Y_con = objective.evaluate_true_constraint(new_X)
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
 
     print("Optimization Finished.")
 
@@ -87,6 +100,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1, 2, 4]
+    batch_sizes = [1]
     for batch_size in batch_sizes:
         main(n_samples=32, q=batch_size, output_dir=main_path)

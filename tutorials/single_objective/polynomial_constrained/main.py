@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from botorch.acquisition import *
+from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from plotters.acqf import Acqf1DPlotter
 from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
@@ -22,7 +23,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = PolynomialConstrained(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel())
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.num_par,
+            lengthscale_constraint=Interval(1e-4, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-4, 1.0),
+    )
 
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=42, )

@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from botorch.acquisition import *
+from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from tutorials.single_objective.polynomial.objective import Polynomial
 from plotters.acqf import Acqf1DPlotter
@@ -23,8 +24,13 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     objective = Polynomial(device=DEVICE, dtype=DTYPE, )
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel())
-
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.num_par,
+            lengthscale_constraint=Interval(1e-4, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-4, 1.0),
+    )
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=42, )
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
@@ -58,7 +64,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Plot """
         Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf1DPlotter(bo=bo).plot().save_figure().close_figure()
+        Acqf1DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
         ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
         BestValuePlotter(bo=bo).plot().save_figure().close_figure()
         EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()

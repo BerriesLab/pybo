@@ -157,8 +157,8 @@ review the corresponding objective definitions.
   A linear inequality input constrained bi-objective optimization problem.
 - [Binh and Korn](tutorials/multi_objective/bin_and_korn/main.py): A nonlinear
   inequality input constrained bi-objective optimization problem.
-- [Osyczka-Kundu](tutorials/multi_objective/osyczka_kundu/objective.py): A liner
-  and nonlinear inequality input constrained bi-objective optimization problem.
+- [Osyczka-Kundu](tutorials/multi_objective/osyczka_kundu/main.py): A liner and
+  nonlinear inequality input constrained bi-objective optimization problem.
 - [C2DTLZ2](tutorials/multi_objective/c2dtlz2/main.py): An output constrained
   bi-objective optimization problem.
 

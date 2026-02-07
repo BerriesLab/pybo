@@ -7,24 +7,28 @@ class VariableRegistry(Enum):
     pass
 
 
+@dataclass(kw_only=True)
 class CfgBase:
     """Base configuration class"""
-    label: Optional[str] = None
-    index: Optional[int] = None
+    label: str | None = None
+    index: int | None = None
 
 
+@dataclass(kw_only=True)
 class ObjCfg(CfgBase):
     """Configuration for objectives"""
     to_minimize: bool
-    ref_point: float | None
+    ref_point: float | None = None
     bounds: tuple[float, float] | None = None
 
 
+@dataclass(kw_only=True)
 class ParCfg(CfgBase):
     """Configuration for parameters"""
     bounds: tuple[float, float]
 
 
+@dataclass(kw_only=True)
 class LinEqXConCfg(CfgBase):
     r"""Configuration for linear equality X constraints.
     Example: if you want the constraint 3*X[0] + 2*X[2] = 5, you'd pass the
@@ -34,6 +38,7 @@ class LinEqXConCfg(CfgBase):
     rhs: float
 
 
+@dataclass(kw_only=True)
 class LinIneqXConCfg(CfgBase):
     r"""Configuration for linear inequality input constraints.
 
@@ -51,17 +56,20 @@ class LinIneqXConCfg(CfgBase):
     rhs: float
 
 
+@dataclass(kw_only=True)
 class NonLinIneqXConCfg(CfgBase):
     """Configuration for nonlinear inequality input ineq_Y_con_cfg"""
     f: Callable
     intra: bool
 
 
+@dataclass(kw_only=True)
 class IneqYConCfg(CfgBase):
     """Configuration for output ineq_Y_con_cfg"""
     f: Callable
 
 
+@dataclass(kw_only=True)
 class TrkCfg(CfgBase):
     """Configuration for trackers """
     bounds: tuple[float, float] | None = None

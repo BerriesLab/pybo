@@ -24,13 +24,19 @@ class MCObjectiveBase(ABC):
         r"""
         Args:
         -obj_cfg: Configuration for objectives. It receives a list of ObjCfg.
-        These objects are internally stored for optimization and visualization.
+        The list is then processed and stored internally. For any entry missing
+        label and/or index, the missing fields are automatically assigned based
+        on the item’s position in the list.
 
         -par_cfg: Configuration for parameters. It receives a list of ParCfg.
-        These objects are internally stored for optimization and visualization.
+        The list is then processed and stored internally. For any entry missing
+        label and/or index, the missing fields are automatically assigned based
+        on the item’s position in the list.
 
         -trk_cfg: Configuration for trackers. It receives a list of TrkCfg.
-        These objects are internally stored for optimization and visualization.
+        The list is then processed and stored internally. For any entry missing
+        label and/or index, the missing fields are automatically assigned based
+        on the item’s position in the list.
 
         - lin_eq_X_con_cfg: Configuration for linear equality input constraints.
         It receives a list of LinEqXConCfg. These objects are internally converted
@@ -59,7 +65,7 @@ class MCObjectiveBase(ABC):
         - ineq_Y_con_cfg: Configuration for inequality output constraints.
         It receives a list of IneqYConfg. These objects are internally converted to
         a list of functions representing a constraint of the form `callable(x) <= 0`
-        (feasible if negative). ATTENTION: the sign convention for Y constraints is
+        (feasible if non-positive). ATTENTION: the sign convention for Y constraints is
         the opposite of the sign convention for X constraints.
 
         -gt_noise_std: The noise std. dev. added to the ground truth.
@@ -180,32 +186,38 @@ class MCObjectiveBase(ABC):
     @staticmethod
     def _process_par_cfg(cfgs: list) -> list:
         """Fill missing label/index from list order."""
-        for pos, cfg in enumerate(cfgs):
-            if cfg.index is None:
-                cfg.index = pos
-            if cfg.label is None:
-                cfg.label = f"par {pos:02d}"
-        return cfgs
+        if cfgs is not None:
+            for pos, cfg in enumerate(cfgs):
+                if cfg.index is None:
+                    cfg.index = pos
+                if cfg.label is None:
+                    cfg.label = f"par {pos:02d}"
+            return cfgs
+        return None
 
     @staticmethod
     def _process_obj_cfg(cfgs: list) -> list:
         """Fill missing label/index from list order."""
-        for pos, cfg in enumerate(cfgs):
-            if cfg.index is None:
-                cfg.index = pos
-            if cfg.label is None:
-                cfg.label = f"obj {pos:02d}"
-        return cfgs
+        if cfgs is not None:
+            for pos, cfg in enumerate(cfgs):
+                if cfg.index is None:
+                    cfg.index = pos
+                if cfg.label is None:
+                    cfg.label = f"obj {pos:02d}"
+            return cfgs
+        return None
 
     @staticmethod
     def _process_trk_cfg(cfgs: list) -> list:
         """Fill missing label/index from list order."""
-        for pos, cfg in enumerate(cfgs):
-            if cfg.index is None:
-                cfg.index = pos
-            if cfg.label is None:
-                cfg.label = f"trk {pos:02d}"
-        return cfgs
+        if cfgs is not None:
+            for pos, cfg in enumerate(cfgs):
+                if cfg.index is None:
+                    cfg.index = pos
+                if cfg.label is None:
+                    cfg.label = f"trk {pos:02d}"
+            return cfgs
+        return None
 
     def _process_bounds(self) -> torch.Tensor:
         """ Extracts bounds from ParCfg objects, sorted by their defined index.
@@ -398,13 +410,6 @@ class MCObjectiveBase(ABC):
         ).all(dim=0).squeeze(-1)
 
         return feasible_mask
-
-    def get_par_idx(self, label: str) -> int:
-        """ Returns the integer index for a given parameter label. """
-        for item in self.par_cfg:
-            if item.label == label:
-                return item.index
-        raise ValueError(f"Label '{label}' not found in par_cfg")
 
     def get_config(self, category: str, identifier: str | int):
         """

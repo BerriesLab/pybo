@@ -5,7 +5,7 @@ from torch import Tensor
 from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg
 
 
-class LinearInequalityTestProblem(MCMultiObjectiveBase):
+class LinearInequalityTest(MCMultiObjectiveBase):
     r"""
     Multi-objective optimization problem with two objectives and a linear constraint.
 
@@ -22,11 +22,6 @@ class LinearInequalityTestProblem(MCMultiObjectiveBase):
     Constraint:
         Linear inequality constraint:
             x1 + x2 <= 2
-
-    Notes:
-        - The feasible region is the triangle defined by the bounds and the linear constraint.
-        - The Pareto front arises from the trade-off between the two objectives inside the feasible region.
-        - The inequality must be passed as \sum_i (X[indices[i]] * coefficients[i]) >= rhs
     """
 
     def __init__(self, device: torch.device, dtype: torch.dtype, ):
@@ -34,15 +29,15 @@ class LinearInequalityTestProblem(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="P1", index=0, bounds=(0.0, 3.0)),
-                ParCfg(label="P2", index=1, bounds=(0.0, 3.0)),
+                ParCfg(bounds=(0.0, 3.0)),
+                ParCfg(bounds=(0.0, 3.0)),
             ],
             obj_cfg=[
-                ObjCfg(label="F1", index=0, bounds=None, to_minimize=True, ref_point=10.0, f=self._f1),
-                ObjCfg(label="F2", index=1, bounds=None, to_minimize=True, ref_point=6.0, f=self._f2)
+                ObjCfg(to_minimize=True, ref_point=10.0),
+                ObjCfg(to_minimize=True, ref_point=6.0)
             ],
             lin_ineq_X_con_cfg=[
-                LinIneqXConCfg(label="C1", index=0, idxs=[0, 1], coeff=[-1.0, -1.0], rhs=-2.0)
+                LinIneqXConCfg(idxs=[0, 1], coeff=[-1.0, -1.0], rhs=-2.0)
             ]
         )
 
@@ -53,3 +48,6 @@ class LinearInequalityTestProblem(MCMultiObjectiveBase):
     @staticmethod
     def _f2(X: Tensor) -> Tensor:
         return (X[..., 0] - 2).pow(2) + (X[..., 1] - 1).pow(2)
+
+    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+        return torch.stack([self._f1(X), self._f2(X)], dim=-1)

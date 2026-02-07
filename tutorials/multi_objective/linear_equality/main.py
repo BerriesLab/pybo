@@ -5,12 +5,10 @@ from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
-
 from bayesian_optimizer.optimizer import BayesianOptimizer
-from tutorials.multi_objective.linear_equality.objective import LinearEqualityTestProblem
+from tutorials.multi_objective.linear_equality.objective import LinearEqualityTest
 from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory
-from utils.bo_types import AcquisitionFunctionType, SamplerType
 from plotters.experiment import *
 from plotters.acqf import *
 from plotters.metrics import *
@@ -26,7 +24,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     os.chdir(run_dir)
 
     """ Define the objective """
-    objective = LinearEqualityTestProblem(device=DEVICE, dtype=DTYPE)
+    objective = LinearEqualityTest(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -38,7 +36,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Generate initial dataset """
-    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=2063)
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     X = sampler.draw_samples(n=5 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X)
 
@@ -73,7 +71,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
             bo=bo,
             x=("obj", 0),
             y=("obj", 1),
-            z=("par", "P1"),
+            z=("par", 0),
             seed=254,
         ).plot().save_figure().close_figure()
         plot_and_save_metrics(bo=bo)

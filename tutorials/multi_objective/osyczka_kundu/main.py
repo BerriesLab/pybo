@@ -1,86 +1,100 @@
+import os
 import torch
-from objectives.base_class import MCMultiOutputBase
-from torch import Tensor
+from pathlib import Path
+from datetime import datetime
+from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.constraints import Interval
+from gpytorch.kernels import ScaleKernel, RBFKernel
+from bayesian_optimizer.optimizer import BayesianOptimizer
+from tutorials.multi_objective.osyczka_kundu.objective import OsyczkaKundu
+from samplers.samplers import SamplerBase
+from utils.helpers import create_experiment_directory
+from plotters.experiment import *
+from plotters.metrics import *
+from plotters.evolution import *
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DTYPE = torch.float64
 
 
-class OsyczkaKundu(MCMultiOutputBase):
-    r"""
-    Two-objective problem with a set of linear inequality ineq_Y_con_cfg.
-    ref: https://en.wikipedia.org/wiki/Test_functions_for_optimization
-    """
+def main(n_samples=64, q: int = 1, output_dir: Path = None):
+    run_dir = output_dir / f"batch_{q}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(run_dir)
 
-    def __init__(self, device: torch.device, dtype: torch.dtype, ):
-        super().__init__(
-            device=device,
-            dtype=dtype,
-            dim=6,
-            num_objectives=2,
-            num_constraints=0,
-            num_trackers=0,
-            obj_to_minimize=torch.tensor(
-                [True, True]
-            ),
-            bounds=torch.tensor(
-                [[0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
-                 [10.0, 10.0, 5.0, 6.0, 5.0, 10.0]]
-            ),
-            ref_point=torch.tensor([0.0, 160.0]),
-            num_outcomes=2,
-            outcomes=[0, 1],
-            gt_noise_std=None,
-            max_hv=None,
-            linear_equality_input_constraints=None,
-            linear_inequality_input_constraints=[
-                (torch.tensor([0, 1], dtype=torch.long), torch.tensor([1.0, 1.0], dtype=torch.float), 2.0),
-                (torch.tensor([0, 1], dtype=torch.long), torch.tensor([-1.0, -1.0], dtype=torch.float), -6.0),
-                (torch.tensor([0, 1], dtype=torch.long), torch.tensor([1.0, -1.0], dtype=torch.float), -2.0),
-                (torch.tensor([0, 1], dtype=torch.long), torch.tensor([-1.0, 3.0], dtype=torch.float), -2.0),
-            ],
-            nonlinear_inequality_input_constraints=[
-                (self._nonlinear_c1, True),
-                (self._nonlinear_c2, True)
-            ],
-            output_constraints=None,
-        )
+    """ Define the objective """
+    objective = OsyczkaKundu(device=DEVICE, dtype=DTYPE)
 
-    @staticmethod
-    def _f1(X: Tensor) -> Tensor:
-        return (
-                - 25 * (X[..., 0] - 2).pow(2)
-                - (X[..., 1] - 2).pow(2)
-                - (X[..., 2] - 1).pow(2)
-                - (X[..., 3] - 4).pow(2)
-                - (X[..., 4] - 1).pow(2)
-        )
+    """ Instantiate kernel """
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
+    )
 
-    @staticmethod
-    def _f2(X: Tensor) -> Tensor:
-        return (
-                + X[..., 0].pow(2)
-                + X[..., 1].pow(2)
-                + X[..., 2].pow(2)
-                + X[..., 3].pow(2)
-                + X[..., 4].pow(2)
-                + X[..., 5].pow(2)
-        )
+    """ Generate initial dataset """
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
+    X = sampler.draw_samples(n=5 * (objective.dim + 1))
+    Y_obj = objective.evaluate_true_objective(X)
 
-    @staticmethod
-    def _nonlinear_c1(X: Tensor) -> Tensor:
-        return 4 - (X[..., 2] - 3).pow(2) - X[..., 3]
+    """ Instantiate Bayesian optimizer """
+    bo = BayesianOptimizer(
+        device=DEVICE,
+        dtype=DTYPE,
+        objective=objective,
+        acqf=qLogNoisyExpectedHypervolumeImprovement,
+        kernel=kernel,
+        X=X,
+        Y_obj=Y_obj,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
+        batch_size=q,
+    )
 
-    @staticmethod
-    def _nonlinear_c2(X: Tensor) -> Tensor:
-        return (X[..., 4] - 3).pow(2) + X[..., 5] - 4
+    """ Main optimization loop """
+    for i in range(int(n_samples / q)):
+        if i > 0 and bo.is_converged(patience=32):
+            break
 
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor | None:
-        f1 = self._f1(X=X)
-        f2 = self._f2(X=X)
-        f = torch.stack([f1, f2], dim=-1)
-        return f
+        print("\n\n")
+        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
 
-    def forward(self, samples: Tensor, X: Tensor = None) -> Tensor:
-        selected = samples.clone()
-        if self.outcomes is not None:
-            selected = selected.index_select(-1, self.outcomes)
-        selected[..., self.obj_to_minimize] *= -1
-        return selected
+        """ Optimize and get new X """
+        bo.optimize()
+
+        """ Plot """
+        ParetoFront2DPlotter(
+            bo=bo,
+            x=("obj", 0),
+            y=("obj", 1),
+            z=("par", 0),
+            seed=254,
+        ).plot().save_figure().close_figure()
+        plot_and_save_metrics(bo=bo)
+        plot_and_save_evolutions(bo=bo)
+
+        """ Evaluate posterior and acquisition function at new X """
+        new_X = bo.new_X
+        bo.compute_acquisition_function_value_at_X(new_X)
+        bo.compute_posterior_mean_at_X(new_X)
+
+        """ Simulate experiment at new X """
+        new_Y_obj = objective.evaluate_true_objective(new_X)
+        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+
+    print("Optimization Finished.")
+
+
+if __name__ == "__main__":
+    print(f"Running on {DEVICE}.")
+    date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    main_path = Path.cwd() / "data" / date_time
+    main_path.mkdir(parents=True, exist_ok=True)
+
+    batch_sizes = [1, 2, 4]
+    for batch_size in batch_sizes:
+        main(n_samples=32, q=batch_size, output_dir=main_path)

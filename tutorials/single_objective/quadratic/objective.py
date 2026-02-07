@@ -9,7 +9,7 @@ class Quadratic(MCSingleObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(bounds=(-1.0, 5.0))
+                ParCfg(bounds=(-1.0, 5.0)),
             ],
             obj_cfg=[
                 ObjCfg(bounds=(0.0, 9.0), to_minimize=True, ref_point=10)

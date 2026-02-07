@@ -16,6 +16,7 @@ from plotters.styles import *
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 from samplers.samplers import SobolSampler
+from utils.helpers import project_linear_equalities
 
 AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 
@@ -42,8 +43,8 @@ class Experiment1DPlotter(PlotterBase):
         self.seed = seed
         self.vmin, self.vmax = None, None
 
-        self.ax.set_xlabel(self.x_cfg.label)
-        self.ax.set_ylabel(self.y_cfg.label)
+        self.ax.set_xlabel(self.x_cfg.label.capitalize())
+        self.ax.set_ylabel(self.y_cfg.label.capitalize())
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
             low, high = self.x_cfg.bounds
@@ -324,7 +325,7 @@ class Experiment1DPlotter(PlotterBase):
         )
 
         # Set the label from our CfgBase object
-        self.cbar.set_label(self.z_cfg.label)
+        self.cbar.set_label(self.z_cfg.label.capitalize())
         self.cbar.ax.tick_params()
 
     def plot_legend(self, zorder: int = 100):
@@ -374,8 +375,8 @@ class Experiment2DPlotter(PlotterBase):
         self.seed = seed
         self.vmin, self.vmax = None, None
 
-        self.ax.set_xlabel(self.x_cfg.label)
-        self.ax.set_ylabel(self.y_cfg.label)
+        self.ax.set_xlabel(self.x_cfg.label.capitalize())
+        self.ax.set_ylabel(self.y_cfg.label.capitalize())
 
         # --- bounds + scale validation ---
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
@@ -602,7 +603,7 @@ class Experiment2DPlotter(PlotterBase):
             pad=0.04
         )
         if self.z_cfg:
-            self.cbar.set_label(self.z_cfg.label)
+            self.cbar.set_label(self.z_cfg.label.capitalize())
         self.cbar.ax.tick_params()
 
     def plot(self):
@@ -648,8 +649,8 @@ class ParetoFront2DPlotter(PlotterBase):
         self.seed = seed
         self.vmin, self.vmax = None, None
 
-        self.ax.set_xlabel(self.x_cfg.label)
-        self.ax.set_ylabel(self.y_cfg.label)
+        self.ax.set_xlabel(self.x_cfg.label.capitalize())
+        self.ax.set_ylabel(self.y_cfg.label.capitalize())
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
             low, high = self.x_cfg.bounds
@@ -685,6 +686,10 @@ class ParetoFront2DPlotter(PlotterBase):
                 seed=self.seed if isinstance(self.seed, int) else None
             )
             X_gt = sampler.draw_samples(self.n_grid_points ** 2)
+
+        if self.bo.objective.lin_eq_X_con is not None:
+            X_gt = project_linear_equalities(X=X_gt, lin_eq_cons=self.bo.objective.lin_eq_X_con)
+
         Y_obj = self.bo.objective.evaluate_true_objective(X_gt)
         Y_con = self.bo.objective.evaluate_true_constraint(X_gt)
         Y_trk = self.bo.objective.evaluate_tracker(X_gt)
@@ -725,7 +730,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[is_infeasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if self.vmin is not None else None,
                 vmax=self.vmax if self.vmax is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
                 **kwargs
             )
 
@@ -739,7 +744,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[mask_exclusive_feasible].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if z_vals is not None else None,
                 vmax=self.vmax if z_vals is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
                 **kwargs
             )
 
@@ -753,7 +758,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_vals[is_pareto].cpu().numpy() if z_vals is not None else None,
                 vmin=self.vmin if z_vals is not None else None,
                 vmax=self.vmax if z_vals is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_vals is not None else None,
                 **kwargs
             )
         return self
@@ -793,7 +798,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[mask_infeasible].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
                 **kwargs
             )
 
@@ -806,7 +811,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[mask_dominated].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
                 **kwargs
             )
 
@@ -823,7 +828,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 c=z_obs[is_pareto].cpu().numpy() if z_obs is not None else None,
                 vmin=self.vmin if z_obs is not None else None,
                 vmax=self.vmax if z_obs is not None else None,
-                cmap=self.cmap if self.cmap is not None else None,
+                cmap=self.cmap if z_obs is not None else None,
                 **kwargs
             )
 
@@ -848,7 +853,7 @@ class ParetoFront2DPlotter(PlotterBase):
         )
 
         # Set the label from our CfgBase object
-        self.cbar.set_label(self.z_cfg.label)
+        self.cbar.set_label(self.z_cfg.label.capitalize())
         self.cbar.ax.tick_params()
 
     def plot(self):

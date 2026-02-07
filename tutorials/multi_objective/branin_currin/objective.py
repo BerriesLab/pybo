@@ -25,35 +25,35 @@ class BraninCurrin(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="P1", index=0, bounds=(0.0, 1.0)),
-                ParCfg(label="P2", index=1, bounds=(0.0, 1.0))
+                ParCfg(bounds=(0.0, 1.0)),
+                ParCfg(bounds=(0.0, 1.0))
             ],
             obj_cfg=[
-                ObjCfg(label="Branin", index=0, bounds=(0, 300), to_minimize=True, ref_point=18.0, f=self._branin),
-                ObjCfg(label="Currin", index=1, bounds=(0, 14), to_minimize=True, ref_point=6.0, f=self._currin),
+                ObjCfg(label="Branin", bounds=(0, 300), to_minimize=True, ref_point=18.0),
+                ObjCfg(label="Currin", bounds=(0, 14), to_minimize=True, ref_point=6.0),
             ],
             max_hv=59.36011874867746,  # this is approximated using NSGA-II
         )
 
-    def _branin(self, X: Tensor) -> Tensor:
-        x0 = X[..., self.get_par_idx("P1")]
-        x1 = X[..., self.get_par_idx("P2")]
+    @staticmethod
+    def _branin(X: Tensor) -> Tensor:
+        x0 = X[..., 0]
+        x1 = X[..., 1]
         t1 = (x1 - 5.1 / (4 * math.pi ** 2) * x0.pow(2) + 5 / math.pi * x0 - 6)
         t2 = 10 * (1 - 1 / (8 * math.pi)) * torch.cos(x0)
         return t1.pow(2) + t2 + 10
 
     def _rescaled_branin(self, X: Tensor) -> Tensor:
         """ For a visual reference visit: https://www.sfu.ca/~ssurjano/branin.html"""
-
-        # return to Branin bounds
-        x_0 = 15 * X[..., self.get_par_idx("P1")] - 5
-        x_1 = 15 * X[..., self.get_par_idx("P2")]
+        x_0 = 15 * X[..., 0] - 5
+        x_1 = 15 * X[..., 1]
         return self._branin(torch.stack([x_0, x_1], dim=-1))
 
-    def _currin(self, X: Tensor) -> Tensor:
+    @staticmethod
+    def _currin(X: Tensor) -> Tensor:
         """ For a visual reference visit: https://www.sfu.ca/~ssurjano/curretal88exp.html """
-        x0 = X[..., self.get_par_idx("P1")]
-        x1 = X[..., self.get_par_idx("P2")]
+        x0 = X[..., 0]
+        x1 = X[..., 1]
         factor1 = 1 - torch.exp(-1 / (2 * x1))
         numer = 2300 * x0.pow(3) + 1900 * x0.pow(2) + 2092 * x0 + 60
         denom = 100 * x0.pow(3) + 500 * x0.pow(2) + 4 * x0 + 20

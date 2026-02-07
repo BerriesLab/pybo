@@ -11,40 +11,47 @@ class BinhAndKorn(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="P1", index=1, bounds=(0.0, 5.0)),
-                ParCfg(label="P2", index=0, bounds=(0.0, 3.0))
+                ParCfg(bounds=(0.0, 5.0)),
+                ParCfg(bounds=(0.0, 3.0))
             ],
             obj_cfg=[
-                ObjCfg(label="Binh", index=1, bounds=(0.0, 140.0), to_minimize=True, ref_point=150, f=self._binh),
-                ObjCfg(label="Korn", index=0, bounds=(0.0, 50.0), to_minimize=True, ref_point=60, f=self._korn)
+                ObjCfg(label="binh", bounds=(0.0, 140.0), to_minimize=True, ref_point=150),
+                ObjCfg(label="korn", bounds=(0.0, 50.0), to_minimize=True, ref_point=60)
             ],
             lin_eq_X_con_cfg=None,
             lin_ineq_X_con_cfg=None,
             nonlin_ineq_X_con_cfg=[
-                NonLinIneqXConCfg(label="C1", index=0, f=self._input_c1, intra=True),
-                NonLinIneqXConCfg(label="C2", index=1, f=self._input_c2, intra=True),
+                NonLinIneqXConCfg(f=self._input_c1, intra=True),
+                NonLinIneqXConCfg(f=self._input_c2, intra=True),
             ],
             ineq_Y_con_cfg=None,
         )
 
-    def _binh(self, X: torch.Tensor) -> torch.Tensor:
-        x1 = X[..., self.get_par_idx("P1")]
-        x2 = X[..., self.get_par_idx("P2")]
+    @staticmethod
+    def _binh(X: torch.Tensor) -> torch.Tensor:
+        x1 = X[..., 0]
+        x2 = X[..., 1]
         return 4 * x1 ** 2 + 4 * x2 ** 2
 
-    def _korn(self, X: torch.Tensor) -> torch.Tensor:
-        x1 = X[..., self.get_par_idx("P1")]
-        x2 = X[..., self.get_par_idx("P2")]
+    @staticmethod
+    def _korn(X: torch.Tensor) -> torch.Tensor:
+        x1 = X[..., 0]
+        x2 = X[..., 1]
         return (x1 - 5) ** 2 + (x2 - 5) ** 2
 
-    def _input_c1(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+        return torch.stack([self._binh(X), self._korn(X)], dim=-1)
+
+    @staticmethod
+    def _input_c1(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 5)^2 + x1^2 <= 25 """
-        x1 = X[..., self.get_par_idx("P1")]
-        x2 = X[..., self.get_par_idx("P2")]
+        x1 = X[..., 0]
+        x2 = X[..., 1]
         return 25 - ((x1 - 5) ** 2 + x2 ** 2)
 
-    def _input_c2(self, X: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _input_c2(X: torch.Tensor) -> torch.Tensor:
         """ A constraint on the input: (x0 - 8)^2 + (x1 + 3)^2 >= 7.7 """
-        x1 = X[..., self.get_par_idx("P1")]
-        x2 = X[..., self.get_par_idx("P2")]
+        x1 = X[..., 0]
+        x2 = X[..., 1]
         return (x1 - 8) ** 2 + (x2 + 3) ** 2 - 7.7

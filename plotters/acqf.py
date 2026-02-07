@@ -32,7 +32,7 @@ class Acqf1DPlotter(PlotterBase):
         self.seed = seed
         self.vmin, self.vmax = None, None
 
-        self.ax.set_xlabel(self.x_cfg.label)
+        self.ax.set_xlabel(self.x_cfg.label.capitalize())
         self.ax.set_ylabel(self.bo.acqf.__name__)
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
@@ -185,8 +185,8 @@ class Acqf2DPlotter(PlotterBase):
         self.mappable = None
         self.grid = grid
 
-        self.ax.set_xlabel(self.x_cfg.label)
-        self.ax.set_ylabel(self.y_cfg.label)
+        self.ax.set_xlabel(self.x_cfg.label.capitalize())
+        self.ax.set_ylabel(self.y_cfg.label.capitalize())
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
             low, high = self.x_cfg.bounds

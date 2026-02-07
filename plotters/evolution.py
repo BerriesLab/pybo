@@ -40,7 +40,7 @@ class EvolutionPlotter(PlotterBase):
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
         self.ax.set_xlabel("Number of observations")
-        self.ax.set_ylabel(self.config.label)
+        self.ax.set_ylabel(self.config.label.capitalize())
 
     def _map_tensor(self, category: str) -> torch.Tensor:
         """ Maps the category string to the corresponding BO tensor. """
