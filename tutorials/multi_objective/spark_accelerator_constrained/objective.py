@@ -1,32 +1,38 @@
 import torch
-from constraints.output_constraints import Identity, UpperBound
+from constraints.output_constraints import Identity, UpperBound, LowerBound
 from objectives.base_class import MCMultiObjectiveBase
 from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg, TrkCfg, IneqYConCfg
 
 
-class SparkAccelerator(MCMultiObjectiveBase):
+class SparkAcceleratorConstrained(MCMultiObjectiveBase):
     """
-    3x objectives:
-        - Machining Time: Originally intended for minimization.
-        - Electrode Wear: Originally intended for minimization.
-        - Orbiting Time: Requires values > 40 mins -> intended for maximization.
+    2x objectives:
+        - Machining Time: to minimize.
+        - Electrode Wear: to minimize.
+
+    1x ineq_Y_con_cfg:
+        - Orbiting Time: Requires values > 40 mins.
 
     3x parameters:
-        - 2 * Voltage Step [0.1, 20] where the max V_oc = U + 2 * (1/2 UHPS)
-        - Delay Time 1 [0, 127] where t1 = 1.28 x [0, 127] us
-        - Delay Time 2 [0, 127] where t2 = 1.28 x [0, 127] us
+        - V0: The initial voltage.
+        - dV: Twice the voltage step, i.e. each step rises the voltage by dV/2.
+        - td1: Delay Time 1 in us
+        - td2: Delay Time 2 in us
+
+    Input constraints:
+        - V0 + dV <= 150
+        - td1 + td2 <= td100
 
     Reference point:
         - Machining Time: 300 min
         - Tool Wear: 150 um
-        - Orbiting Time: 10 min
-        - Orbiting Penalty Time: 50 min
     """
 
     _c = 20
     _t_d100 = 54  # us
     _t_r = _t_d100 * (1 - _c / 50)
     _orbiting_target = 40
+    _delta = 40 * 0.02
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
@@ -41,13 +47,16 @@ class SparkAccelerator(MCMultiObjectiveBase):
             obj_cfg=[
                 ObjCfg(label="Machining Time", to_minimize=True, ref_point=300.0),
                 ObjCfg(label="Tool Wear", to_minimize=True, ref_point=150.0),
-                ObjCfg(label="Orbiting Time Penalty", to_minimize=False, ref_point=-50)
             ],
             trk_cfg=[
-                TrkCfg(label="Orbiting Time"),
+                TrkCfg(label="Orbiting Time Deviation"),
             ],
             lin_ineq_X_con_cfg=[
                 LinIneqXConCfg(idxs=[0, 1], coeff=[-1, -1], rhs=-150),
-                LinIneqXConCfg(idxs=[0, 1], coeff=[-1, -1], rhs=-self._t_r)
+                LinIneqXConCfg(idxs=[2, 3], coeff=[-1, -1], rhs=-self._t_d100)
             ],
+            ineq_Y_con_cfg=[
+                IneqYConCfg(f=LowerBound(threshold=self._orbiting_target - self._delta, index=-1)),
+                IneqYConCfg(f=UpperBound(threshold=self._orbiting_target + self._delta, index=-1))
+            ]
         )

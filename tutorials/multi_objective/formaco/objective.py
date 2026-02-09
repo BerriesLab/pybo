@@ -18,8 +18,8 @@ class FormACO(MCMultiObjectiveBase):
 
     Reference point:
         - Machining Time: 300 min
-        - Electrode Wear: 150 um
-        - Orbiting Penalty Time: -50 min
+        - Tool Wear: 150 um
+        - Orbiting Penalty Time: 50 min
     """
 
     _t_on = 78  # us

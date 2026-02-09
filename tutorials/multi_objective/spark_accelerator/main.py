@@ -37,7 +37,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     # sampler = LatinHypercubeSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     X = sampler.draw_samples(n=20)
-    Y_obj = ...  # requiredìs measurement
+    Y_obj = ...  # requires measurement
     Y_track = ...  # requires measurement
 
     """ Instantiate Bayesian optimizer """
