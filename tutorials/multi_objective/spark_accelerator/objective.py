@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from constraints.output_constraints import Identity
+from constraints.output_constraints import Identity, UpperBound
 from objectives.base_class import MCMultiObjectiveBase
 from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg, TrkCfg, IneqYConCfg
 
@@ -55,17 +55,18 @@ class SparkAcceleratorConstrained(MCMultiObjectiveBase):
                 LinIneqXConCfg(idxs=[2, 3], coeff=[-1, -1], rhs=-self._t_r)
             ],
             ineq_Y_con_cfg=[
-                IneqYConCfg(label="Orbiting Time Deviation (min)", f=Identity(index=-1))
+                IneqYConCfg(label="Orbiting Time Deviation (min)", f=LowerBound(threshold=40 - self._delta, index=-1)),
+                IneqYConCfg(label="Orbiting Time Deviation (min)", f=UpperBound(threshold=40 + self._delta, index=-1))
             ]
         )
 
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
-        machining_time = self._machining_time(X=X)
-        electrode_wear = self._electrode_wear(X=X)
-        return torch.stack([machining_time, electrode_wear], dim=-1)
+    # def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
+    #     machining_time = self._machining_time(X=X)
+    #     electrode_wear = self._electrode_wear(X=X)
+    #     return torch.stack([machining_time, electrode_wear], dim=-1)
 
-    def evaluate_tracker(self, X: Tensor) -> Tensor:
-        return self._orbiting_time(X=X).unsqueeze(dim=-1)
+    # def evaluate_tracker(self, X: Tensor) -> Tensor:
+    #     return self._orbiting_time(X=X).unsqueeze(dim=-1)
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
         """
