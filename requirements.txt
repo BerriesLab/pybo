@@ -7,3 +7,5 @@ scikit-learn~=1.6.1
 gpytorch~=1.14
 torch~=2.8.0
 sympy~=1.14.0
+ImageIO~=2.37.2
+pandas~=2.3.3

@@ -4,7 +4,7 @@ import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics

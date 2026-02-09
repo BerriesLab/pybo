@@ -2,34 +2,31 @@ import copy
 import inspect
 import pickle
 import warnings
-from typing import Union, Type
 import torch
 import datetime
 import time
 import glob
 import os
-import pandas as pd
-from pathlib import Path
-
-from botorch.acquisition.multi_objective.parego import qLogNParEGO
-from tabulate import tabulate
 import botorch
 import gpytorch
+import pandas as pd
+from pathlib import Path
+from typing import Union, Type
 from gpytorch.kernels import Kernel
-
+from gpytorch.constraints import GreaterThan
+from gpytorch.mlls import SumMarginalLogLikelihood
+from botorch.optim import optimize_acqf
 from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import SobolQMCNormalSampler, MCSampler
 from botorch.utils.multi_objective import is_non_dominated, Hypervolume
 from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
-from botorch.optim import optimize_acqf
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
-from gpytorch.constraints import GreaterThan
+from botorch.acquisition.multi_objective.parego import qLogNParEGO
 from objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
 from samplers.samplers import SamplerBase, SobolSampler
-from gpytorch.mlls import SumMarginalLogLikelihood
 
 
 class BayesianOptimizer:
@@ -50,8 +47,8 @@ class BayesianOptimizer:
             Y_obj_var: torch.Tensor | None = None,
             Y_con: torch.Tensor | None = None,
             Y_con_var: torch.Tensor | None = None,
-            Y_track: torch.Tensor | None = None,
-            Y_track_var: torch.Tensor | None = None,
+            Y_trk: torch.Tensor | None = None,
+            Y_trk_var: torch.Tensor | None = None,
             acqf: Type[AcquisitionFunction] | None = None,
             kernel: Kernel | None = None,
             batch_size: int = 1,
@@ -81,9 +78,11 @@ class BayesianOptimizer:
 
         # For single-objective
         self._best_f: torch.Tensor | None = None
+        self._best_f_mask: torch.Tensor | None = None
         self._best_feasible_Y: torch.Tensor | None = None
         self._best_feasible_X: torch.Tensor | None = None
         # For multi-objective
+        self._pareto_front_mask: torch.Tensor | None = None
         self._feasible_pareto_front_Y: torch.Tensor | None = None
         self._feasible_pareto_front_X: torch.Tensor | None = None
 
@@ -97,8 +96,8 @@ class BayesianOptimizer:
         self._Y_obj_var: torch.Tensor = Y_obj_var
         self._Y_con: torch.Tensor = Y_con
         self._Y_con_var: torch.Tensor = Y_con_var
-        self._Y_track: torch.Tensor = Y_track
-        self._Y_track_var: torch.Tensor = Y_track_var
+        self._Y_trk: torch.Tensor = Y_trk
+        self._Y_trk_var: torch.Tensor = Y_trk_var
 
         # === Optimization attributes ===
         self._acqf = acqf
@@ -223,12 +222,12 @@ class BayesianOptimizer:
         return self._Y_con_var
 
     @property
-    def Y_track(self) -> torch.Tensor | None:
-        return self._Y_track
+    def Y_trk(self) -> torch.Tensor | None:
+        return self._Y_trk
 
     @property
-    def Y_track_var(self) -> torch.Tensor | None:
-        return self._Y_track_var
+    def Y_trk_var(self) -> torch.Tensor | None:
+        return self._Y_trk_var
 
     @property
     def acqf(self) -> Type[AcquisitionFunction]:
@@ -310,17 +309,17 @@ class BayesianOptimizer:
             raise ValueError("Y_con_var must have the same number of ineq_Y_con_cfg as objective.")
         self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
 
-    @Y_track.setter
-    def Y_track(self, Y_track: torch.Tensor | None):
+    @Y_trk.setter
+    def Y_trk(self, Y_track: torch.Tensor | None):
         if not isinstance(Y_track, torch.Tensor | None):
             raise ValueError("Y_trk must be of type torch.Tensor or None.")
-        self._Y_track = Y_track
+        self._Y_trk = Y_track
 
-    @Y_track_var.setter
-    def Y_track_var(self, Y_track_var: torch.Tensor | None):
+    @Y_trk_var.setter
+    def Y_trk_var(self, Y_track_var: torch.Tensor | None):
         if not isinstance(Y_track_var, torch.Tensor | None):
-            raise ValueError("Y_track_var must be of type torch.Tensor or None.")
-        self._Y_track_var = Y_track_var
+            raise ValueError("Y_trk_var must be of type torch.Tensor or None.")
+        self._Y_trk_var = Y_track_var
 
     @acqf.setter
     def acqf(self, af_type):
@@ -373,7 +372,10 @@ class BayesianOptimizer:
             raise ValueError("num_raw_samples must be of type int")
         self._num_raw_samples = raw_samples
 
-    # === STATE properties ===
+    """ ============================ """
+    """ ===== STATE PROPERTIES ===== """
+    """ ============================ """
+
     @property
     def model(self) -> SingleTaskGP | ModelListGP | None:
         if self._model is None:
@@ -405,10 +407,16 @@ class BayesianOptimizer:
         return self._partitioning
 
     @property
-    def pareto_front(self) -> torch.Tensor | None:
-        if self._pareto_front is None:
+    def pareto_front_mask(self) -> torch.Tensor | None:
+        if self._pareto_front_mask is None:
             print("A pareto front has not been computed yet.")
-        return self._pareto_front
+        return self._pareto_front_mask
+
+    @property
+    def best_f_mask(self) -> torch.Tensor | None:
+        if self._best_f_mask is None:
+            print("A best f mask has not been computed yet.")
+        return self._best_f_mask
 
     @property
     def new_X(self) -> torch.Tensor | None:
@@ -706,7 +714,7 @@ class BayesianOptimizer:
         if verbose:
             print("Computing best feasible... ", end="")
 
-        feasible_X, feasible_Y = self.compute_feasible_XY(verbose=False)
+        feasible_X, feasible_Y = self._compute_feasible_XY(verbose=False)
 
         if feasible_X is not None:
             feasible_Y_max = feasible_Y.clone()
@@ -716,6 +724,9 @@ class BayesianOptimizer:
             self._best_feasible_X = feasible_X[best_idx]
             self._best_feasible_Y = feasible_Y[best_idx]
             self._best_f = feasible_Y_max[best_idx]
+            best_f_mask = torch.zeros_like(self._feasible_mask, dtype=torch.bool)
+            best_f_mask[best_idx] = True
+            self._best_f_mask = best_f_mask.unsqueeze(-1)
 
             if verbose:
                 self._print_success(msg=f"({self._best_feasible_Y.item():.4f} in max. space)")
@@ -725,6 +736,7 @@ class BayesianOptimizer:
             self._best_feasible_X = None
             self._best_f = -float("inf")
             self._best_values.append(None)
+            self._best_f_mask = torch.zeros_like(self._feasible_mask, dtype=torch.bool).unsqueeze(-1)
 
             if verbose:
                 self._print_failed(msg="(no feasible points)")
@@ -771,9 +783,11 @@ class BayesianOptimizer:
         if self._feasible_mask.any():
             feasible_pareto_mask = torch.zeros_like(self._feasible_mask)
             feasible_pareto_mask[self._feasible_mask] = is_non_dominated(Y_obj_maximized[self._feasible_mask])
+            self._pareto_front_mask = feasible_pareto_mask.unsqueeze(-1)
             self._feasible_pareto_front_X = self.X[feasible_pareto_mask]
             self._feasible_pareto_front_Y = self._Y_obj[feasible_pareto_mask]
         else:
+            self._pareto_front_mask = torch.zeros_like(self._feasible_mask).unsqueeze(-1)
             self._feasible_pareto_front_X = None
             self._feasible_pareto_front_Y = None
 
@@ -856,7 +870,7 @@ class BayesianOptimizer:
         if verbose:
             self._print_success()
 
-    def compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
+    def _compute_feasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
         """ Computes feasible X and Y """
 
         if verbose:
@@ -880,7 +894,7 @@ class BayesianOptimizer:
 
         return feasible_X, feasible_Y
 
-    def compute_infeasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
+    def _compute_infeasible_XY(self, verbose=False) -> (torch.Tensor, torch.Tensor):
         """ Computes infeasible X and Y. This method assumes maximization,
         therefore, the Y must be cast into a maximization problem. """
 
@@ -1001,7 +1015,7 @@ class BayesianOptimizer:
         sampler = SobolSampler(device=self._device, dtype=self._dtype, objective=self.objective)
 
         # 1. Collect previous observations
-        X_feas, Y_feas = self.compute_feasible_XY()
+        X_feas, Y_feas = self._compute_feasible_XY()
         Y = Y_feas.clone()
         X = X_feas.clone()
 
@@ -1075,11 +1089,11 @@ class BayesianOptimizer:
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_trk: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
                   new_Y_con: torch.Tensor | None = None, new_Y_con_var=None,
-                  new_Y_track_var: torch.Tensor | None = None) -> None:
+                  new_Y_trk_var: torch.Tensor | None = None) -> None:
         self.update_X(new_X)
         self.update_Y_obj(new_Y_obj, new_Y_obj_var)
         self.update_Y_con(new_Y_con, new_Y_con_var)
-        self.update_Y_track(new_Y_trk, new_Y_track_var)
+        self.update_Y_trk(new_Y_trk, new_Y_trk_var)
 
     def update_X(self, new_X: torch.Tensor):
         if new_X is not None:
@@ -1102,27 +1116,82 @@ class BayesianOptimizer:
             new_Y_con_var = new_Y_con_var.to(self._device, self._dtype)
             self._Y_con_var = torch.cat([self._Y_con_var, new_Y_con_var], dim=0)
 
-    def update_Y_track(self, new_Y_track: torch.Tensor, new_Y_track_var: torch.Tensor or None = None):
+    def update_Y_trk(self, new_Y_track: torch.Tensor, new_Y_track_var: torch.Tensor or None = None):
         if new_Y_track is not None:
             new_Y_track = new_Y_track.to(self._device, self._dtype)
-            self._Y_track = torch.cat([self._Y_track, new_Y_track], dim=0)
+            self._Y_trk = torch.cat([self._Y_trk, new_Y_track], dim=0)
         if new_Y_track_var is not None:
             new_Y_track_var = new_Y_track_var.to(self._device, self._dtype)
-            self._Y_track_var = torch.cat([self._Y_track_var, new_Y_track_var], dim=0)
+            self._Y_trk_var = torch.cat([self._Y_trk_var, new_Y_track_var], dim=0)
 
     """ =============== """
     """ ===== I/O ===== """
     """ =============== """
 
-    def to_file(self, output_path: Path or str = None):
-        if output_path is None:
-            output_path = Path.cwd() / "bayesian_optimizer.dat"
-        path_obj = Path(output_path)
-        path_obj.parent.mkdir(parents=True, exist_ok=True)
+    def to_file(self, filepath: Path or str = None):
+        filepath = Path(filepath or "data.dat")
+        stem = filepath.stem
+        suffix = filepath.suffix
+        save_path = Path.cwd() / filepath.parent / f"{stem}_000{suffix}"
 
-        with open(output_path, "wb") as file:
+        i = 0
+        while save_path.exists():
+            i += 1
+            save_path = Path.cwd() / filepath.parent / f"{stem}_{i:03d}{suffix}"
+
+        with open(save_path, "wb") as file:
             pickle.dump(self, file)  # type: ignore
-        return output_path
+
+    def to_csv(self, filepath: str | None = None, verbose=True):
+        if verbose:
+            print("Saving optimizer to CSV... ", end="")
+
+        data = torch.cat((self.X, self.Y_obj), dim=1)
+        cols = []
+        cols.extend([x.label for x in self.objective.par_cfg])
+        cols.extend([x.label for x in self.objective.obj_cfg])
+
+        if self.Y_obj_var is not None:
+            cols.extend([x.label.lower() + " var" for x in self.objective.obj_cfg])
+            data = torch.cat((data, self.Y_obj_var), dim=1)
+        if self.Y_con is not None:
+            cols.extend([x.label.lower() for x in self.objective.ineq_Y_con_cfg])
+            data = torch.cat((data, self.Y_con), dim=1)
+        if self.Y_con_var is not None:
+            cols.extend([x.label.lower() + " var" for x in self.objective.ineq_Y_con_cfg])
+            data = torch.cat((data, self.Y_con_var), dim=1)
+        if self.Y_trk is not None:
+            cols.extend([x.label.lower() for x in self.objective.trk_cfg])
+            data = torch.cat((data, self.Y_trk), dim=1)
+        if self.Y_trk_var is not None:
+            cols.extend([x.label.lower() + " var" for x in self.objective.trk_cfg])
+            data = torch.cat((data, self.Y_trk_var), dim=1)
+        if self.feasible_mask is not None:
+            cols.append("feasible")
+            data = torch.cat((data, self.feasible_mask.unsqueeze(-1)), dim=1)
+        if self.pareto_front_mask is not None:
+            cols.append("pareto front")
+            data = torch.cat((data, self.pareto_front_mask), dim=1)
+        if self.best_f_mask is not None:
+            cols.append("best value")
+            data = torch.cat((data, self.best_f_mask), dim=1)
+
+        df = pd.DataFrame(data.detach().cpu().numpy(), columns=cols)
+
+        filepath = Path(filepath or "data.csv")
+        stem = filepath.stem
+        suffix = filepath.suffix
+        save_path = Path.cwd() / filepath.parent / f"{stem}_000{suffix}"
+
+        i = 0
+        while save_path.exists():
+            i += 1
+            save_path = Path.cwd() / filepath.parent / f"{stem}_{i:03d}{suffix}"
+
+        df.to_csv(save_path, index=False)
+
+        if verbose:
+            self._print_success()
 
     @classmethod
     def from_file(cls, filepath: str | Path = None):

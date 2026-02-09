@@ -7,8 +7,8 @@ class UpperBound:
         self.index = index
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        # c(x) = samples[..., index] <= threshold
-        return samples[..., self.index] - self.threshold
+        # Returns 0 if under threshold, and the distance if over
+        return torch.relu(samples[..., self.index] - self.threshold)
 
 
 class LowerBound:
@@ -17,8 +17,8 @@ class LowerBound:
         self.index = index
 
     def __call__(self, samples: torch.Tensor) -> torch.Tensor:
-        # c(x) = threshold <= samples[..., index]
-        return self.threshold - samples[..., self.index]
+        # Returns 0 if over threshold, and the distance if under
+        return torch.relu(self.threshold - samples[..., self.index])
 
 
 class Identity:

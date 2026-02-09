@@ -1,8 +1,9 @@
 import os
 from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from tutorials.multi_objective.formaco.objective import FormACOConstrained
+from tutorials.multi_objective.formaco_constrained.objective import FormACOConstrained
 from plotters.experiment import *
 from plotters.acqf import *
 from plotters.metrics import *
@@ -23,15 +24,17 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     """ Instantiate kernel """
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
-            ard_num_dims=objective.num_par
-        )
+            ard_num_dims=objective.num_par,
+            lengthscale_constraint=Interval(1e-3, 1e0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e1),
     )
 
     """ Generate initial dataset """
     sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
     X = sampler.draw_samples(n=2 * (objective.dim + 1))
     Y_obj = objective.evaluate_true_objective(X=X)
-    Y_track = objective.evaluate_tracker(X=X)
+    Y_trk = objective.evaluate_tracker(X=X)
     Y_con = objective.evaluate_true_constraint(X=X)
 
     """ Instantiate Bayesian optimizer """
@@ -46,7 +49,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         Y_obj_var=None,
         Y_con=Y_con,
         Y_con_var=None,
-        Y_track=Y_track,
+        Y_trk=Y_trk,
         batch_size=q,
     )
 
@@ -60,6 +63,8 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
 
         """ Optimize and get new X """
         bo.optimize()
+        bo.to_csv()
+        bo.to_file()
 
         """ Plot """
         ParetoFront2DPlotter(
@@ -95,4 +100,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_samples=64, q=batch_size, output_dir=main_path)

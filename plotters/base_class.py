@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Tuple
 import matplotlib
 import torch
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from matplotlib import pyplot as plt
 
 matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show().

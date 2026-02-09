@@ -53,7 +53,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         Y_obj_var=None,
         Y_con=Y_con,
         Y_con_var=None,
-        Y_track=Y_track,
+        Y_trk=Y_track,
         batch_size=q,
     )
 

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from typing import cast
 from matplotlib import pyplot as plt
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from objectives.variable_registry import ParCfg
 from plotters.base_class import PlotterBase
 from plotters.styles import *
@@ -48,7 +48,7 @@ class EvolutionPlotter(PlotterBase):
             "par": self.bo.X,
             "obj": self.bo.Y_obj,
             "con": self.bo.Y_con,
-            "trk": self.bo.Y_track
+            "trk": self.bo.Y_trk
         }
         tensor = mapping.get(category)
         if tensor is None:

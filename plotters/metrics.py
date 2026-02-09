@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from plotters.base_class import PlotterBase
 from plotters.styles import *

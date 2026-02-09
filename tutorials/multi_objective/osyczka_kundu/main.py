@@ -5,7 +5,7 @@ from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from tutorials.multi_objective.osyczka_kundu.objective import OsyczkaKundu
 from samplers.samplers import SamplerBase
 from utils.helpers import create_experiment_directory

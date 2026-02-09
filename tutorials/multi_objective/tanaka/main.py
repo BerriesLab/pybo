@@ -5,7 +5,7 @@ from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics
@@ -100,6 +100,6 @@ if __name__ == "__main__":
     main_path = Path.cwd() / "data" / date_time
     main_path.mkdir(parents=True, exist_ok=True)
 
-    batch_sizes = [1]
+    batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_samples=128, q=batch_size, output_dir=main_path)

@@ -9,7 +9,7 @@ from pathlib import Path
 from matplotlib.colors import LogNorm
 from sympy import false
 
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from objectives.variable_registry import *
 from plotters.base_class import PlotterBase
 from plotters.styles import *
@@ -221,7 +221,7 @@ class Experiment1DPlotter(PlotterBase):
         if self.bo.X is None: return self
 
         X, Y_obj = self.bo.X, self.bo.Y_obj
-        Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
+        Y_con, Y_track = self.bo.Y_con, self.bo.Y_trk
 
         x_obs = self._get_data(self.x_cfg, X, Y_obj, Y_con, Y_track)
         y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
@@ -444,7 +444,7 @@ class Experiment2DPlotter(PlotterBase):
         if self.bo.X is None: return self
 
         X, Y_obj = self.bo.X, self.bo.Y_obj
-        Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
+        Y_con, Y_track = self.bo.Y_con, self.bo.Y_trk
 
         x_obs = self._get_data(self.x_cfg, X, Y_obj, Y_con, Y_track)
         y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)
@@ -765,7 +765,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
     def plot_observations(self, zorder=4):
         X, Y_obj = self.bo.X, self.bo.Y_obj
-        Y_con, Y_track = self.bo.Y_con, self.bo.Y_track
+        Y_con, Y_track = self.bo.Y_con, self.bo.Y_trk
 
         x_obs = self._get_data(self.x_cfg, X, Y_obj, Y_con, Y_track)
         y_obs = self._get_data(self.y_cfg, X, Y_obj, Y_con, Y_track)

@@ -5,7 +5,7 @@ from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel
-from bayesian_optimizer.optimizer import BayesianOptimizer
+from optimizer.optimizer import BayesianOptimizer
 from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics
@@ -30,7 +30,7 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
             ard_num_dims=objective.dim,
             lengthscale_constraint=Interval(1e-4, 1),
         ),
-        outputscale_constraint=Interval(1e-4, 1e1),
+        outputscale_constraint=Interval(1e-4, 1e2),
     )
 
     """ Generate initial dataset """
