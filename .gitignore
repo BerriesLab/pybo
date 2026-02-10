@@ -16,3 +16,6 @@ env/
 /tutorials/multi_objective/formaco_constrained/
 /tutorials/multi_objective/spark_accelerator/
 /tutorials/multi_objective/spark_accelerator_constrained/
+
+__pycache__/
+*.py[cod]
