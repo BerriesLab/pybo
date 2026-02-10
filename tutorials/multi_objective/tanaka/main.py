@@ -10,10 +10,6 @@ from plotters.experiment import ParetoFront2DPlotter
 from samplers.samplers import SobolSampler
 from plotters.metrics import plot_and_save_metrics
 from plotters.evolution import plot_and_save_evolutions
-from tutorials.multi_objective.c2dtlz2.objective import C2DTLZ2
-
-import matplotlib.pyplot as plt
-
 from tutorials.multi_objective.tanaka.objective import Tanaka
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
