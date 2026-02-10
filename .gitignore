@@ -12,3 +12,7 @@ env/
 # Data
 /dist/
 /tutorials/**/**/data/
+/tutorials/multi_objective/formaco/
+/tutorials/multi_objective/formaco_constrained/
+/tutorials/multi_objective/spark_accelerator/
+/tutorials/multi_objective/spark_accelerator_constrained/

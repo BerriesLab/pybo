@@ -64,7 +64,6 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
         """ Optimize and get new X """
         bo.optimize()
         bo.to_csv()
-        bo.to_file()
 
         """ Plot """
         ParetoFront2DPlotter(

@@ -9,7 +9,7 @@ class FormACO(MCMultiObjectiveBase):
     3x objectives:
         - Machining Time: Originally intended for minimization.
         - Tool Wear: Originally intended for minimization.
-        - Orbiting Time Penalty: Requires values > 40 mins -> intended for maximization.
+        - Orbiting Time Penalty: Intended for mininization.
 
     3x parameters:
         - Maximum Current [7.5, 15]

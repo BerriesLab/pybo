@@ -160,6 +160,6 @@ class FormACOConstrained(MCMultiObjectiveBase):
         40 min - delta <= orbiting_time <= 40 min + delta
         """
         Y = self._orbiting_time(X=X).unsqueeze(dim=-1)
-        lb = LowerBound(threshold=40 - self._delta, index=-1)(Y).unsqueeze(dim=-1)
-        ub = UpperBound(threshold=40 + self._delta, index=-1)(Y).unsqueeze(dim=-1)
+        lb = LowerBound(threshold=self._orbiting_target - self._delta, index=-1)(Y).unsqueeze(dim=-1)
+        ub = UpperBound(threshold=self._orbiting_target + self._delta, index=-1)(Y).unsqueeze(dim=-1)
         return lb + ub

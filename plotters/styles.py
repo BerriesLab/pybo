@@ -13,66 +13,6 @@ S_GT = ms_gt ** 2
 EDGE_DARK = C_GT
 EDGE_LIGHT = "white"
 
-# feasible_pareto_objectives_kwargs = {
-#     'color': 'tab:orange',
-#     'marker': 'D',
-#     's': ms ** 2,
-#     'edgecolors': 'black',
-#     'alpha': 0.7,
-#     'label': 'Pareto Obs.'
-# }
-# feasible_non_pareto_objectives_kwargs = {
-#     'color': "tab:green",
-#     'marker': "o",
-#     's': ms ** 2,
-#     "alpha": 0.7,
-#     "edgecolors": "black",
-#     'label': 'Non-Pareto Obs.'
-# }
-# infeasible_objectives_kwargs = {
-#     'color': "tab:red",
-#     'marker': "x",
-#     's': ms ** 2,
-#     "alpha": 0.7,
-#     'label': 'Inf. Obs.'
-# }
-# ref_point_kwargs = {
-#     'color': 'tab:red',
-#     "edgecolors": "black",
-#     'marker': 's',
-#     's': ms ** 2,
-#     'alpha': 0.7,
-#     'label': 'Ref. Point'
-# }
-# feasible_pareto_ground_truth_kwargs = {
-#     'color': "black",
-#     'marker': "D",
-#     's': ms ** 2 / 5,
-#     "alpha": 1,
-#     'label': 'Pareto GT'
-# }
-# feasible_non_pareto_ground_truth_kwargs = {
-#     'color': "black",
-#     'marker': "o",
-#     's': ms ** 2 / 5,
-#     "alpha": 0.1,
-#     'label': 'Non-Pareto GT'
-# }
-# infeasible_ground_truth_kwargs = {
-#     'color': "red",
-#     'marker': "x",
-#     's': ms ** 2 / 5,
-#     "alpha": 0.1,
-#     'label': 'Inf. GT'
-# }
-# posterior_pareto_kwargs = {
-#     'fmt': 'o',
-#     'edgecolors': 'tab:blue',
-#     'alpha': 0.3,
-#     'label': r'Post. $\mu \pm 3 \sigma$',
-#     'capsize': 3,
-# }
-
 evolution_scatter = {
     'marker': 'o',
     's': ms ** 2,
@@ -244,3 +184,64 @@ experiment_contour_gnd_truth_infeasible = {
     "colors": ['red'],
     "alpha": 0.3,  # Transparency for the "shaded" look
 }
+
+# Old styles
+# feasible_pareto_objectives_kwargs = {
+#     'color': 'tab:orange',
+#     'marker': 'D',
+#     's': ms ** 2,
+#     'edgecolors': 'black',
+#     'alpha': 0.7,
+#     'label': 'Pareto Obs.'
+# }
+# feasible_non_pareto_objectives_kwargs = {
+#     'color': "tab:green",
+#     'marker': "o",
+#     's': ms ** 2,
+#     "alpha": 0.7,
+#     "edgecolors": "black",
+#     'label': 'Non-Pareto Obs.'
+# }
+# infeasible_objectives_kwargs = {
+#     'color': "tab:red",
+#     'marker': "x",
+#     's': ms ** 2,
+#     "alpha": 0.7,
+#     'label': 'Inf. Obs.'
+# }
+# ref_point_kwargs = {
+#     'color': 'tab:red',
+#     "edgecolors": "black",
+#     'marker': 's',
+#     's': ms ** 2,
+#     'alpha': 0.7,
+#     'label': 'Ref. Point'
+# }
+# feasible_pareto_ground_truth_kwargs = {
+#     'color': "black",
+#     'marker': "D",
+#     's': ms ** 2 / 5,
+#     "alpha": 1,
+#     'label': 'Pareto GT'
+# }
+# feasible_non_pareto_ground_truth_kwargs = {
+#     'color': "black",
+#     'marker': "o",
+#     's': ms ** 2 / 5,
+#     "alpha": 0.1,
+#     'label': 'Non-Pareto GT'
+# }
+# infeasible_ground_truth_kwargs = {
+#     'color': "red",
+#     'marker': "x",
+#     's': ms ** 2 / 5,
+#     "alpha": 0.1,
+#     'label': 'Inf. GT'
+# }
+# posterior_pareto_kwargs = {
+#     'fmt': 'o',
+#     'edgecolors': 'tab:blue',
+#     'alpha': 0.3,
+#     'label': r'Post. $\mu \pm 3 \sigma$',
+#     'capsize': 3,
+# }
