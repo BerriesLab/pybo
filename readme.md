@@ -1,5 +1,7 @@
 # pyBO — A Python Library for Bayesian Optimization
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17610683.svg)](https://doi.org/10.5281/zenodo.17610683)
+
 `pyBO` is a Python library for Bayesian Optimization of single and multi
 objective problems. Built on top of BoTorch and using Gaussian Processes as
 surrogate models, it provides a user-friendly framework for optimizing single
