@@ -18,7 +18,7 @@ and multiple competing objectives, finding optimal or pareto-optimal solutions.
 
 ## Key Features
 
-Version 0.3 currently supports:
+Version 0.2.0 currently supports:
 
 - Single-objective optimization problems for vector-valued
   functions $\mathbf{f}_0: \mathbb{R}^n \to \mathbb{R}^1$.
@@ -48,7 +48,7 @@ Currently, the package is only available for local installation.
    `python -m pip install --upgrade build setuptools wheel`
 3. Build the package: <br>`python -m build`
 4. Install the package locally: <br>
-   `pip install dist/pyBO-0.1.0-py3-none-any.whl` <br> (Replace
+   `pip install dist/pyBO-0.3.0-py3-none-any.whl` <br> (Replace
    pyBO-0.1.0-py3-none-any.whl with the actual filename in your dist/ folder)
 
 ## Experimental workflow

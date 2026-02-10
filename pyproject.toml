@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyBO"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Python library for Multi-Objective Bayesian Optimization"
 readme = "readme.md"
 requires-python = ">=3.9"
@@ -21,7 +21,8 @@ dependencies = [
     "scikit-learn >= 1.6.0",
     "gpytorch == 1.14",
     "torch == 2.8.0",
-    "sympy == 1.14.0"
+    "sympy == 1.14.0",
+    "pandas~=2.3.3"
 ]
 
 [tool.setuptools.packages.find]

@@ -17,5 +17,9 @@ env/
 /tutorials/multi_objective/spark_accelerator/
 /tutorials/multi_objective/spark_accelerator_constrained/
 
+# macOS
+.DS_Store
+
+# Python bytecode
 __pycache__/
 *.py[cod]

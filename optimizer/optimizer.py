@@ -1146,11 +1146,13 @@ class BayesianOptimizer:
         if verbose:
             print("Saving optimizer to CSV... ", end="")
 
-        data = torch.cat((self.X, self.Y_obj), dim=1)
         cols = []
         cols.extend([x.label for x in self.objective.par_cfg])
-        cols.extend([x.label for x in self.objective.obj_cfg])
+        data = self.X
 
+        if self.Y_obj is not None:
+            cols.extend([x.label for x in self.objective.obj_cfg])
+            data = torch.cat((data, self.Y_obj), dim=1)
         if self.Y_obj_var is not None:
             cols.extend([x.label.lower() + " var" for x in self.objective.obj_cfg])
             data = torch.cat((data, self.Y_obj_var), dim=1)
