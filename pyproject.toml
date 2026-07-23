@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyBO"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python library for Multi-Objective Bayesian Optimization"
 readme = "readme.md"
 requires-python = ">=3.9"
@@ -25,5 +25,5 @@ dependencies = [
     "pandas~=2.3.3"
 ]
 
-[tool.setuptools.packages.find]
-where = ["acquisition_functions", "ineq_Y_con", "mobo", "objectives", "plotters", "samplers", "utils"]
+[tool.setuptools]
+packages = ["acqf", "constraints", "objectives", "optimizer", "plotters", "samplers", "utils"]
