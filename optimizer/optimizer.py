@@ -40,7 +40,7 @@ class BayesianOptimizer:
     def __init__(
             self,
             device: torch.device,
-            dtype: torch.device.type,
+            dtype: torch.dtype,
             objective: MCSingleObjectiveBase | MCMultiObjectiveBase,
             X: torch.Tensor | None = None,
             Y_obj: torch.Tensor | None = None,
@@ -514,7 +514,7 @@ class BayesianOptimizer:
         self._fit_model(verbose=verbose)
 
         # === 3. Acquisition Strategy ===
-        # Initialise and optimize the acquisition function
+        # Initialize and optimize the acquisition function
         self._initialize_acquisition_function(verbose=verbose)
         self._optimize_acquisition_function(verbose=verbose)
 

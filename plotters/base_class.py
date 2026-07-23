@@ -40,12 +40,13 @@ class PlotterBase:
         """Generate a uniform dense grid over the input bounds for plotting."""
         bounds = self.bo.objective.bounds
         device = self.bo.device
+        dtype = self.bo.dtype
         d = self.bo.objective.dim
 
         # Create linspaces for each dimension
         linspaces = []
         for i in range(d):
-            linspace = torch.linspace(bounds[0, i], bounds[1, i], self.n_grid_points, device=device)
+            linspace = torch.linspace(bounds[0, i], bounds[1, i], self.n_grid_points, device=device, dtype=dtype)
             linspaces.append(linspace)
 
         if d == 1:
