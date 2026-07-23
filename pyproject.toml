@@ -26,5 +26,10 @@ dependencies = [
     "imageio >= 2.37"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8.0",
+]
+
 [tool.setuptools]
 packages = ["acqf", "constraints", "objectives", "optimizer", "plotters", "samplers", "utils"]

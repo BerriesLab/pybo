@@ -1,0 +1,95 @@
+import torch
+import pytest
+from optimizer.optimizer import BayesianOptimizer
+from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from objectives.variable_registry import ParCfg, ObjCfg
+
+DEVICE = torch.device("cpu")
+DTYPE = torch.float64
+
+
+class SingleMin(MCSingleObjectiveBase):
+    def __init__(self):
+        super().__init__(
+            device=DEVICE,
+            dtype=DTYPE,
+            par_cfg=[ParCfg(bounds=(-1.0, 5.0))],
+            obj_cfg=[ObjCfg(bounds=(0.0, 9.0), to_minimize=True, ref_point=10.0)],
+        )
+
+    def evaluate_true_objective(self, X):
+        return (X - 2).pow(2)
+
+
+class TwoMin(MCMultiObjectiveBase):
+    def __init__(self):
+        super().__init__(
+            device=DEVICE,
+            dtype=DTYPE,
+            par_cfg=[ParCfg(bounds=(0.0, 1.0)), ParCfg(bounds=(0.0, 1.0))],
+            obj_cfg=[
+                ObjCfg(label="a", bounds=(0.0, 10.0), to_minimize=True, ref_point=6.0),
+                ObjCfg(label="b", bounds=(0.0, 10.0), to_minimize=True, ref_point=6.0),
+            ],
+        )
+
+    def evaluate_true_objective(self, X):
+        return X.clone()
+
+
+def test_feasible_mask_all_feasible_without_constraints():
+    obj = SingleMin()
+    X = torch.tensor([[0.0], [2.0], [4.0]], dtype=DTYPE)
+    Y = obj.evaluate_true_objective(X)
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    bo._compute_feasible_mask(verbose=False)
+    assert bo.feasible_mask.tolist() == [True, True, True]
+
+
+def test_best_f_picks_feasible_minimum():
+    obj = SingleMin()
+    X = torch.tensor([[0.0], [2.0], [4.0]], dtype=DTYPE)
+    Y = torch.tensor([[4.0], [1.0], [9.0]], dtype=DTYPE)  # minimum at index 1
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    bo._compute_feasible_mask(verbose=False)
+    bo._compute_acquisition_function_reference(verbose=False)
+    assert bo.best_feasible_Y.item() == 1.0
+    assert bo.best_feasible_X.tolist() == [2.0]
+    # best_f is stored in maximization space, i.e. negated for a minimization objective
+    assert bo.best_f.item() == -1.0
+
+
+def test_reference_point_negated_to_max_space():
+    obj = TwoMin()
+    X = torch.rand(5, 2, dtype=DTYPE)
+    Y = obj.evaluate_true_objective(X)
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    bo._compute_feasible_mask(verbose=False)
+    bo._compute_acquisition_function_reference(verbose=False)
+    assert bo.ref_point.tolist() == [-6.0, -6.0]
+
+
+def test_pareto_front_excludes_dominated_point():
+    obj = TwoMin()
+    X = torch.tensor([[0.1, 0.1], [0.2, 0.2], [0.3, 0.3], [0.4, 0.4]], dtype=DTYPE)
+    # Minimization objectives: [5,5] is dominated by [2,2]; the other three are not dominated.
+    Y = torch.tensor([[1.0, 4.0], [4.0, 1.0], [2.0, 2.0], [5.0, 5.0]], dtype=DTYPE)
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    bo._compute_feasible_mask(verbose=False)
+    bo._compute_acquisition_function_reference(verbose=False)
+    front = bo.feasible_pareto_front_Y
+    assert front.shape[0] == 3
+    assert [5.0, 5.0] not in front.tolist()
+
+
+def test_Y_obj_setter_validates_objective_count():
+    obj = SingleMin()
+    X = torch.tensor([[0.0], [2.0]], dtype=DTYPE)
+    Y = torch.tensor([[4.0], [1.0]], dtype=DTYPE)
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    # Correct shape (last dim == num_objectives) is accepted via the public setter
+    bo.Y_obj = torch.tensor([[3.0], [2.0]], dtype=DTYPE)
+    assert bo.Y_obj.shape[-1] == 1
+    # Wrong number of objective columns is rejected
+    with pytest.raises(ValueError):
+        bo.Y_obj = torch.tensor([[3.0, 3.0], [2.0, 2.0]], dtype=DTYPE)
