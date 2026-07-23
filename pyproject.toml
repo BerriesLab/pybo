@@ -13,16 +13,17 @@ authors = [
     { name = "Davide Beretta", email = "mail.davide.beretta@gmail.com" }
 ]
 dependencies = [
-    "numpy >= 1.25",
+    "numpy >= 2.2",
     "botorch == 0.13.0",
-    "matplotlib >= 3.10.0",
-    "scipy >= 1.15.0",
-    "scikit-optimize >= 0.10.0",
-    "scikit-learn >= 1.6.0",
+    "matplotlib >= 3.10",
+    "scipy >= 1.15",
+    "scikit-optimize >= 0.10",
+    "scikit-learn >= 1.6",
     "gpytorch == 1.14",
     "torch == 2.8.0",
     "sympy == 1.14.0",
-    "pandas~=2.3.3"
+    "pandas >= 2.3",
+    "imageio >= 2.37"
 ]
 
 [tool.setuptools]
