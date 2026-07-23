@@ -12,10 +12,7 @@ env/
 # Data
 /dist/
 /tutorials/**/**/data/
-/tutorials/multi_objective/formaco/
-/tutorials/multi_objective/formaco_constrained/
-/tutorials/multi_objective/spark_accelerator/
-/tutorials/multi_objective/spark_accelerator_constrained/
+/tutorials/multi_objective/avagama/
 
 # macOS
 .DS_Store
@@ -23,3 +20,4 @@ env/
 # Python bytecode
 __pycache__/
 *.py[cod]
+/.claude/
