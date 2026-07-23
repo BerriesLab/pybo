@@ -1,10 +1,10 @@
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
-from optimizer.optimizer import BayesianOptimizer
-from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-from plotters.base_class import PlotterBase
-from plotters.styles import *
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.plotters.base_class import PlotterBase
+from pybo.plotters.styles import *
 
 
 def plot_and_save_metrics(bo: BayesianOptimizer):

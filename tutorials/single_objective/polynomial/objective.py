@@ -1,6 +1,6 @@
 import torch
-from objectives.base_class import MCSingleObjectiveBase
-from objectives.variable_registry import ParCfg, ObjCfg
+from pybo.objectives.base_class import MCSingleObjectiveBase
+from pybo.objectives.variable_registry import ParCfg, ObjCfg
 
 
 class Polynomial(MCSingleObjectiveBase):

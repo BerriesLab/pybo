@@ -1,8 +1,8 @@
 import torch
 import pytest
-from optimizer.optimizer import BayesianOptimizer
-from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-from objectives.variable_registry import ParCfg, ObjCfg
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.objectives.variable_registry import ParCfg, ObjCfg
 
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64

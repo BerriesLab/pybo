@@ -25,8 +25,8 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
 from botorch.acquisition.multi_objective.parego import qLogNParEGO
-from objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
-from samplers.samplers import SamplerBase, SobolSampler
+from pybo.objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.samplers.samplers import SamplerBase, SobolSampler
 
 
 class BayesianOptimizer:

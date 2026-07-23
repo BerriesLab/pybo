@@ -9,14 +9,14 @@ from pathlib import Path
 from matplotlib.colors import LogNorm
 from sympy import false
 
-from optimizer.optimizer import BayesianOptimizer
-from objectives.variable_registry import *
-from plotters.base_class import PlotterBase
-from plotters.styles import *
-from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.objectives.variable_registry import *
+from pybo.plotters.base_class import PlotterBase
+from pybo.plotters.styles import *
+from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
-from samplers.samplers import SobolSampler
-from utils.helpers import project_linear_equalities
+from pybo.samplers.samplers import SobolSampler
+from pybo.utils.helpers import project_linear_equalities
 
 AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 

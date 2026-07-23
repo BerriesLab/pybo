@@ -1,7 +1,7 @@
 import torch
-from objectives.base_class import MCSingleObjectiveBase
-from objectives.variable_registry import *
-from constraints.output_constraints import *
+from pybo.objectives.base_class import MCSingleObjectiveBase
+from pybo.objectives.variable_registry import *
+from pybo.constraints.output_constraints import *
 
 
 class PolynomialConstrained(MCSingleObjectiveBase):

@@ -2,8 +2,8 @@ from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
 from botorch.acquisition.objective import MCAcquisitionObjective
-from constraints.output_constraints import *
-from objectives.variable_registry import *
+from pybo.constraints.output_constraints import *
+from pybo.objectives.variable_registry import *
 
 
 class MCObjectiveBase(ABC):

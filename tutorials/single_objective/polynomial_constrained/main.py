@@ -3,12 +3,12 @@ from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
-from plotters.acqf import Acqf1DPlotter
+from pybo.plotters.acqf import Acqf1DPlotter
 from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
-from plotters.experiment import Experiment1DPlotter
-from samplers.samplers import *
-from plotters.evolution import *
-from plotters.metrics import *
+from pybo.plotters.experiment import Experiment1DPlotter
+from pybo.samplers.samplers import *
+from pybo.plotters.evolution import *
+from pybo.plotters.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64

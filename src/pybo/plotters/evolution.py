@@ -3,10 +3,10 @@ import torch
 import numpy as np
 from typing import cast
 from matplotlib import pyplot as plt
-from optimizer.optimizer import BayesianOptimizer
-from objectives.variable_registry import ParCfg
-from plotters.base_class import PlotterBase
-from plotters.styles import *
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.objectives.variable_registry import ParCfg
+from pybo.plotters.base_class import PlotterBase
+from pybo.plotters.styles import *
 
 
 def plot_and_save_evolutions(bo: BayesianOptimizer, ):

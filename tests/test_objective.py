@@ -1,7 +1,7 @@
 import torch
 import pytest
-from objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-from objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg
+from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg
 
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64

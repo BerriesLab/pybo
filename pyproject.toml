@@ -31,5 +31,5 @@ dev = [
     "pytest >= 8.0",
 ]
 
-[tool.setuptools]
-packages = ["acqf", "constraints", "objectives", "optimizer", "plotters", "samplers", "utils"]
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,6 +1,6 @@
 import torch
-from objectives.base_class import MCMultiObjectiveBase
-from objectives.variable_registry import ParCfg, ObjCfg, LinEqXConCfg
+from pybo.objectives.base_class import MCMultiObjectiveBase
+from pybo.objectives.variable_registry import ParCfg, ObjCfg, LinEqXConCfg
 
 
 class LinearEqualityTest(MCMultiObjectiveBase):

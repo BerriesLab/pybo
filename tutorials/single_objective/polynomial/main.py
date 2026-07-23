@@ -4,12 +4,12 @@ from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from tutorials.single_objective.polynomial.objective import Polynomial
-from plotters.acqf import Acqf1DPlotter
-from samplers.samplers import *
-from plotters.experiment import *
-from plotters.acqf import *
-from plotters.evolution import *
-from plotters.metrics import *
+from pybo.plotters.acqf import Acqf1DPlotter
+from pybo.samplers.samplers import *
+from pybo.plotters.experiment import *
+from pybo.plotters.acqf import *
+from pybo.plotters.evolution import *
+from pybo.plotters.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64

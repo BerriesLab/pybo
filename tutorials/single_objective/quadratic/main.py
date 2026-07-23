@@ -3,12 +3,12 @@ from datetime import datetime
 from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
-from plotters.metrics import *
+from pybo.plotters.metrics import *
 from tutorials.single_objective.quadratic.objective import Quadratic
-from plotters.acqf import Acqf1DPlotter
-from plotters.experiment import Experiment1DPlotter
-from samplers.samplers import *
-from plotters.evolution import *
+from pybo.plotters.acqf import Acqf1DPlotter
+from pybo.plotters.experiment import Experiment1DPlotter
+from pybo.samplers.samplers import *
+from pybo.plotters.evolution import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64

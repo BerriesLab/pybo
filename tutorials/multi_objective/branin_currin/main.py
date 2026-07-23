@@ -4,11 +4,11 @@ import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from optimizer.optimizer import BayesianOptimizer
-from plotters.experiment import ParetoFront2DPlotter
-from samplers.samplers import SobolSampler
-from plotters.metrics import plot_and_save_metrics
-from plotters.evolution import plot_and_save_evolutions
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.plotters.experiment import ParetoFront2DPlotter
+from pybo.samplers.samplers import SobolSampler
+from pybo.plotters.metrics import plot_and_save_metrics
+from pybo.plotters.evolution import plot_and_save_evolutions
 from tutorials.multi_objective.branin_currin.objective import BraninCurrin
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -4,8 +4,8 @@ from botorch.utils.transforms import unnormalize
 from abc import ABC, abstractmethod
 from scipy.stats.qmc import LatinHypercube
 from torch.quasirandom import SobolEngine
-from objectives.base_class import MCObjectiveBase
-from utils.helpers import project_linear_equalities
+from pybo.objectives.base_class import MCObjectiveBase
+from pybo.utils.helpers import project_linear_equalities
 
 
 class SamplerBase(ABC):

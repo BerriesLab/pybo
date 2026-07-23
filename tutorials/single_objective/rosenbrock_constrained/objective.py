@@ -1,6 +1,6 @@
 import torch
-from objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase
-from objectives.variable_registry import *
+from pybo.objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase
+from pybo.objectives.variable_registry import *
 
 
 class RosenbrockConstrained(MCSingleObjectiveBase):

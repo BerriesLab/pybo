@@ -1,9 +1,9 @@
 import torch
 import math
-from objectives.base_class import MCMultiObjectiveBase
+from pybo.objectives.base_class import MCMultiObjectiveBase
 from torch import Tensor
 
-from objectives.variable_registry import *
+from pybo.objectives.variable_registry import *
 
 
 class BraninCurrin(MCMultiObjectiveBase):

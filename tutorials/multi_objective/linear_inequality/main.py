@@ -5,15 +5,15 @@ from datetime import datetime
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
-from optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.optimizer import BayesianOptimizer
 from tutorials.multi_objective.linear_equality.objective import LinearEqualityTest
-from samplers.samplers import SamplerBase
+from pybo.samplers.samplers import SamplerBase
 from tutorials.multi_objective.linear_inequality.objective import LinearInequalityTest
-from utils.helpers import create_experiment_directory
-from plotters.experiment import *
-from plotters.acqf import *
-from plotters.metrics import *
-from plotters.evolution import *
+from pybo.utils.helpers import create_experiment_directory
+from pybo.plotters.experiment import *
+from pybo.plotters.acqf import *
+from pybo.plotters.metrics import *
+from pybo.plotters.evolution import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64

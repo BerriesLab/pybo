@@ -1,8 +1,8 @@
 import torch
-from objectives.base_class import MCMultiObjectiveBase
+from pybo.objectives.base_class import MCMultiObjectiveBase
 from torch import Tensor
 
-from objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg
+from pybo.objectives.variable_registry import ParCfg, ObjCfg, LinIneqXConCfg
 
 
 class LinearInequalityTest(MCMultiObjectiveBase):

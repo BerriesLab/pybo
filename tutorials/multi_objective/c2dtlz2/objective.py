@@ -1,8 +1,8 @@
 import torch
 import math
-from objectives.base_class import MCMultiObjectiveBase
-from constraints.output_constraints import Identity
-from objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg
+from pybo.objectives.base_class import MCMultiObjectiveBase
+from pybo.constraints.output_constraints import Identity
+from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg
 
 
 class C2DTLZ2(MCMultiObjectiveBase):
