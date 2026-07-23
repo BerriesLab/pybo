@@ -68,7 +68,7 @@ class qExplorationWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
                 have points that have been submitted for function evaluation, but
                 have not yet been evaluated.
             eta: The temperature parameter for the sigmoid function used for the
-                differentiable approximation of the ineq_Y_con_cfg.
+                differentiable approximation of the constraints.
             fat: A Boolean flag indicating whether to use the heavy-tailed approximation
                 of the constraint indicator.
             prune_baseline: If True, remove points in `X_baseline` that are
@@ -206,7 +206,7 @@ class qDiversityWeightedNEHVI(qNoisyExpectedHypervolumeImprovement):
             X_pending: A `batch_shape x m x d`-dim Tensor of `m` design points that
                 have points that have been submitted for function evaluation.
             eta: The temperature parameter for the sigmoid function used for the
-                differentiable approximation of the ineq_Y_con_cfg.
+                differentiable approximation of the constraints.
             fat: A Boolean flag indicating whether to use the heavy-tailed approximation
                 of the constraint indicator.
             prune_baseline: If True, remove points in `X_baseline` that are

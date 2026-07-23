@@ -48,18 +48,18 @@ class MCObjectiveBase(ABC):
         to a list of tuples (idxs, coeffs, rhs), with each tuple encoding
         an inequality constraint of the form `\sum_i (X[idxs[i]] * coeffs[i]) >= rhs`.
         For intra-point constraints, idxs[i] is a 1D tensor where each index determines
-        the feature of the point. For intra-point constraints, idxs[i] = (k_i, l_i) is
+        the feature of the point. For inter-point constraints, idxs[i] = (k_i, l_i) is
         a 2D tensor, where the first index `k_i` corresponds to the `k_i`-th point
-        and the second index `l_i`corresponds to the `l_i`-th feature of that point.
+        and the second index `l_i` corresponds to the `l_i`-th feature of that point.
 
         - nonlin_ineq_X_con_cfg: Configuration for non-linear inequality input constraints.
         It receives a list of NonLinIneqXConCfg. These objects are internally converted
         to a list of tuples (f, intra). Here, the first element is a callable
         representing a constraint of the form `callable(x) >= 0` (feasible if non-negative).
         The second element is a boolean defining intra-point constraints (True) or
-        intra-point constraints (False). In the case of an intra-point constraint,
+        inter-point constraints (False). In the case of an intra-point constraint,
         `callable()` takes in a one-dimensional tensor of shape `d` and returns a scalar.
-        In the case of an intra-point constraint, `callable()` takes a two-dimensional
+        In the case of an inter-point constraint, `callable()` takes a two-dimensional
         tensor of shape `q x d` and again returns a scalar.
 
         - ineq_Y_con_cfg: Configuration for inequality output constraints.
@@ -355,7 +355,7 @@ class MCObjectiveBase(ABC):
         return Y + noise
 
     def is_X_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
-        """ Supports X (..., d) and q-btach X (..., q, d) for inter- and intra-point
+        """ Supports X (..., d) and q-batch X (..., q, d) for inter- and intra-point
         input constraints. Returns mask of shape (...) (one per batch item / restart)."""
         has_q = (X.dim() >= 3)  # interpret the last two dims as (q, d)
         base_shape = X.shape[:-2] if has_q else X.shape[:-1]
@@ -374,7 +374,7 @@ class MCObjectiveBase(ABC):
         if self._lin_eq_X_con:
             for indices, coeffs, rhs in self._lin_eq_X_con:
                 if indices.dim() != 1:
-                    raise ValueError("2D indices ineq_Y_con_cfg require intra-point handling (not implemented here).")
+                    raise ValueError("2D indices require inter-point handling (not implemented here).")
                 lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
                 feasible_mask &= ((lhs - rhs).abs() <= atol).all(dim=-1) if has_q else (lhs - rhs).abs() <= atol
 
@@ -382,7 +382,7 @@ class MCObjectiveBase(ABC):
         if self._lin_ineq_X_con:
             for indices, coeffs, rhs in self._lin_ineq_X_con:
                 if indices.dim() != 1:
-                    raise ValueError("2D indices ineq_Y_con_cfg require intra-point handling (not implemented here).")
+                    raise ValueError("2D indices require inter-point handling (not implemented here).")
                 lhs = (X[..., :, indices] * coeffs).sum(dim=-1) if has_q else (X[..., indices] * coeffs).sum(dim=-1)
                 feasible_mask &= (lhs >= (rhs - atol)).all(dim=-1) if has_q else lhs >= (rhs - atol)
 

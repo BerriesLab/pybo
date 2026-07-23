@@ -58,14 +58,14 @@ class LinIneqXConCfg(CfgBase):
 
 @dataclass(kw_only=True)
 class NonLinIneqXConCfg(CfgBase):
-    """Configuration for nonlinear inequality input ineq_Y_con_cfg"""
+    """Configuration for nonlinear inequality input constraints"""
     f: Callable
     intra: bool
 
 
 @dataclass(kw_only=True)
 class IneqYConCfg(CfgBase):
-    """Configuration for output ineq_Y_con_cfg"""
+    """Configuration for output constraints"""
     f: Callable
 
 
