@@ -125,6 +125,10 @@ class MCObjectiveBase(ABC):
         return self._num_obj
 
     @property
+    def num_objectives(self) -> int:
+        return self._num_obj
+
+    @property
     def num_con(self) -> int:
         return self._num_con
 
