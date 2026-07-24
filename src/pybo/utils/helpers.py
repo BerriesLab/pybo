@@ -1,3 +1,4 @@
+import argparse
 import datetime
 from pathlib import Path
 import torch
@@ -73,6 +74,16 @@ def deserialize_value(value, target_type=None):
         return {k: deserialize_value(v) for k, v in value.items()}
 
     return value  # basic types remain as-is
+
+
+def str2bool(value: str) -> bool:
+    """argparse `type=` converter for boolean flags (argparse's own `type=bool`
+    treats any non-empty string, including "False", as truthy)."""
+    if value.lower() in ("true", "1", "yes"):
+        return True
+    if value.lower() in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError(f"Expected a boolean value, got {value!r}.")
 
 
 def create_experiment_directory(main_directory: Path or str, experiment_name: str):
