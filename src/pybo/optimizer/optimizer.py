@@ -752,7 +752,6 @@ class BayesianOptimizer:
             self._best_feasible_Y = None
             self._best_feasible_X = None
             self._best_f = -float("inf")
-            self._best_values.append(None)
             self._best_f_mask = torch.zeros_like(self._feasible_mask, dtype=torch.bool).unsqueeze(-1)
 
             if verbose:
@@ -1033,10 +1032,10 @@ class BayesianOptimizer:
 
         # 1. Collect previous observations
         X_feas, Y_feas = self._compute_feasible_XY()
-        Y = Y_feas.clone()
-        X = X_feas.clone()
 
-        if X_feas.shape[0] > 0:
+        if X_feas is not None:
+            X = X_feas.clone()
+            Y = Y_feas.clone()
             # Adjust for minimization (BoTorch assumes maximization)
             Y[..., self.objective.to_minimize] *= -1
             n_requested = int(frac_prev * num_restarts)
@@ -1058,7 +1057,7 @@ class BayesianOptimizer:
                 prev_points = prev_points[shuffle_idx]
         else:
             # No feasible points found in history yet
-            prev_points = torch.empty(0, self.objective.dim, device=self._device)
+            prev_points = torch.empty(0, self.objective.dim, device=self._device, dtype=self._dtype)
 
         # 2. Generate new points (Exploration)
         n_new = max(0, num_restarts - prev_points.shape[0])
