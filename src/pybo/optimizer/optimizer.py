@@ -512,15 +512,14 @@ class BayesianOptimizer:
             raise RuntimeError("No data to optimize: set X and Y_obj before calling optimize().")
         t0 = time.monotonic()
 
-        # === 1. Data Processing (Historical Analysis) ===
-        # First, find out what is feasible in the current dataset
+        # === 1. Compute Metrics ===
+        # Mark which observations are feasible, then compute the reference the
+        # acquisition function is constructed with: for single-objective, best_f, the
+        # best feasible observation so far; for multi-objective, the hypervolume
+        # reference point, which comes from the objective rather than the data.
+        # Metrics run last because they read both (Hypervolume or Best Value).
         self._compute_feasible_mask(verbose=verbose)
-
-        # Second, identify the current "Best" (best_f or Pareto Front).
-        # This MUST happen before metrics because metrics log these values.
         self._compute_acquisition_function_reference(verbose=verbose)
-
-        # Third, log the progress (Hypervolume or Best Value)
         self._compute_metrics(verbose=verbose)
 
         # === 2. Surrogate Modeling ===
@@ -567,11 +566,12 @@ class BayesianOptimizer:
 
     def _compute_metrics(self, verbose=True):
         """ Compute optimization metrics depending on problem dimensionality
-        Single-objective: _best_f
-        Multi-objective: hypervolume."""
+        Single-objective: best value
+        Multi-objective: Pareto front, then the hypervolume it spans."""
         if self._objective.num_obj == 1:
             self._compute_best_value(verbose=verbose)
         else:
+            self._compute_pareto_front(verbose=verbose)
             self._compute_hypervolume(verbose=verbose)
 
     def _compute_best_value(self, verbose=True):
@@ -714,7 +714,6 @@ class BayesianOptimizer:
             self._compute_best_f(verbose=verbose)
         else:
             self._compute_reference_point(verbose=verbose)
-            self._compute_pareto_front(verbose=verbose)
 
     def _compute_best_f(self, verbose=True):
         """Compute the optimal observation (for single-objective).

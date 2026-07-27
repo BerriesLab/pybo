@@ -93,6 +93,8 @@ def test_pareto_front_excludes_dominated_point():
     bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
     bo._compute_feasible_mask(verbose=False)
     bo._compute_acquisition_function_reference(verbose=False)
+    # The Pareto front is computed as part of the metrics stage, not the reference stage
+    bo._compute_metrics(verbose=False)
     front = bo.feasible_pareto_front_Y
     assert front.shape[0] == 3
     assert [5.0, 5.0] not in front.tolist()
