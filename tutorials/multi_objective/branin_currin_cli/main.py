@@ -73,8 +73,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         os.chdir(step_dir)
 
         if verbose:
-            print()
-            print(f"*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
+            print(f"\n*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
 
         """ Optimize and get new X """
         bo.optimize(verbose=verbose)
