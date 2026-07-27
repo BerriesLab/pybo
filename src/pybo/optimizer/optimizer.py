@@ -422,9 +422,9 @@ class BayesianOptimizer:
         return self._best_f_mask
 
     @property
-    def new_X(self) -> Tensor | None:
+    def new_X(self) -> Tensor:
         if self._new_X is None:
-            print("A new_X has not been computed yet.")
+            raise AttributeError("new_X is not available yet; call optimize() first.")
         return self._new_X
 
     @property
@@ -1111,7 +1111,7 @@ class BayesianOptimizer:
             new_Y_obj_var = new_Y_obj_var.to(self._device, self._dtype)
             self._Y_obj_var = torch.cat([self._Y_obj_var, new_Y_obj_var], dim=0)
 
-    def update_Y_con(self, new_Y_con: torch.Tensor, new_Y_con_var: torch.Tensor or None = None):
+    def update_Y_con(self, new_Y_con: torch.Tensor | None, new_Y_con_var: torch.Tensor or None = None):
         if new_Y_con is not None:
             new_Y_con = new_Y_con.to(self._device, self._dtype)
             self._Y_con = torch.cat([self._Y_con, new_Y_con], dim=0)
@@ -1119,7 +1119,7 @@ class BayesianOptimizer:
             new_Y_con_var = new_Y_con_var.to(self._device, self._dtype)
             self._Y_con_var = torch.cat([self._Y_con_var, new_Y_con_var], dim=0)
 
-    def update_Y_trk(self, new_Y_track: torch.Tensor, new_Y_track_var: torch.Tensor or None = None):
+    def update_Y_trk(self, new_Y_track: torch.Tensor | None, new_Y_track_var: torch.Tensor or None = None):
         if new_Y_track is not None:
             new_Y_track = new_Y_track.to(self._device, self._dtype)
             self._Y_trk = torch.cat([self._Y_trk, new_Y_track], dim=0)
@@ -1148,9 +1148,14 @@ class BayesianOptimizer:
         if verbose:
             print("Saving optimizer to file... ", end="")
 
-        save_path = self._next_indexed_path(filepath or "data.dat")
-        with open(save_path, "wb") as file:
+        # Pickle the whole optimizer, overwriting the target file atomically
+        # (write to a temp file, then os.replace), so it can be called every
+        # iteration as a running, crash-safe snapshot.
+        out_path = Path(filepath or "data.dat")
+        tmp_path = out_path.with_name(out_path.name + ".tmp")
+        with open(tmp_path, "wb") as file:
             pickle.dump(self, file)  # type: ignore
+        os.replace(tmp_path, out_path)
 
         if verbose:
             self._print_success()

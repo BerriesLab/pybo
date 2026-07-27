@@ -1,6 +1,8 @@
 import os
+import warnings
 import torch
 from pathlib import Path
+from tqdm import tqdm
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from pybo.optimizer.optimizer import BayesianOptimizer
@@ -8,17 +10,18 @@ from pybo.plotters.experiment import ParetoFront2DPlotter
 from pybo.samplers.samplers import SobolSampler
 from pybo.plotters.metrics import plot_and_save_metrics
 from pybo.plotters.evolution import plot_and_save_evolutions
-from pybo.utils.cli import build_trial_args_parser, default_output_dir
+from pybo.utils.cli import build_trial_args_parser, default_output_dir, unique_dir
 from tutorials.multi_objective.branin_currin.objective import BraninCurrin
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
-         output_dir: Path = None, plot: bool = True):
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
+         verbose: bool = True):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
 
     """ Instantiate true objective """
     objective = BraninCurrin(device=DEVICE, dtype=DTYPE)
@@ -48,8 +51,13 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
     )
 
     """ Main optimization loop """
-    for i in range(int(n_evals / q)):
-        if i > 0 and bo.is_converged(patience=32):
+    n_steps = int(n_evals / q)
+    if not verbose:
+        # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
+        warnings.filterwarnings("ignore")
+    pbar = tqdm(total=n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    for i in range(n_steps):
+        if i > 0 and bo.is_converged(patience=32, verbose=verbose):
             break
 
         """ One folder per evaluation step; figures and per-step files go here """
@@ -57,11 +65,12 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
         step_dir.mkdir(parents=True, exist_ok=True)
         os.chdir(step_dir)
 
-        print()
-        print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
+        if verbose:
+            print()
+            print(f"*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
 
         """ Optimize and get new X """
-        bo.optimize()
+        bo.optimize(verbose=verbose)
 
         """ Plot """
         if plot:
@@ -77,28 +86,35 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
-        bo.compute_acquisition_function_value_at_X(new_X)
-        bo.compute_posterior_mean_at_X(new_X)
+        bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
+        bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
-        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        if verbose:
+            print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
         """ Save the running summary (run root) and this step's experiment record """
-        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=True)
-        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=True)
-        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=True)
+        bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=verbose)
+        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=verbose)
+        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=verbose)
+
+        if pbar is not None:
+            pbar.update(q)
+
+    if pbar is not None:
+        pbar.close()
 
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
-    print(f"Running on {DEVICE}.")
-
     args = build_trial_args_parser(description="Run a single Branin-Currin BO trial.").parse_args()
-    output_dir = args.output_dir or default_output_dir(__file__)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.verbose:
+        print(f"Running on {DEVICE}.")
+    output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
     main(
         n_evals=args.n_evals,
@@ -107,4 +123,5 @@ if __name__ == "__main__":
         seed=args.seed,
         output_dir=output_dir,
         plot=args.plot,
+        verbose=args.verbose,
     )

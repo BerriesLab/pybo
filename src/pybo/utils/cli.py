@@ -20,6 +20,23 @@ def default_output_dir(script_file: str | Path) -> Path:
     return Path(script_file).resolve().parent / "data" / date_time
 
 
+def unique_dir(path: str | Path) -> Path:
+    """Return a run directory safe to write into without clobbering a previous
+    run: `path` itself when it does not exist or is empty, otherwise the first
+    free `path_NNN` (path_001, path_002, ...). The empty-dir passthrough keeps
+    the studies harness working - it pre-creates an empty trial dir that the
+    tutorial is expected to write into."""
+    path = Path(path)
+    if not path.exists() or not any(path.iterdir()):
+        return path
+    i = 1
+    while True:
+        candidate = path.with_name(f"{path.name}_{i:03d}")
+        if not candidate.exists() or not any(candidate.iterdir()):
+            return candidate
+        i += 1
+
+
 def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--n-evals", type=int, default=32,
@@ -31,4 +48,5 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
     parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
+    parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     return parser

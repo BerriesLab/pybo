@@ -23,7 +23,8 @@ dependencies = [
     "torch == 2.8.0",
     "sympy == 1.14.0",
     "pandas >= 2.3",
-    "imageio >= 2.37"
+    "imageio >= 2.37",
+    "tqdm >= 4.67"
 ]
 
 [project.optional-dependencies]
