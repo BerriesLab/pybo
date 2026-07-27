@@ -3,9 +3,10 @@ Shared helpers for study scripts that repeatedly launch a tutorial's CLI.
 
 Each trial runs as an isolated subprocess - a crashed trial (e.g. GP fitting
 diverging) is logged and skipped rather than aborting the whole sweep. Every
-target CLI is expected to accept --output-dir and --plot (defaulting to
-False), and to write a summary.json into the exact --output-dir it was given
-(BayesianOptimizer.to_json does this; see
+target CLI is expected to accept --output-dir, --plot and --verbose (the latter
+two forwarded from the sweep's own flags of the same name, both defaulting to
+False for a sweep), and to write a summary.json into the exact --output-dir it
+was given (BayesianOptimizer.to_json does this; see
 tutorials/multi_objective/branin_currin_cli/main.py for the reference
 implementation of this contract). The aggregated per-iteration trace is
 derived here from those summary.json files, so tutorial CLIs no longer write
@@ -20,6 +21,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from pybo.utils.helpers import str2bool
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 
@@ -31,8 +34,10 @@ def int_list(value: str) -> list[int]:
 
 
 def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
-    """Shared flags for every experiment sweep. Each experiment adds its own
-    extras (e.g. --n-replicates) and calls parse_args()."""
+    """Shared flags for every experiment sweep, covering the parts every sweep
+    has in common: what to run, how big each trial is, how many seeded repeats,
+    and where output goes. An experiment that needs more (e.g. a list of
+    acquisition functions to compare) adds its own before calling parse_args()."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--target", required=True, help="Dotted module path to the tutorial CLI to launch.")
     parser.add_argument("--n-evals", type=int, default=32,
@@ -42,8 +47,17 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Initial sample count(s) per trial, comma-separated for a sweep (e.g. 5,10,20). "
                              "Each value is a separate setting, replicated. Defaults to the target CLI's own default.")
     parser.add_argument("--base-seed", type=int, default=2063, help="First seed; trials increment from here.")
+    parser.add_argument("--n-replicates", type=int, default=20,
+                        help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
+    parser.add_argument("--plot", type=str2bool, default=False,
+                        help="Whether each trial generates plots. Off by default: a sweep plots every step of "
+                             "every trial, which dominates the runtime.")
+    parser.add_argument("--verbose", type=str2bool, default=False,
+                        help="Whether each trial prints per-step progress. Off by default (unlike the trial CLI, "
+                             "which defaults to on) so a sweep shows one tqdm bar per trial instead of interleaving "
+                             "every optimizer step.")
     return parser
 
 

@@ -11,14 +11,8 @@ from pathlib import Path
 from studies._common import run_trial, collect_results, build_sweep_parser
 
 
-def parse_args():
-    parser = build_sweep_parser(description=__doc__)
-    parser.add_argument("--n-replicates", type=int, default=20, help="Number of independent repeats.")
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
+    args = build_sweep_parser(description=__doc__).parse_args()
 
     output_dir = args.output_dir
     if output_dir is None:
@@ -41,6 +35,8 @@ def main():
                     "--q-batch": args.q_batch,
                     "--n-initial": n_initial,
                     "--seed": seed,
+                    "--plot": args.plot,
+                    "--verbose": args.verbose,
                 },
                 run_name=run_name,
                 output_dir=output_dir / run_name,
