@@ -6,7 +6,7 @@ Fixes the number of optimization steps and sweeps the number of initial
 with different seeds to average out sampling noise. Works against any
 tutorial CLI that follows the experiments._common contract, e.g.:
 
-    python -m experiments.run init_size_sensitivity \\
+    python -m experiments.init_size_sensitivity \\
         --target tutorials.multi_objective.branin_currin_cli.main
 """
 import itertools
