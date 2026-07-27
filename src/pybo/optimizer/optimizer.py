@@ -365,6 +365,11 @@ class BayesianOptimizer:
     def n_model_fit_restarts(self, value: int):
         if not isinstance(value, int):
             raise ValueError("n_model_fit_restarts must be of type int")
+        # This is BoTorch's max_attempts, whose loop is range(1, 1 + max_attempts):
+        # anything below 1 means the model is never fitted at all, and surfaces as
+        # a bare ModelFittingError rather than as the misconfiguration it is.
+        if value < 1:
+            raise ValueError("n_model_fit_restarts must be at least 1 (it is the number of fit attempts per output)")
         self._n_model_fit_restarts = value
 
     @batch_size.setter

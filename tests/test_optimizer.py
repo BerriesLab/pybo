@@ -113,6 +113,26 @@ def test_Y_obj_setter_validates_objective_count():
         bo.Y_obj = torch.tensor([[3.0, 3.0], [2.0, 2.0]], dtype=DTYPE)
 
 
+def test_n_model_fit_restarts_rejects_zero():
+    # It is passed straight to BoTorch as max_attempts, whose loop is
+    # range(1, 1 + max_attempts), so anything below 1 never fits the model at all
+    # and surfaces as a bare ModelFittingError instead of a misconfiguration.
+    # Note this guards the setter only: __init__ assigns _n_model_fit_restarts
+    # directly, so a bad value passed to the constructor still slips through.
+    obj = SingleMin()
+    X = torch.tensor([[0.0], [2.0]], dtype=DTYPE)
+    Y = torch.tensor([[4.0], [1.0]], dtype=DTYPE)
+
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    with pytest.raises(ValueError):
+        bo.n_model_fit_restarts = 0
+    with pytest.raises(ValueError):
+        bo.n_model_fit_restarts = -3
+    # A single attempt is a legitimate setting
+    bo.n_model_fit_restarts = 1
+    assert bo.n_model_fit_restarts == 1
+
+
 def test_metrics_logged_once_per_iteration_when_nothing_is_feasible():
     # Regression: _compute_best_f used to append None to _best_values, which
     # _compute_metrics already owns. Infeasible iterations logged twice, so the
