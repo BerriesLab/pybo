@@ -56,7 +56,7 @@ def main(n_evals=64, q: int = 1, output_dir: Path = None):
         if i > 0 and bo.is_converged(patience=32):
             break
 
-        print("\n\n")
+        print()
         print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
 
         """ Optimize and get new X """
