@@ -36,8 +36,6 @@ class BayesianOptimizer:
     """
     A wrapper around BoTorch for Bayesian Optimization supporting both
     single-objective and multi-objective optimization.
-    This class is designed to work with maximization problems only.
-    For minimization, objective values must be negated.
     """
 
     def __init__(
@@ -73,7 +71,7 @@ class BayesianOptimizer:
         self._ref_point: torch.Tensor | None = None
         self._acquisition_function_list: list[AcquisitionFunction] | None = None
         self._acqf_instance: AcquisitionFunction | None = None
-        self._partitioning: torch.Tensor | None = None
+        self._partitioning: NondominatedPartitioning | None = None
         # self._pareto_front: torch.Tensor | None = None
 
         self._n_initial_samples: int | None = None
@@ -233,7 +231,7 @@ class BayesianOptimizer:
         return self._Y_trk_var
 
     @property
-    def acqf(self) -> Type[AcquisitionFunction]:
+    def acqf(self) -> Type[AcquisitionFunction] | None:
         return self._acqf
 
     @property
@@ -416,9 +414,9 @@ class BayesianOptimizer:
         return self._acquisition_function_list
 
     @property
-    def partitioning(self) -> NondominatedPartitioning | None:
+    def partitioning(self) -> NondominatedPartitioning:
         if self._partitioning is None:
-            print("A partitioning has not been computed yet.")
+            raise AttributeError("A partitioning has not been computed yet.")
         return self._partitioning
 
     @property
@@ -458,7 +456,7 @@ class BayesianOptimizer:
         return self._acqf_instance
 
     @property
-    def n_initial_samples(self) -> int:
+    def n_initial_samples(self) -> int | None:
         return self._n_initial_samples
 
     @n_initial_samples.setter
@@ -496,7 +494,7 @@ class BayesianOptimizer:
         return self._feasible_pareto_front_Y
 
     @property
-    def kernel(self) -> Kernel:
+    def kernel(self) -> Kernel | None:
         return self._kernel
 
     @kernel.setter
