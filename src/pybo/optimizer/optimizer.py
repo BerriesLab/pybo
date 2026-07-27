@@ -90,15 +90,15 @@ class BayesianOptimizer:
         # === Experiment Attributes ===
         self._datetime = datetime.datetime.now()
         self.objective = objective
-        self._X: torch.Tensor | None = X
+        self._X = X
         if self._X is not None:
             self._n_initial_samples = self._X.shape[0]
-        self._Y_obj: torch.Tensor | None = Y_obj
-        self._Y_obj_var: torch.Tensor | None = Y_obj_var
-        self._Y_con: torch.Tensor | None = Y_con
-        self._Y_con_var: torch.Tensor | None = Y_con_var
-        self._Y_trk: torch.Tensor | None = Y_trk
-        self._Y_trk_var: torch.Tensor | None = Y_trk_var
+        self._Y_obj = Y_obj
+        self._Y_obj_var = Y_obj_var
+        self._Y_con = Y_con
+        self._Y_con_var = Y_con_var
+        self._Y_trk = Y_trk
+        self._Y_trk_var = Y_trk_var
 
         # === Optimization attributes ===
         self._acqf = acqf
