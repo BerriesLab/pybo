@@ -1,5 +1,6 @@
 import copy
 import inspect
+import json
 import pickle
 import warnings
 import torch
@@ -25,6 +26,8 @@ from botorch.models.transforms import Normalize, Standardize
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
 from botorch.acquisition.multi_objective.parego import qLogNParEGO
+from torch import Tensor
+
 from pybo.objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.samplers.samplers import SamplerBase, SobolSampler
 
@@ -419,7 +422,7 @@ class BayesianOptimizer:
         return self._best_f_mask
 
     @property
-    def new_X(self) -> torch.Tensor | None:
+    def new_X(self) -> Tensor | None:
         if self._new_X is None:
             print("A new_X has not been computed yet.")
         return self._new_X
@@ -1128,21 +1131,35 @@ class BayesianOptimizer:
     """ ===== I/O ===== """
     """ =============== """
 
-    def to_file(self, filepath: Path or str = None):
-        filepath = Path(filepath or "data.dat")
-        stem = filepath.stem
-        suffix = filepath.suffix
-        save_path = Path.cwd() / filepath.parent / f"{stem}_000{suffix}"
-
+    @staticmethod
+    def _next_indexed_path(filepath: str | Path) -> Path:
+        """Return the next free `<stem>_NNN<suffix>` path under the cwd, so
+        repeated saves never overwrite (e.g. experiment_000.csv, _001, ...)."""
+        p = Path(filepath)
+        base = Path.cwd() / p.parent
         i = 0
+        save_path = base / f"{p.stem}_{i:03d}{p.suffix}"
         while save_path.exists():
             i += 1
-            save_path = Path.cwd() / filepath.parent / f"{stem}_{i:03d}{suffix}"
+            save_path = base / f"{p.stem}_{i:03d}{p.suffix}"
+        return save_path
 
+    def to_file(self, filepath: str | Path | None = None, verbose=True):
+        if verbose:
+            print("Saving optimizer to file... ", end="")
+
+        save_path = self._next_indexed_path(filepath or "data.dat")
         with open(save_path, "wb") as file:
             pickle.dump(self, file)  # type: ignore
 
-    def to_csv(self, filepath: str | None = None, verbose=True):
+        if verbose:
+            self._print_success()
+
+    def to_csv(self, filepath: str | Path | None = None, latest=False, verbose=True):
+        """Write the observation table to CSV. With latest=False (default) it
+        writes the full history; with latest=True it writes only the current
+        experiment (the last batch_size rows). Each call writes a new
+        `<stem>_NNN.csv` file, so latest=True yields one file per experiment."""
         if verbose:
             print("Saving optimizer to CSV... ", end="")
 
@@ -1168,29 +1185,142 @@ class BayesianOptimizer:
         if self.Y_trk_var is not None:
             cols.extend([x.label.lower() + " var" for x in self.objective.trk_cfg])
             data = torch.cat((data, self.Y_trk_var), dim=1)
-        if self.feasible_mask is not None:
+        # Keep only the current experiment (the last batch) when requested.
+        if latest:
+            data = data[-self._batch_size:]
+
+        # Masks are derived at the last optimize() and can lag the observations
+        # by one batch when to_csv is called after update_XY (and never align
+        # with a latest-only slice); include each only when it still matches the
+        # data row-for-row.
+        n_rows = data.shape[0]
+        if self._feasible_mask is not None and self._feasible_mask.shape[0] == n_rows:
             cols.append("feasible")
-            data = torch.cat((data, self.feasible_mask.unsqueeze(-1)), dim=1)
-        if self.pareto_front_mask is not None:
+            data = torch.cat((data, self._feasible_mask.unsqueeze(-1)), dim=1)
+        if self._pareto_front_mask is not None and self._pareto_front_mask.shape[0] == n_rows:
             cols.append("pareto front")
-            data = torch.cat((data, self.pareto_front_mask), dim=1)
-        if self.best_f_mask is not None:
+            data = torch.cat((data, self._pareto_front_mask), dim=1)
+        if self._best_f_mask is not None and self._best_f_mask.shape[0] == n_rows:
             cols.append("best value")
-            data = torch.cat((data, self.best_f_mask), dim=1)
+            data = torch.cat((data, self._best_f_mask), dim=1)
 
         df = pd.DataFrame(data.detach().cpu().numpy(), columns=cols)
-
-        filepath = Path(filepath or "data.csv")
-        stem = filepath.stem
-        suffix = filepath.suffix
-        save_path = Path.cwd() / filepath.parent / f"{stem}_000{suffix}"
-
-        i = 0
-        while save_path.exists():
-            i += 1
-            save_path = Path.cwd() / filepath.parent / f"{stem}_{i:03d}{suffix}"
-
+        # latest writes a fixed file (the per-step folder gives uniqueness);
+        # the full summary keeps the auto-incremented <stem>_NNN.csv behavior.
+        save_path = Path(filepath or "experiment.csv") if latest else self._next_indexed_path(filepath or "data.csv")
         df.to_csv(save_path, index=False)
+
+        if verbose:
+            self._print_success()
+
+    def to_json(self, filepath: str | Path | None = None, latest=False, verbose=True):
+        """Write the optimizer state to JSON.
+
+        With latest=False (default) it writes a self-describing summary of the
+        full run - problem configuration, metric history, latest result, and
+        all observations - overwriting the target file atomically (temp file
+        then os.replace), so it can be called every iteration for incremental,
+        crash-safe saving. Because the object accumulates the full X/Y history,
+        each call reflects the latest state.
+
+        With latest=True it writes only the current experiment (the last
+        batch_size observations) to a new `<stem>_NNN.json` file, i.e. one file
+        per experiment."""
+        if verbose:
+            print("Saving optimizer to JSON... ", end="")
+
+        def _tolist(t):
+            return t.detach().cpu().numpy().tolist() if t is not None else None
+
+        obj = self.objective
+        single = obj.num_obj == 1
+
+        if latest:
+            q = self._batch_size
+
+            def _last(t):
+                return _tolist(t[-q:]) if t is not None else None
+
+            payload = {
+                "datetime": self._datetime.isoformat(),
+                "num_observations": self._X.shape[0],
+                "batch_size": q,
+                "observations": {
+                    "X": _last(self._X),
+                    "Y_obj": _last(self._Y_obj),
+                    "Y_obj_var": _last(self._Y_obj_var),
+                    "Y_con": _last(self._Y_con),
+                    "Y_con_var": _last(self._Y_con_var),
+                    "Y_trk": _last(self._Y_trk),
+                    "Y_trk_var": _last(self._Y_trk_var),
+                },
+            }
+            with open(Path(filepath or "experiment.json"), "w") as file:
+                json.dump(payload, file, indent=2)
+            if verbose:
+                self._print_success()
+            return
+
+        payload = {
+            "datetime": self._datetime.isoformat(),
+            "problem": {
+                "num_par": obj.num_par,
+                "num_obj": obj.num_obj,
+                "num_con": obj.num_constraints,
+                # Known problem optimum, used to derive regret when aggregating runs.
+                "best_value": obj.best_value if single else None,
+                "max_hv": None if single else obj.max_hv,
+                "parameters": [
+                    {"label": p.label, "index": p.index, "bounds": list(p.bounds)}
+                    for p in obj.par_cfg
+                ],
+                "objectives": [
+                    {"label": o.label, "index": o.index, "to_minimize": o.to_minimize,
+                     "ref_point": o.ref_point,
+                     "bounds": list(o.bounds) if o.bounds is not None else None}
+                    for o in obj.obj_cfg
+                ],
+                "constraints": [
+                    {"label": c.label, "index": c.index} for c in obj.ineq_Y_con_cfg
+                ] if obj.ineq_Y_con_cfg is not None else [],
+            },
+            "config": {
+                "acqf": self._acqf.__name__ if self._acqf is not None else None,
+                "kernel": str(self._kernel) if self._kernel is not None else None,
+                "batch_size": self._batch_size,
+                "mc_samples": self._num_mc_samples,
+                "raw_samples": self._num_raw_samples,
+                "n_initial_samples": self._n_initial_samples,
+            },
+            "metrics": {
+                ("best_values" if single else "hypervolume"):
+                    (self._best_values if single else self._hypervolume),
+                "elapsed_time": self._elapsed_time,
+            },
+            "result": (
+                {"best_feasible_X": _tolist(self._best_feasible_X),
+                 "best_feasible_Y": _tolist(self._best_feasible_Y)}
+                if single else
+                {"ref_point": _tolist(self._ref_point),
+                 "feasible_pareto_front_X": _tolist(self._feasible_pareto_front_X),
+                 "feasible_pareto_front_Y": _tolist(self._feasible_pareto_front_Y)}
+            ),
+            "observations": {
+                "X": _tolist(self._X),
+                "Y_obj": _tolist(self._Y_obj),
+                "Y_obj_var": _tolist(self._Y_obj_var),
+                "Y_con": _tolist(self._Y_con),
+                "Y_con_var": _tolist(self._Y_con_var),
+                "Y_trk": _tolist(self._Y_trk),
+                "Y_trk_var": _tolist(self._Y_trk_var),
+            },
+        }
+
+        out_path = Path(filepath or "summary.json")
+        tmp_path = out_path.with_name(out_path.name + ".tmp")
+        with open(tmp_path, "w") as file:
+            json.dump(payload, file, indent=2)
+        os.replace(tmp_path, out_path)
 
         if verbose:
             self._print_success()

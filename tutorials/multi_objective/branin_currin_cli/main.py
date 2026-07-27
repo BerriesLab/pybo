@@ -1,6 +1,4 @@
 import os
-from datetime import datetime
-import pandas as pd
 import torch
 from pathlib import Path
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
@@ -10,7 +8,7 @@ from pybo.plotters.experiment import ParetoFront2DPlotter
 from pybo.samplers.samplers import SobolSampler
 from pybo.plotters.metrics import plot_and_save_metrics
 from pybo.plotters.evolution import plot_and_save_evolutions
-from pybo.utils.cli import build_trial_args_parser
+from pybo.utils.cli import build_trial_args_parser, default_output_dir
 from tutorials.multi_objective.branin_currin.objective import BraninCurrin
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,7 +19,6 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          output_dir: Path = None, plot: bool = True):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    os.chdir(run_dir)
 
     """ Instantiate true objective """
     objective = BraninCurrin(device=DEVICE, dtype=DTYPE)
@@ -55,7 +52,12 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
         if i > 0 and bo.is_converged(patience=32):
             break
 
-        print("\n\n")
+        """ One folder per evaluation step; figures and per-step files go here """
+        step_dir = run_dir / f"step_{i:03d}"
+        step_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(step_dir)
+
+        print()
         print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
 
         """ Optimize and get new X """
@@ -83,30 +85,19 @@ def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
         print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
 
-    """ Save per-iteration hypervolume/regret trace """
-    hv = torch.tensor(bo.hypervolume)
-    regret = objective.max_hv - hv
-    df = pd.DataFrame({
-        "n_initial": n_initial,
-        "seed": seed,
-        "batch_size": q,
-        "iteration": range(1, len(hv) + 1),
-        "hypervolume": hv.tolist(),
-        "regret": regret.tolist(),
-        "elapsed_time": bo.elapsed_time,
-    })
-    df.to_csv(run_dir / "results.csv", index=False)
+        """ Save the running summary (run root) and this step's experiment record """
+        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=True)
+        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=True)
+        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=True)
 
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
     print(f"Running on {DEVICE}.")
+
     args = build_trial_args_parser(description="Run a single Branin-Currin BO trial.").parse_args()
-    output_dir = args.output_dir
-    if output_dir is None:
-        date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = Path.cwd() / "data" / date_time
+    output_dir = args.output_dir or default_output_dir(__file__)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     main(

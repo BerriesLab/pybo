@@ -1,14 +1,18 @@
 """
-Shared helpers for experiment scripts that repeatedly launch a tutorial's CLI.
+Shared helpers for study scripts that repeatedly launch a tutorial's CLI.
 
 Each trial runs as an isolated subprocess - a crashed trial (e.g. GP fitting
 diverging) is logged and skipped rather than aborting the whole sweep. Every
 target CLI is expected to accept --output-dir and --plot (defaulting to
-False), and to write its own results.csv directly into the exact --output-dir
-it was given (see tutorials/multi_objective/branin_currin_cli/main.py for the
-reference implementation of this contract).
+False), and to write a summary.json into the exact --output-dir it was given
+(BayesianOptimizer.to_json does this; see
+tutorials/multi_objective/branin_currin_cli/main.py for the reference
+implementation of this contract). The aggregated per-iteration trace is
+derived here from those summary.json files, so tutorial CLIs no longer write
+their own results.csv.
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -46,7 +50,7 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
 def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> Path | None:
     """Run one trial of `target` (dotted module path to a tutorial's CLI
     main.py, e.g. "tutorials.multi_objective.branin_currin_cli.main") as a
-    subprocess. Returns the path to its results.csv, or None if the trial
+    subprocess. Returns the path to its summary.json, or None if the trial
     failed.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -63,15 +67,35 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> P
     if result.returncode != 0:
         print(f"!!! Trial {run_name} FAILED (exit {result.returncode})", flush=True)
         return None
-    return output_dir / "results.csv"
+    return output_dir / "summary.json"
 
 
-def collect_results(csv_paths: list) -> tuple:
-    """Concatenate per-trial results.csv files, dropping failed (None) trials.
-    Returns (combined_dataframe, n_failed)."""
-    n_failed = csv_paths.count(None)
-    good = [p for p in csv_paths if p is not None]
-    if not good:
-        return pd.DataFrame(), n_failed
-    df = pd.concat([pd.read_csv(p) for p in good], ignore_index=True)
-    return df, n_failed
+def collect_results(trials: list) -> tuple:
+    """Aggregate per-trial summary.json files into one tidy per-iteration
+    DataFrame. `trials` is a list of (summary_json_path, tags) pairs, where a
+    None path marks a failed trial (skipped) and `tags` is a dict of per-trial
+    identity columns (e.g. seed, n_initial, batch_size) attached to every row
+    of that trial. Reads each run's metric trace, derives regret from the
+    stored problem optimum, and returns (combined_dataframe, n_failed)."""
+    n_failed = sum(1 for path, _ in trials if path is None)
+    rows = []
+    for path, tags in trials:
+        if path is None:
+            continue
+        with open(path) as file:
+            summary = json.load(file)
+        metrics = summary["metrics"]
+        problem = summary["problem"]
+        if "hypervolume" in metrics:
+            metric_name, values, optimum = "hypervolume", metrics["hypervolume"], problem.get("max_hv")
+        else:
+            metric_name, values, optimum = "best_value", metrics["best_values"], problem.get("best_value")
+        for i, (value, elapsed) in enumerate(zip(values, metrics["elapsed_time"])):
+            rows.append({
+                **tags,
+                "iteration": i + 1,
+                metric_name: value,
+                "regret": (optimum - value) if optimum is not None else None,
+                "elapsed_time": elapsed,
+            })
+    return pd.DataFrame(rows), n_failed
