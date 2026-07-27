@@ -92,15 +92,15 @@ class BayesianOptimizer:
         # === Experiment Attributes ===
         self._datetime = datetime.datetime.now()
         self.objective = objective
-        self._X: torch.Tensor = X
+        self._X: torch.Tensor | None = X
         if self._X is not None:
             self._n_initial_samples = self._X.shape[0]
-        self._Y_obj: torch.Tensor = Y_obj
-        self._Y_obj_var: torch.Tensor = Y_obj_var
-        self._Y_con: torch.Tensor = Y_con
-        self._Y_con_var: torch.Tensor = Y_con_var
-        self._Y_trk: torch.Tensor = Y_trk
-        self._Y_trk_var: torch.Tensor = Y_trk_var
+        self._Y_obj: torch.Tensor | None = Y_obj
+        self._Y_obj_var: torch.Tensor | None = Y_obj_var
+        self._Y_con: torch.Tensor | None = Y_con
+        self._Y_con_var: torch.Tensor | None = Y_con_var
+        self._Y_trk: torch.Tensor | None = Y_trk
+        self._Y_trk_var: torch.Tensor | None = Y_trk_var
 
         # === Optimization attributes ===
         self._acqf = acqf
@@ -281,36 +281,48 @@ class BayesianOptimizer:
         self._X = X.to(self._device, self._dtype)
 
     @Y_obj.setter
-    def Y_obj(self, Y_obj: torch.Tensor):
-        if not isinstance(Y_obj, Union[torch.Tensor, None]):
-            raise ValueError("Y_obj must be of type torch.Tensor or None.")
-        if Y_obj is not None and Y_obj.shape[-1] != self.objective.num_objectives:
-            raise ValueError("Y_obj must have the same number of dimensions as objective.")
-        self._Y_obj = Y_obj.to(self._device, self._dtype) if Y_obj is not None else None
+    def Y_obj(self, Y_obj: torch.Tensor | None):
+        if Y_obj is None:
+            self._Y_obj = None
+            return
+        if not isinstance(Y_obj, torch.Tensor):
+            raise ValueError("Y_obj must be a torch.Tensor or None.")
+        if Y_obj.shape[-1] != self.objective.num_objectives:
+            raise ValueError(f"Y_obj must have {self.objective.num_objectives} columns (one per objective).")
+        self._Y_obj = Y_obj.to(self._device, self._dtype)
 
     @Y_obj_var.setter
-    def Y_obj_var(self, Y_obj_var: torch.Tensor | None = None):
-        if not isinstance(Y_obj_var, Union[torch.Tensor, None]):
-            raise ValueError("Y_obj_var must be of type torch.Tensor or None.")
-        if Y_obj_var is not None and Y_obj_var.shape[-1] != self.objective.num_objectives:
-            raise ValueError("Y_obj_var must have the same number of dimensions as objective.")
-        self._Y_obj_var = Y_obj_var.to(self._device, self._dtype) if Y_obj_var is not None else None
+    def Y_obj_var(self, Y_obj_var: torch.Tensor | None):
+        if Y_obj_var is None:
+            self._Y_obj_var = None
+            return
+        if not isinstance(Y_obj_var, torch.Tensor):
+            raise ValueError("Y_obj_var must be a torch.Tensor or None.")
+        if Y_obj_var.shape[-1] != self.objective.num_objectives:
+            raise ValueError(f"Y_obj_var must have {self.objective.num_objectives} columns (one per objective).")
+        self._Y_obj_var = Y_obj_var.to(self._device, self._dtype)
 
     @Y_con.setter
     def Y_con(self, Y_con: torch.Tensor | None):
-        if not isinstance(Y_con, Union[torch.Tensor, None]):
-            raise ValueError("Y_con must be of type torch.Tensor or None.")
-        if Y_con is not None and Y_con.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Y_con must have the same number of constraints as objective.")
-        self._Y_con = Y_con.to(self._device, self._dtype) if Y_con is not None else None
+        if Y_con is None:
+            self._Y_con = None
+            return
+        if not isinstance(Y_con, torch.Tensor):
+            raise ValueError("Y_con must be a torch.Tensor or None.")
+        if Y_con.shape[-1] != self.objective.num_constraints:
+            raise ValueError(f"Y_con must have {self.objective.num_constraints} columns (one per constraint).")
+        self._Y_con = Y_con.to(self._device, self._dtype)
 
     @Y_con_var.setter
-    def Y_con_var(self, Y_con_var: torch.Tensor | None = None):
-        if not isinstance(Y_con_var, Union[torch.Tensor, None]):
-            raise ValueError("Y_con_var must be of type torch.Tensor or None.")
-        if Y_con_var is not None and Y_con_var.shape[-1] != self.objective.num_constraints:
-            raise ValueError("Y_con_var must have the same number of constraints as objective.")
-        self._Y_con_var = Y_con_var.to(self._device, self._dtype) if Y_con_var is not None else None
+    def Y_con_var(self, Y_con_var: torch.Tensor | None):
+        if Y_con_var is None:
+            self._Y_con_var = None
+            return
+        if not isinstance(Y_con_var, torch.Tensor):
+            raise ValueError("Y_con_var must be a torch.Tensor or None.")
+        if Y_con_var.shape[-1] != self.objective.num_constraints:
+            raise ValueError(f"Y_con_var must have {self.objective.num_constraints} columns (one per constraint).")
+        self._Y_con_var = Y_con_var.to(self._device, self._dtype)
 
     @Y_trk.setter
     def Y_trk(self, Y_track: torch.Tensor | None):
@@ -498,6 +510,8 @@ class BayesianOptimizer:
     """ ===================== """
 
     def optimize(self, verbose=True):
+        if self._X is None or self._Y_obj is None:
+            raise RuntimeError("No data to optimize: set X and Y_obj before calling optimize().")
         t0 = time.monotonic()
 
         # === 1. Data Processing (Historical Analysis) ===
@@ -1103,7 +1117,7 @@ class BayesianOptimizer:
             new_X = new_X.to(self._device, self._dtype)
             self.X = torch.cat([self.X, new_X], dim=0)
 
-    def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor or None = None):
+    def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor | None = None):
         if new_Y_obj is not None:
             new_Y_obj = new_Y_obj.to(self._device, self._dtype)
             self._Y_obj = torch.cat([self._Y_obj, new_Y_obj], dim=0)
@@ -1111,7 +1125,7 @@ class BayesianOptimizer:
             new_Y_obj_var = new_Y_obj_var.to(self._device, self._dtype)
             self._Y_obj_var = torch.cat([self._Y_obj_var, new_Y_obj_var], dim=0)
 
-    def update_Y_con(self, new_Y_con: torch.Tensor | None, new_Y_con_var: torch.Tensor or None = None):
+    def update_Y_con(self, new_Y_con: torch.Tensor | None, new_Y_con_var: torch.Tensor | None = None):
         if new_Y_con is not None:
             new_Y_con = new_Y_con.to(self._device, self._dtype)
             self._Y_con = torch.cat([self._Y_con, new_Y_con], dim=0)
@@ -1119,7 +1133,7 @@ class BayesianOptimizer:
             new_Y_con_var = new_Y_con_var.to(self._device, self._dtype)
             self._Y_con_var = torch.cat([self._Y_con_var, new_Y_con_var], dim=0)
 
-    def update_Y_trk(self, new_Y_track: torch.Tensor | None, new_Y_track_var: torch.Tensor or None = None):
+    def update_Y_trk(self, new_Y_track: torch.Tensor | None, new_Y_track_var: torch.Tensor | None = None):
         if new_Y_track is not None:
             new_Y_track = new_Y_track.to(self._device, self._dtype)
             self._Y_trk = torch.cat([self._Y_trk, new_Y_track], dim=0)
