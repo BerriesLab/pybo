@@ -23,7 +23,8 @@ def main():
     output_dir = args.output_dir
     if output_dir is None:
         date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = Path(__file__).parent / "data" / "variability_study" / date_time
+        tutorial_name = args.target.split(".")[-2]
+        output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
     output_dir.mkdir(parents=True, exist_ok=True)
 
     csv_paths = []
