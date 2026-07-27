@@ -106,7 +106,7 @@ class BayesianOptimizer:
         self._sampler = None
         self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self._n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
-        self._n_model_fit_restarts = n_model_fit_restarts  # Max number of model fit attempts.
+        self._n_model_fit_restarts = n_model_fit_restarts  # Fit attempts per output model (BoTorch resamples hyperparameters after the first)
         self._batch_size = batch_size  # Number of candidates to be generated in parallel in each optimization step
         self._num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
         self._num_raw_samples = raw_samples  # Number of random points sampled in the search space to initialize the optimizer that maximizes the acquisition function
@@ -677,34 +677,30 @@ class BayesianOptimizer:
 
         return train_x, train_y, train_var
 
-    def _fit_model(self, restart_on_error=True, verbose=True):
+    def _fit_model(self, verbose=True):
+        """Fit the surrogate models, letting BoTorch own the retry budget.
+
+        BoTorch retries internally: attempt 1 starts from the models' initial
+        hyperparameters and each retry resamples them via sample_all_priors. The
+        budget is per output model, so a constraint GP that struggles retries on
+        its own instead of discarding the objective GPs that already converged -
+        which is what an outer loop around fit_gpytorch_mll cannot avoid doing.
+        """
         if not isinstance(self._model, ModelListGP):
             raise ValueError("Model must be initialised before fitting.")
 
-        max_attempts = self._n_model_fit_restarts + 1
+        if verbose:
+            print(f"Fitting model (up to {self._n_model_fit_restarts} attempts per output)... ", end="")
 
-        for attempt in range(1, max_attempts + 1):
-            try:
-                if verbose:
-                    print(f"Fitting model (Attempt {attempt}/{max_attempts})... ", end="")
+        try:
+            botorch.fit_gpytorch_mll(self._mll, max_attempts=self._n_model_fit_restarts)
+        except Exception as e:
+            raise RuntimeError(
+                f"Fitting failed after {self._n_model_fit_restarts} attempts per output model. Last error: {e}"
+            ) from e
 
-                botorch.fit_gpytorch_mll(self._mll)
-
-                if verbose:
-                    self._print_success()
-
-                return
-
-            except Exception as e:
-                # If we aren't allowed to restart, or we've run out of attempts, raise the error
-                if not restart_on_error or attempt == max_attempts:
-                    raise RuntimeError(f"Fitting failed after {attempt} attempts. Last error: {e}")
-
-                if verbose:
-                    print(f"Encountered error: {e}. Reinitializing model...")
-
-                # Re-initialize the model to get new random starting hyperparameters
-                self._initialize_model(verbose=False)
+        if verbose:
+            self._print_success()
 
     def _compute_acquisition_function_reference(self, verbose=True):
         """Compute the reference value for the acquisition function.
