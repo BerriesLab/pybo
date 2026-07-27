@@ -13,6 +13,7 @@ env/
 /dist/
 /tutorials/**/**/data/
 /tutorials/multi_objective/avagama/
+/experiments/data/
 
 # macOS
 .DS_Store

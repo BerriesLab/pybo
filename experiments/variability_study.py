@@ -27,21 +27,24 @@ def main():
         output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    n_initials = args.n_initial if args.n_initial is not None else [None]
     csv_paths = []
-    for replicate in range(args.n_replicates):
-        seed = args.base_seed + replicate
-        run_name = f"replicate{replicate}_seed{seed}"
-        csv_paths.append(run_trial(
-            target=args.target,
-            cli_args={
-                "--n-evals": args.n_evals,
-                "--q-batch": args.q_batch,
-                "--n-initial": args.n_initial,
-                "--seed": seed,
-            },
-            run_name=run_name,
-            output_dir=output_dir / run_name,
-        ))
+    for n_initial in n_initials:
+        for replicate in range(args.n_replicates):
+            seed = args.base_seed + replicate
+            prefix = f"ninit{n_initial}_" if n_initial is not None else ""
+            run_name = f"{prefix}replicate{replicate}_seed{seed}"
+            csv_paths.append(run_trial(
+                target=args.target,
+                cli_args={
+                    "--n-evals": args.n_evals,
+                    "--q-batch": args.q_batch,
+                    "--n-initial": n_initial,
+                    "--seed": seed,
+                },
+                run_name=run_name,
+                output_dir=output_dir / run_name,
+            ))
 
     df, n_failed = collect_results(csv_paths)
     summary_path = output_dir / "results.csv"

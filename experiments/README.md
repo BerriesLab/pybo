@@ -21,20 +21,20 @@ Examples:
 python -m experiments.variability_study \
     --target tutorials.multi_objective.branin_currin_cli.main --n-replicates 20
 
-python -m experiments.init_size_sensitivity \
-    --target tutorials.multi_objective.branin_currin_cli.main --n-initial-values 5,10,20,40
+python -m experiments.variability_study \
+    --target tutorials.multi_objective.branin_currin_cli.main --n-initial 5,10,20,40 --n-replicates 5
 ```
 
 Shared sweep flags (see `_common.build_sweep_parser`): `--target`, `--n-evals`,
-`--q-batch`, `--n-initial`, `--base-seed`, `--output-dir`. Each experiment adds
-its own extras (e.g. `--n-replicates`, `--n-initial-values`).
+`--q-batch`, `--n-initial`, `--base-seed`, `--output-dir`. `--n-initial` accepts
+a single value or a comma-separated list; each value is run as a separate
+setting. Each experiment adds its own extras (e.g. `--n-replicates`).
 
 ## Available experiments
 
-- `variability_study` — same settings, varying only the seed, to quantify
-  run-to-run noise.
-- `init_size_sensitivity` — sweeps the number of initial Sobol samples used to
-  seed each run, replicated over seeds.
+- `variability_study` — replicates a run over seeds to quantify run-to-run
+  noise. Pass a list to `--n-initial` (e.g. `5,10,20`) to sweep initial-dataset
+  size, replicating each value over seeds.
 
 ## Target contract
 

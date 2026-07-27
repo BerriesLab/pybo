@@ -20,6 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 
 
+def int_list(value: str) -> list[int]:
+    """argparse type for a comma-separated list of ints (a single value yields
+    a one-element list), e.g. "5" -> [5], "5,10,20" -> [5, 10, 20]."""
+    return [int(v) for v in value.split(",")]
+
+
 def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     """Shared flags for every experiment sweep. Each experiment adds its own
     extras (e.g. --n-replicates) and calls parse_args()."""
@@ -28,8 +34,9 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--n-evals", type=int, default=32,
                         help="Total objective evaluations per trial (the loop runs n_evals // q optimization steps).")
     parser.add_argument("--q-batch", type=int, default=1, help="q-batch size per trial.")
-    parser.add_argument("--n-initial", type=int, default=None,
-                        help="Number of initial samples per trial (defaults to the target CLI's own default).")
+    parser.add_argument("--n-initial", type=int_list, default=None,
+                        help="Initial sample count(s) per trial, comma-separated for a sweep (e.g. 5,10,20). "
+                             "Each value is a separate setting, replicated. Defaults to the target CLI's own default.")
     parser.add_argument("--base-seed", type=int, default=2063, help="First seed; trials increment from here.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
@@ -64,5 +71,7 @@ def collect_results(csv_paths: list) -> tuple:
     Returns (combined_dataframe, n_failed)."""
     n_failed = csv_paths.count(None)
     good = [p for p in csv_paths if p is not None]
+    if not good:
+        return pd.DataFrame(), n_failed
     df = pd.concat([pd.read_csv(p) for p in good], ignore_index=True)
     return df, n_failed
