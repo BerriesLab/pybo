@@ -23,6 +23,13 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
 
+    """ Seed the global torch RNG, not just the Sobol sampler. GP hyperparameter
+    fitting (BoTorch resamples priors on every retry) and the acquisition optimizer
+    both draw from it, so seeding only the initial design leaves the rest of the run
+    irreproducible - two trials with the same seed would share a starting dataset and
+    then diverge, and a trial that fails could not be re-run to investigate. """
+    torch.manual_seed(seed)
+
     """ Instantiate true objective """
     objective = BraninCurrin(device=DEVICE, dtype=DTYPE)
 
