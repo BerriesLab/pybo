@@ -9,7 +9,12 @@ trajectory. Works against any tutorial CLI that follows the experiments._common 
 from datetime import datetime
 from pathlib import Path
 from experiments._common import run_trial, collect_results, build_sweep_parser
-from pybo.utils.cli import build_trial_args_parser
+
+
+def parse_args():
+    parser = build_sweep_parser(description=__doc__)
+    parser.add_argument("--n-replicates", type=int, default=20, help="Number of independent repeats.")
+    return parser.parse_args()
 
 
 def main():
@@ -28,7 +33,7 @@ def main():
         csv_paths.append(run_trial(
             target=args.target,
             cli_args={
-                "--n-opt": args.n_opt,
+                "--n-evals": args.n_evals,
                 "--q-batch": args.q_batch,
                 "--n-initial": args.n_initial,
                 "--seed": seed,

@@ -44,7 +44,7 @@ def main():
             csv_paths.append(run_trial(
                 target=args.target,
                 cli_args={
-                    "--n-opt": args.n_opt,
+                    "--n-evals": args.n_evals,
                     "--q-batch": args.q_batch,
                     "--n-initial": n_initial,
                     "--seed": seed,

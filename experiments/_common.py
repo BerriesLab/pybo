@@ -13,12 +13,27 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from pybo.utils.cli import build_trial_args_parser
 
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+
+
+def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
+    """Shared flags for every experiment sweep. Each experiment adds its own
+    extras (e.g. --n-replicates) and calls parse_args()."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--target", required=True, help="Dotted module path to the tutorial CLI to launch.")
+    parser.add_argument("--n-evals", type=int, default=32,
+                        help="Total objective evaluations per trial (the loop runs n_evals // q optimization steps).")
+    parser.add_argument("--q-batch", type=int, default=1, help="q-batch size per trial.")
+    parser.add_argument("--n-initial", type=int, default=None,
+                        help="Number of initial samples per trial (defaults to the target CLI's own default).")
+    parser.add_argument("--base-seed", type=int, default=2063, help="First seed; trials increment from here.")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
+    return parser
 
 
 def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> Path | None:
@@ -34,7 +49,9 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> P
             cmd += [flag, str(value)]
 
     print(f"\n=== {run_name} ===", flush=True)
-    env = os.environ | {"PYTHONUNBUFFERED": "1"}
+    # PYTHONUTF8 keeps trials from crashing on Windows when the target CLI
+    # prints non-cp1252 characters (e.g. the optimizer's status emojis).
+    env = os.environ | {"PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"}
     result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
     if result.returncode != 0:
         print(f"!!! Trial {run_name} FAILED (exit {result.returncode})", flush=True)

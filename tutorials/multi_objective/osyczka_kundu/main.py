@@ -17,7 +17,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples=64, q: int = 1, output_dir: Path = None):
+def main(n_evals=64, q: int = 1, output_dir: Path = None):
     run_dir = output_dir / f"batch_{q}"
     run_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(run_dir)
@@ -55,12 +55,12 @@ def main(n_samples=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Main optimization loop """
-    for i in range(int(n_samples / q)):
+    for i in range(int(n_evals / q)):
         if i > 0 and bo.is_converged(patience=32):
             break
 
         print("\n\n")
-        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
+        print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
 
         """ Optimize and get new X """
         bo.optimize()
@@ -97,4 +97,4 @@ if __name__ == "__main__":
 
     batch_sizes = [1, 2, 4]
     for batch_size in batch_sizes:
-        main(n_samples=32, q=batch_size, output_dir=main_path)
+        main(n_evals=32, q=batch_size, output_dir=main_path)

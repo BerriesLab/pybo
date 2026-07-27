@@ -17,7 +17,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_samples=64, q: int = 1, n_initial: int = None, seed: int = 2063,
+def main(n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          output_dir: Path = None, plot: bool = True):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -51,12 +51,12 @@ def main(n_samples=64, q: int = 1, n_initial: int = None, seed: int = 2063,
     )
 
     """ Main optimization loop """
-    for i in range(int(n_samples / q)):
+    for i in range(int(n_evals / q)):
         if i > 0 and bo.is_converged(patience=32):
             break
 
         print("\n\n")
-        print(f"*** Iteration {i + 1}/{int(n_samples / q)} ***")
+        print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
 
         """ Optimize and get new X """
         bo.optimize()
@@ -103,7 +103,6 @@ def main(n_samples=64, q: int = 1, n_initial: int = None, seed: int = 2063,
 if __name__ == "__main__":
     print(f"Running on {DEVICE}.")
     args = build_trial_args_parser(description="Run a single Branin-Currin BO trial.").parse_args()
-
     output_dir = args.output_dir
     if output_dir is None:
         date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -111,7 +110,7 @@ if __name__ == "__main__":
     output_dir.mkdir(parents=True, exist_ok=True)
 
     main(
-        n_samples=args.n_opt,
+        n_evals=args.n_evals,
         q=args.q_batch,
         n_initial=args.n_initial,
         seed=args.seed,
