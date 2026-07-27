@@ -28,7 +28,7 @@ def main():
             seed = args.base_seed + replicate
             prefix = f"ninit{n_initial}_" if n_initial is not None else ""
             run_name = f"{prefix}replicate{replicate}_seed{seed}"
-            summary_path = run_trial(
+            summary_path, completed = run_trial(
                 target=args.target,
                 cli_args={
                     "--n-evals": args.n_evals,
@@ -41,15 +41,19 @@ def main():
                 run_name=run_name,
                 output_dir=output_dir / run_name,
             )
-            tags = {"n_initial": n_initial, "seed": seed, "batch_size": args.q_batch}
+            tags = {"n_initial": n_initial, "seed": seed, "batch_size": args.q_batch, "completed": completed}
             trials.append((summary_path, tags))
 
-    df, n_failed = collect_results(trials)
+    df, n_missing = collect_results(trials)
     results_path = output_dir / "results.csv"
     df.to_csv(results_path, index=False)
-    print(f"\nSaved {len(df)} rows from {len(trials) - n_failed} successful runs to {results_path}")
-    if n_failed:
-        print(f"{n_failed} of {len(trials)} trials failed and were excluded (see log above).")
+    n_partial = sum(1 for path, tags in trials if path is not None and not tags["completed"])
+    print(f"\nSaved {len(df)} rows from {len(trials) - n_missing} runs to {results_path}")
+    if n_partial:
+        print(f"{n_partial} of those stopped early; the iterations they did finish are "
+              f"included and tagged completed=False.")
+    if n_missing:
+        print(f"{n_missing} of {len(trials)} trials left no output at all and were excluded (see log above).")
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Initial sample count(s) per trial, comma-separated for a sweep (e.g. 5,10,20). "
                              "Each value is a separate setting, replicated. Defaults to the target CLI's own default.")
     parser.add_argument("--base-seed", type=int, default=2063, help="First seed; trials increment from here.")
-    parser.add_argument("--n-replicates", type=int, default=20,
+    parser.add_argument("--n-replicates", type=int, default=5,
                         help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
@@ -61,11 +61,17 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     return parser
 
 
-def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> Path | None:
+def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> tuple[Path | None, bool]:
     """Run one trial of `target` (dotted module path to a tutorial's CLI
     main.py, e.g. "tutorials.multi_objective.branin_currin_cli.main") as a
-    subprocess. Returns the path to its summary.json, or None if the trial
-    failed.
+    subprocess. Returns (summary_path, completed).
+
+    A trial that dies partway (e.g. GP fitting diverging at step 7 of 32) still
+    has every iteration up to that point in its summary.json, because the target
+    CLI rewrites the running summary after each step. Those iterations are valid,
+    so the path is returned with completed=False rather than discarded - dropping
+    them would bias a sweep towards the seeds where fitting happened to behave.
+    summary_path is None only when the trial left nothing to read.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [PYTHON, "-m", target, "--output-dir", str(output_dir)]
@@ -78,20 +84,32 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> P
     # prints non-cp1252 characters (e.g. the optimizer's status emojis).
     env = os.environ | {"PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"}
     result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
-    if result.returncode != 0:
-        print(f"!!! Trial {run_name} FAILED (exit {result.returncode})", flush=True)
-        return None
-    return output_dir / "summary.json"
+    completed = result.returncode == 0
+    summary_path = output_dir / "summary.json"
+
+    if not summary_path.exists():
+        print(f"!!! Trial {run_name} produced no summary.json (exit {result.returncode}) "
+              f"- nothing to salvage", flush=True)
+        return None, completed
+    if not completed:
+        print(f"!!! Trial {run_name} FAILED (exit {result.returncode}) - keeping the "
+              f"iterations it completed before dying", flush=True)
+    return summary_path, completed
 
 
 def collect_results(trials: list) -> tuple:
     """Aggregate per-trial summary.json files into one tidy per-iteration
     DataFrame. `trials` is a list of (summary_json_path, tags) pairs, where a
-    None path marks a failed trial (skipped) and `tags` is a dict of per-trial
-    identity columns (e.g. seed, n_initial, batch_size) attached to every row
-    of that trial. Reads each run's metric trace, derives regret from the
-    stored problem optimum, and returns (combined_dataframe, n_failed)."""
-    n_failed = sum(1 for path, _ in trials if path is None)
+    None path marks a trial that left nothing to read (skipped) and `tags` is a
+    dict of per-trial identity columns (e.g. seed, n_initial, batch_size, and
+    run_trial's `completed` flag) attached to every row of that trial. Reads
+    each run's metric trace, derives regret from the stored problem optimum, and
+    returns (combined_dataframe, n_missing).
+
+    A trial that stopped early simply contributes fewer rows: the metric trace
+    and elapsed_time are zipped, so a run that managed 6 of 32 iterations yields
+    6 rows, tagged completed=False so analysis can censor or keep them."""
+    n_missing = sum(1 for path, _ in trials if path is None)
     rows = []
     for path, tags in trials:
         if path is None:
@@ -112,4 +130,4 @@ def collect_results(trials: list) -> tuple:
                 "regret": (optimum - value) if optimum is not None else None,
                 "elapsed_time": elapsed,
             })
-    return pd.DataFrame(rows), n_failed
+    return pd.DataFrame(rows), n_missing
