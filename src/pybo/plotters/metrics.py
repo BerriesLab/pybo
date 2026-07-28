@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.styles import *
+from pybo.plotters.styles import metrics_line2d
 
 
 def plot_and_save_metrics(bo: BayesianOptimizer):
@@ -18,11 +18,12 @@ def plot_and_save_metrics(bo: BayesianOptimizer):
 
 
 class BestValuePlotter(PlotterBase):
+    plot_name = "best_value"
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Best value")
 
@@ -40,13 +41,14 @@ class BestValuePlotter(PlotterBase):
 
 
 class HypervolumePlotter(PlotterBase):
+    plot_name = "hypervolume"
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Hypervolume")
 
@@ -66,13 +68,14 @@ class HypervolumePlotter(PlotterBase):
 
 
 class HypervolumeImprovementPlotter(PlotterBase):
+    plot_name = "hypervolume_improvement"
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
             raise TypeError("Objective must be of type MCMultiObjectiveBase")
 
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel(r"$\log_{10}(\mathrm{HVI})$")
 
@@ -97,10 +100,11 @@ class HypervolumeImprovementPlotter(PlotterBase):
 
 
 class ElapsedTimePlotter(PlotterBase):
+    plot_name = "elapsed_time"
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel("Elapsed Time")
 

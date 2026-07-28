@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import ParCfg
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.styles import *
+from pybo.plotters.styles import evolution_interconnections, evolution_scatter, general_axline
 
 
 def plot_and_save_evolutions(bo: BayesianOptimizer, ):
@@ -22,6 +22,7 @@ def plot_and_save_evolutions(bo: BayesianOptimizer, ):
 
 
 class EvolutionPlotter(PlotterBase):
+    plot_name = "evolution"
     def __init__(self, bo: BayesianOptimizer, y: tuple[str, str | int]):
         """
         Args:
@@ -38,7 +39,7 @@ class EvolutionPlotter(PlotterBase):
         self.config = raw_cfg
         self.idx = raw_cfg.index
 
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.ax.set_xlabel("Number of observations")
         self.ax.set_ylabel(self.config.label.capitalize())
 

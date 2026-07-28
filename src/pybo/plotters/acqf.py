@@ -6,14 +6,20 @@ from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
-from pybo.plotters.styles import *
+from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.styles import (
+    acqf_1d, arrow_future, arrow_past, experiment_scatter_observations_best_value,
+    experiment_scatter_observations_feasible, experiment_scatter_observations_infeasible,
+    next_X_1d, next_X_2d,
+)
 from pybo.samplers.samplers import SobolSampler
 
 
 class Acqf1DPlotter(PlotterBase):
+    plot_name = "acqf_1d"
 
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
-                 z: tuple[str, str] | None = None, cmap="coolwarm", grid: bool = True, seed=None):
+                 z: tuple[str, str] | None = None, cmap=fig_cfg["cmap"]["sequential"], grid: bool = True, seed=None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -25,7 +31,7 @@ class Acqf1DPlotter(PlotterBase):
 
         self.cmap = cmap
         self.n_grid_points = 100000
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
         self.cbar = None
         self.grid = grid
@@ -161,6 +167,7 @@ class Acqf1DPlotter(PlotterBase):
 
 
 class Acqf2DPlotter(PlotterBase):
+    plot_name = "acqf_2d"
 
     def __init__(
             self,
@@ -168,7 +175,7 @@ class Acqf2DPlotter(PlotterBase):
             x: tuple[str, str | int] = ("par", 0),
             y: tuple[str, str | int] = ("par", 1),
             z: tuple[str, str | int] | None = None,
-            cmap='viridis', grid=True
+            cmap=fig_cfg["cmap"]["sequential"], grid=True
     ):
         super().__init__(bo=bo)
 
@@ -181,7 +188,7 @@ class Acqf2DPlotter(PlotterBase):
 
         self.cmap = cmap
         self.n_grid_points = 100
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
         self.grid = grid
 

@@ -24,7 +24,8 @@ dependencies = [
     "sympy == 1.14.0",
     "pandas >= 2.3",
     "imageio >= 2.37",
-    "tqdm >= 4.67"
+    "tqdm >= 4.67",
+    "PyYAML >= 6.0"
 ]
 
 [project.optional-dependencies]
@@ -34,3 +35,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The figure settings are YAML, not Python: without this they are dropped from a
+# non-editable install and fig_cfg cannot resolve.
+[tool.setuptools.package-data]
+"pybo.plotters.figure_settings" = ["*.yaml", "publisher_styles/*.yaml"]
+"pybo.plotters.figure_settings_app" = ["*.yaml", "user_styles/*.yaml"]

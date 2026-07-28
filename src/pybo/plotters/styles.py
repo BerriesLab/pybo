@@ -1,247 +1,90 @@
-C_FEASIBLE = "#2ecc71"  # Emerald Green
-C_INFEASIBLE = "#e74c3c"  # Alizarin Red
-C_PARETO = "#f39c12"  # Orange
-C_GP_MEAN = "#2980b9"  # Belize Blue
-C_GT = "#2c3e50"  # Midnight Blue (Ground Truth)
-C_FUTURE = "#9b59b6"  # Amethyst Purple (Next X / Trajectory)
-C_EVOLUTION = C_PARETO
+"""Matplotlib keyword dicts, derived entirely from the resolved figure settings.
 
-ms = 8
-ms_gt = ms / 8
-S_OBS = ms ** 2
-S_GT = ms_gt ** 2
-EDGE_DARK = C_GT
-EDGE_LIGHT = "white"
+This module holds no style values of its own. Every colour, marker, size and label
+comes from ``fig_cfg`` (pybo/plotters/figure_settings_app/defaults.yaml, overlaid by
+the active publisher and user styles), so changing a style file changes the plots.
+Its only job is the composition YAML cannot express: pairing a role's colour with its
+marker, and scaling the Pareto stars off the base marker size.
+"""
+from pybo.plotters.figure_settings.config import fig_cfg
 
-evolution_scatter = {
-    'marker': 'o',
-    's': ms ** 2,
-    'color': 'tab:orange',
-    'edgecolor': 'black',
-    'alpha': 1,
-    'linestyle': '-',
-}
-evolution_interconnections = {
-    "color": 'gray',
-    "linestyle": '-',
-    "linewidth": 1,
-    "alpha": 0.2,
-}
-metrics_line2d = {
-    'marker': 'o',
-    'markerfacecolor': C_PARETO,
-    'markeredgecolor': 'black',
-    'markersize': ms,
-    'linestyle': '-',
-}
-general_axline = {
-    "linestyle": '--',
-    "linewidth": 1,
-    "color": 'black',
-    "alpha": 0.5,
-}
+_c = fig_cfg["colors"]
+_m = fig_cfg["markers"]
+_s = fig_cfg["scatter"]
 
-gp_mean = {
-    'color': 'blue',
-    'label': r'GP $\mu$',
-}
-gp_confidence_interval_1sigma = {
-    'color': 'blue',
-    'alpha': 0.1,
-    'label': r'GP $\pm 1 \sigma$',
-}
-gp_confidence_interval_2sigma = {
-    'color': 'blue',
-    'alpha': 0.05,
-    'label': r'GP $\pm 2 \sigma$',
-}
-gp_confidence_interval_3sigma = {
-    'color': 'blue',
-    'alpha': 0.02,
-    'label': r'GP $\pm 3 \sigma$',
-}
-next_X_1d = {
-    'color': 'green',
-    'linestyle': ':',
-    'linewidth': 2,
-    'label': r"New $X$",
-}
+C_FEASIBLE = _c["feasible"]
+C_INFEASIBLE = _c["infeasible"]
+C_PARETO = _c["pareto"]
+C_GP_MEAN = _c["gp_mean"]
+C_GT = _c["ground_truth"]
+C_FUTURE = _c["future"]
+C_EVOLUTION = _c["evolution"]
+
+S_OBS = _s["marker_size"]
+S_GT = _s["ground_truth_size"]
+S_PARETO = S_OBS * _s["pareto_factor"]
+S_GT_PARETO = S_GT * _s["pareto_factor"]
+EDGE_DARK = _s["edge_color"]
+EDGE_WIDTH = _s["edge_width"]
+
+
+def _obs(role: str, color: str, size: float) -> dict:
+    return {
+        "marker": _m[role],
+        "facecolor": color,
+        "edgecolor": EDGE_DARK,
+        "s": size,
+        **fig_cfg["observation"][role],
+    }
+
+
+def _gt(role: str, color: str, size: float) -> dict:
+    cfg = dict(fig_cfg["ground_truth"][role])
+    edge_width = cfg.pop("edge_width", None)
+    kwargs = {
+        "marker": _m["ground_truth_infeasible" if role == "infeasible" else role],
+        "facecolor": color,
+        "edgecolor": EDGE_DARK if edge_width else None,
+        "s": size,
+        **cfg,
+    }
+    if edge_width:
+        kwargs["linewidths"] = edge_width
+    return kwargs
+
+
+experiment_scatter_observations_feasible = _obs("feasible", C_FEASIBLE, S_OBS)
+experiment_scatter_observations_infeasible = _obs("infeasible", C_INFEASIBLE, S_OBS)
+experiment_scatter_observations_pareto_front = _obs("pareto", C_PARETO, S_PARETO)
+experiment_scatter_observations_best_value = _obs("best_value", C_PARETO, S_PARETO)
+
+experiment_scatter_gnd_truth_feasible = _gt("feasible", C_GT, S_GT)
+experiment_scatter_gnd_truth_infeasible = _gt("infeasible", C_INFEASIBLE, S_GT)
+experiment_scatter_gnd_truth_pareto_front = _gt("pareto", C_PARETO, S_GT_PARETO)
+experiment_scatter_gnd_truth_best_value = _gt("best_value", C_PARETO, S_GT_PARETO)
+
+gp_mean = {"color": C_GP_MEAN, **fig_cfg["gp"]["mean"]}
+gp_confidence_interval_1sigma = {"color": C_GP_MEAN, **fig_cfg["gp"]["band_1sigma"]}
+gp_confidence_interval_2sigma = {"color": C_GP_MEAN, **fig_cfg["gp"]["band_2sigma"]}
+gp_confidence_interval_3sigma = {"color": C_GP_MEAN, **fig_cfg["gp"]["band_3sigma"]}
+
+next_X_1d = {"color": C_FUTURE, **fig_cfg["next_X"]["line_1d"]}
 next_X_2d = {
-    "facecolor": 'red',
-    "edgecolors": 'black',
-    "marker": '*',
-    "s": ms ** 2,
-    "label": 'Next X',
-    "alpha": 0.8,
-}
-optimum = {
-    'color': 'orange',
-    'marker': 'D',
-    's': ms ** 2,
-    'edgecolors': 'black',
-    'label': "Optimum",
-}
-acqf_1d = {
-    'color': 'black',
-    "s": S_GT,
-    'label': 'Acqf.'
-}
-arrow_future = {
-    'arrowstyle': '->',
-    'color': 'red',
-    'lw': 1.5,
-    'alpha': 0.8,
-    'shrinkA': 3,
-    'shrinkB': 3,
-    'connectionstyle': "arc3,rad=0.1",
-    'ls': '--'
-}
-arrow_past = {
-    'arrowstyle': '->',
-    'color': 'white',
-    'lw': 1.5,
-    'alpha': 0.8,
-    'shrinkA': 3,
-    'shrinkB': 3,
-    'connectionstyle': "arc3,rad=0.1",
+    "marker": _m["next_X"],
+    "facecolor": C_FUTURE,
+    "edgecolors": EDGE_DARK,
+    "s": S_OBS,
+    **fig_cfg["next_X"]["marker_2d"],
 }
 
-experiment_scatter_observations_infeasible = {
-    'marker': 'X',
-    'facecolor': C_INFEASIBLE,
-    'edgecolor': 'black',
-    's': ms ** 2,
-    'label': "Infeasible Obs",
-    'alpha': 0.8,
-}
-experiment_scatter_observations_feasible = {
-    'marker': 'o',
-    'facecolor': C_FEASIBLE,
-    'edgecolor': 'black',
-    's': ms ** 2,
-    'label': "Feasible Obs",
-    'alpha': 0.8,
-}
-experiment_scatter_observations_pareto_front = {
-    'marker': '*',
-    'facecolor': C_PARETO,
-    'edgecolor': "black",
-    's': 3 * ms ** 2,
-    'label': "Pareto Obs",
-    'alpha': 0.8,
-}
-experiment_scatter_observations_best_value = {
-    'marker': '*',
-    'facecolor': C_PARETO,
-    'edgecolor': "black",
-    's': 3 * ms ** 2,
-    'label': "Best Obs",
-    'alpha': 0.8,
-}
-experiment_scatter_gnd_truth_feasible = {
-    'marker': "o",
-    'facecolor': C_GT,
-    "edgecolor": None,
-    's': S_GT,
-    'label': "Feasible GT",
-    'alpha': 0.25,
-}
-experiment_scatter_gnd_truth_infeasible = {
-    "marker": "x",
-    'facecolor': C_INFEASIBLE,
-    "edgecolor": None,
-    's': S_GT,
-    'label': "Infeasible GT",
-    'alpha': 0.15,
-}
-experiment_scatter_gnd_truth_pareto_front = {
-    "marker": "*",
-    "facecolor": C_PARETO,
-    "edgecolor": EDGE_DARK,
-    "linewidths": 0.6,
-    "s": 3 * S_GT,
-    "alpha": 0.70,
-    "label": "Pareto GT",
-}
+arrow_future = {"color": C_FUTURE, **fig_cfg["arrow"]["future"]}
+arrow_past = dict(fig_cfg["arrow"]["past"])
 
-experiment_scatter_gnd_truth_best_value = {
-    "marker": "*",
-    "facecolor": C_PARETO,
-    "edgecolor": EDGE_DARK,
-    "linewidths": 0.6,
-    "s": 3 * S_GT,
-    "alpha": 0.70,
-    "label": "Best GT Value",
-}
+acqf_1d = {"s": S_GT, **fig_cfg["acqf"]["line_1d"]}
 
-experiment_contour_gnd_truth = {
-    "levels": 50,
-    "cmap": 'viridis',
-    "alpha": 0.8
-}
-experiment_contour_gnd_truth_infeasible = {
-    "levels": [0.5, 1.0],  # Shades areas where value is between 0.5 and 1.0
-    "colors": ['red'],
-    "alpha": 0.3,  # Transparency for the "shaded" look
-}
+metrics_line2d = {"markerfacecolor": C_PARETO, **fig_cfg["metrics"]["line"]}
 
-# Old styles
-# feasible_pareto_objectives_kwargs = {
-#     'color': 'tab:orange',
-#     'marker': 'D',
-#     's': ms ** 2,
-#     'edgecolors': 'black',
-#     'alpha': 0.7,
-#     'label': 'Pareto Obs.'
-# }
-# feasible_non_pareto_objectives_kwargs = {
-#     'color': "tab:green",
-#     'marker': "o",
-#     's': ms ** 2,
-#     "alpha": 0.7,
-#     "edgecolors": "black",
-#     'label': 'Non-Pareto Obs.'
-# }
-# infeasible_objectives_kwargs = {
-#     'color': "tab:red",
-#     'marker': "x",
-#     's': ms ** 2,
-#     "alpha": 0.7,
-#     'label': 'Inf. Obs.'
-# }
-# ref_point_kwargs = {
-#     'color': 'tab:red',
-#     "edgecolors": "black",
-#     'marker': 's',
-#     's': ms ** 2,
-#     'alpha': 0.7,
-#     'label': 'Ref. Point'
-# }
-# feasible_pareto_ground_truth_kwargs = {
-#     'color': "black",
-#     'marker': "D",
-#     's': ms ** 2 / 5,
-#     "alpha": 1,
-#     'label': 'Pareto GT'
-# }
-# feasible_non_pareto_ground_truth_kwargs = {
-#     'color': "black",
-#     'marker': "o",
-#     's': ms ** 2 / 5,
-#     "alpha": 0.1,
-#     'label': 'Non-Pareto GT'
-# }
-# infeasible_ground_truth_kwargs = {
-#     'color': "red",
-#     'marker': "x",
-#     's': ms ** 2 / 5,
-#     "alpha": 0.1,
-#     'label': 'Inf. GT'
-# }
-# posterior_pareto_kwargs = {
-#     'fmt': 'o',
-#     'edgecolors': 'tab:blue',
-#     'alpha': 0.3,
-#     'label': r'Post. $\mu \pm 3 \sigma$',
-#     'capsize': 3,
-# }
+evolution_scatter = {"color": C_EVOLUTION, "s": S_OBS, **fig_cfg["evolution"]["scatter"]}
+evolution_interconnections = dict(fig_cfg["evolution"]["interconnection"])
+
+general_axline = dict(fig_cfg["refline"]["initial_samples"])

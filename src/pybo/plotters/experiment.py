@@ -12,7 +12,15 @@ from sympy import false
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.styles import *
+from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.styles import (
+    arrow_future, arrow_past, experiment_scatter_gnd_truth_best_value,
+    experiment_scatter_gnd_truth_feasible, experiment_scatter_gnd_truth_infeasible,
+    experiment_scatter_gnd_truth_pareto_front, experiment_scatter_observations_best_value,
+    experiment_scatter_observations_feasible, experiment_scatter_observations_infeasible,
+    experiment_scatter_observations_pareto_front, gp_confidence_interval_1sigma,
+    gp_confidence_interval_2sigma, gp_confidence_interval_3sigma, gp_mean, next_X_1d, next_X_2d,
+)
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 from pybo.samplers.samplers import SobolSampler
@@ -22,9 +30,10 @@ AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 
 
 class Experiment1DPlotter(PlotterBase):
+    plot_name = "experiment_1d"
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
                  y: tuple[str, str | int] = ("obj", 0), z: tuple[str, str | int] | None = None,
-                 cmap='coolwarm', grid=True, seed=None):
+                 cmap=fig_cfg["cmap"]["sequential"], grid=True, seed=None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -36,7 +45,7 @@ class Experiment1DPlotter(PlotterBase):
 
         self.cmap = cmap
         self.n_grid_points = 100000
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
         self.cbar = None
         self.grid = grid
@@ -347,13 +356,14 @@ class Experiment1DPlotter(PlotterBase):
 
 
 class Experiment2DPlotter(PlotterBase):
+    plot_name = "experiment_2d"
     def __init__(
             self,
             bo: BayesianOptimizer,
             x: AxisSpec = ("par", 0),
             y: AxisSpec = ("par", 1),
             z: AxisSpec | None = ("obj", 0),
-            cmap='coolwarm',
+            cmap=fig_cfg["cmap"]["sequential"],
             grid=True,
             seed=None
     ):
@@ -368,7 +378,7 @@ class Experiment2DPlotter(PlotterBase):
 
         self.cmap = cmap
         self.n_grid_points = 1000
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
         self.cbar = None
         self.grid = grid
@@ -621,8 +631,9 @@ class Experiment2DPlotter(PlotterBase):
 
 
 class ParetoFront2DPlotter(PlotterBase):
+    plot_name = "pareto_front_2d"
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
-                 z: tuple[str, str | int] | None = None, cmap='coolwarm', grid=False, seed=None):
+                 z: tuple[str, str | int] | None = None, cmap=fig_cfg["cmap"]["sequential"], grid=False, seed=None):
         """
         Initializes the 2D Pareto Plotter.
         Args:
@@ -642,7 +653,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
         self.cmap = cmap
         self.n_grid_points = 100
-        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=600)
+        self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None  # To store the scatter for the colorbar
         self.cbar = None  # To store the color bar
         self.grid = grid

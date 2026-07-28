@@ -1,8 +1,8 @@
 from pathlib import Path
-from typing import Tuple
 import matplotlib
 import torch
 from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.plotters.figure_settings.config import fig_cfg
 from matplotlib import pyplot as plt
 
 matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show().
@@ -10,10 +10,15 @@ print(f"Matplotlib backend: {matplotlib.get_backend()}")
 
 
 class PlotterBase:
+    # Which entry of fig_cfg["figsize"] this plot is sized by. Subclasses set it; the
+    # aspect ratio behind it lives in figure_settings_app/defaults.yaml, and the
+    # physical width comes from the active publisher style.
+    plot_name: str = "experiment_1d"
 
     def __init__(self, bo: BayesianOptimizer):
         self.bo = bo
-        self.figsize: Tuple[int, int] = (8, 7)
+        self.figsize = fig_cfg["figsize"][self.plot_name]
+        self.dpi = fig_cfg["dpi"]
         self.n_grid_points: int = 500
 
     def save_figure(self, filename: str | Path | None = None):
@@ -24,7 +29,8 @@ class PlotterBase:
         path = Path(filename)
         save_path = Path.cwd() / path.parent / path.name
 
-        self.fig.savefig(fname=save_path, dpi=600)
+        self.fig.tight_layout(pad=fig_cfg["layout_pad"])
+        self.fig.savefig(fname=save_path, dpi=self.dpi)
         return self
 
     def close_figure(self):

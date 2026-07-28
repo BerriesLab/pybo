@@ -1,0 +1,136 @@
+# pyBO figure settings — this project's domain-specific defaults.
+#
+# Merged on top of the reusable package defaults
+# (pybo/plotters/figure_settings/defaults.yaml):
+#   package defaults -> THIS file -> publisher style -> user style
+# Everything here is named after pyBO's plots and its optimization semantics
+# (feasible / infeasible / Pareto / GP posterior / ground truth), so it does not
+# belong in the shared package.
+
+# --- Figure aspect ratios (width / height) ---
+# Shape only, never size: the physical width comes from column_width_in (package /
+# publisher style), and the height is derived as width / aspect. fig_cfg["figsize"][name]
+# (the [w, h] in inches every plotter reads) is built from these in config.py.
+# One key per plotter; 1.143 reproduces the 8:7 every plotter used before these
+# settings existed.
+aspect:
+  experiment_1d: 1.143              # Experiment1DPlotter
+  experiment_2d: 1.143              # Experiment2DPlotter
+  pareto_front_2d: 1.143            # ParetoFront2DPlotter
+  acqf_1d: 1.143                    # Acqf1DPlotter
+  acqf_2d: 1.143                    # Acqf2DPlotter
+  evolution: 1.143                  # EvolutionPlotter (one per parameter / result)
+  best_value: 1.143                 # BestValuePlotter
+  hypervolume: 1.143                # HypervolumePlotter
+  hypervolume_improvement: 1.143    # HypervolumeImprovementPlotter
+  elapsed_time: 1.143               # ElapsedTimePlotter
+
+# --- Colormaps ---
+# Every surface and z-coloured scatter in pyBO encodes magnitude (a posterior mean, an
+# acquisition value, a parameter), so they all take `sequential`, which must be a single
+# hue light->dark. Before these settings existed four plotters hardcoded 'coolwarm' and
+# Acqf2DPlotter used 'viridis'; viridis is the correct one for magnitude (perceptually
+# uniform and colourblind-safe), so it is now the default for all of them. Set this to
+# coolwarm to restore the old look.
+# `diverging` is here for data with a meaningful midpoint and is not currently used.
+cmap:
+  sequential: viridis
+  diverging: coolwarm
+
+# --- Semantic palette --------------------------------------------------------
+# These seven roles are the single source of truth for colour; no plotter may hardcode
+# a colour literal.
+#
+# COLOURBLIND SAFETY — read before editing, and re-measure if you do.
+# Pairwise separation was measured in OKLab (dE x100) under deuteranopia/protanopia:
+#   feasible / pareto        9.1     floor  - legible ONLY via distinct markers
+#   feasible / infeasible   11.2     floor  - legible ONLY via distinct markers
+#   gp_mean  / future       11.7     floor  - legible via linestyle + marker
+# Six simultaneous categorical hues cannot all reach the dE >= 15 comfort target under
+# deuteranopia; that is a property of the colour space, not a fixable choice. The floor
+# (dE >= 8) is therefore held by the `markers` block below acting as secondary encoding.
+# If you override `colors` in a style, override `markers` too or the plots stop being
+# colourblind-legible.
+colors:
+  feasible: "#2ecc71"        # Emerald green  - feasible observations
+  infeasible: "#e74c3c"      # Alizarin red   - infeasible observations
+  pareto: "#f39c12"          # Orange         - Pareto front / best value
+  gp_mean: "#2980b9"         # Belize blue    - GP posterior mean and its bands
+  ground_truth: "#2c3e50"    # Midnight blue  - dense true-function background
+  future: "#7B3FF2"          # Violet         - proposed next X and forward arrows
+  evolution: "#f39c12"       # Orange         - evolution traces (matches pareto)
+
+# --- Per-role markers ---
+# Load-bearing, not decoration: these carry the identity that colour alone cannot at
+# the separations recorded above.
+markers:
+  feasible: "o"
+  infeasible: "X"
+  pareto: "*"
+  best_value: "*"
+  ground_truth: "o"
+  ground_truth_infeasible: "x"
+  next_X: "*"
+
+# --- Marker sizes (points^2) ---
+# One knob per concept. Publisher and user styles override marker_size to suit a
+# narrow column; the Pareto/best-value stars follow it through pareto_factor.
+scatter:
+  marker_size: 64          # observations
+  ground_truth_size: 1     # the dense background grid (hundreds of points)
+  pareto_factor: 3         # Pareto & best-value stars, relative to the above
+  edge_color: black
+  edge_width: 0.5
+
+# --- Observations (the measured points) ---
+observation:
+  feasible:   {alpha: 0.8, label: "Feasible Obs"}
+  infeasible: {alpha: 0.8, label: "Infeasible Obs"}
+  pareto:     {alpha: 0.8, label: "Pareto Obs"}
+  best_value: {alpha: 0.8, label: "Best Obs"}
+
+# --- Ground truth (the dense true-function background) ---
+ground_truth:
+  feasible:   {alpha: 0.25, label: "Feasible GT"}
+  infeasible: {alpha: 0.15, label: "Infeasible GT"}
+  pareto:     {alpha: 0.70, edge_width: 0.6, label: "Pareto GT"}
+  best_value: {alpha: 0.70, edge_width: 0.6, label: "Best GT Value"}
+
+# --- GP posterior (1D plots) ---
+# Bands fade as they widen so the 1-sigma envelope reads strongest.
+gp:
+  mean:        {label: "GP $\\mu$"}
+  band_1sigma: {alpha: 0.10, label: "GP $\\pm 1 \\sigma$"}
+  band_2sigma: {alpha: 0.05, label: "GP $\\pm 2 \\sigma$"}
+  band_3sigma: {alpha: 0.02, label: "GP $\\pm 3 \\sigma$"}
+
+# --- The proposed next X ---
+next_X:
+  line_1d:   {linestyle: ":", linewidth: 2, label: "New $X$"}
+  marker_2d: {alpha: 0.8, label: "Next X"}
+
+# --- Trajectory arrows between successive proposals ---
+# `past` is drawn over the coloured surface, so it stays white for contrast; `future`
+# carries the `future` palette colour.
+arrow:
+  future: {arrowstyle: "->", lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
+           connectionstyle: "arc3,rad=0.1", ls: "--"}
+  past:   {arrowstyle: "->", lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
+           connectionstyle: "arc3,rad=0.1", color: white}
+
+# --- Acquisition function trace (1D) ---
+acqf:
+  line_1d: {color: black, label: "Acqf."}
+
+# --- Metrics panels (best value, hypervolume, HVI, elapsed time) ---
+metrics:
+  line: {marker: "o", markeredgecolor: black, markersize: 8, linestyle: "-"}
+
+# --- Evolution panels (one per parameter / objective / constraint) ---
+evolution:
+  scatter:        {marker: "o", edgecolor: black, alpha: 1, linestyle: "-"}
+  interconnection: {color: gray, linestyle: "-", linewidth: 1, alpha: 0.2}
+
+# --- Reference lines ---
+refline:
+  initial_samples: {linestyle: "--", linewidth: 1, color: black, alpha: 0.5}
