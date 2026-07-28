@@ -23,7 +23,7 @@ STYLE_DIR = Path(__file__).parent / "styles"
 # The style used when nothing asks for one. A project decision, so it lives in version
 # control rather than in a runtime state file; pybo.utils.cli reads it as the default for
 # --style, which keeps a plain `import pybo.plotters...` and a CLI run on the same style.
-DEFAULT_STYLE = "ieee_double"
+DEFAULT_STYLE = "acs_double"
 
 # Guards a settings tree that somehow drops column_width_in.
 _DEFAULT_WIDTH = 10.0
@@ -104,9 +104,9 @@ def resolve(style: str | None = None, fmt: str | None = None) -> dict:
                 for key in ("linewidth", "lw", "linewidths"):  # matplotlib's aliases
                     if key in entry:
                         entry[key] = round(entry[key] * lw_scale, 3)
-                if "s" in entry:                # scatter: area
+                if "s" in entry:  # scatter: area
                     entry["s"] = round(entry["s"] * mk_scale ** 2, 3)
-                if "markersize" in entry:       # plot: diameter
+                if "markersize" in entry:  # plot: diameter
                     entry["markersize"] = round(entry["markersize"] * mk_scale, 3)
 
     # Mutate in place: callers hold a reference to this exact dict.

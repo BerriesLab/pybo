@@ -18,13 +18,14 @@ class PlotterBase:
     def __init__(self, bo: BayesianOptimizer):
         # No-op under the CLI, which has already resolved with --style; this covers a
         # notebook or a test that builds a plotter without going through argparse.
+        self.fig = None
         ensure_resolved()
         self.bo = bo
         self.figsize = fig_cfg["figsize"][self.plot_name]
         self.dpi = fig_cfg["dpi"]
         self.n_grid_points: int = 500
 
-    def save_figure(self, filename: str | Path | None = None):
+    def save_figure(self, filename: str | Path):
         # Fixed filename: the per-step folder gives uniqueness, mirroring
         # BayesianOptimizer.to_csv(latest=True). The counter this replaced dated
         # from the flat run directory, where it was the only thing separating one

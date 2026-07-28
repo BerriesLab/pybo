@@ -11,24 +11,66 @@ style values of their own.
 """
 
 # --- Semantic palette --------------------------------------------------------
-# The single source of truth for color; every block below refers to these names.
+# Pick one by name. Every block below refers to the roles, never to a literal colour,
+# so switching the line below repaints every figure.
 #
-# COLOURBLIND SAFETY — read before editing, and re-measure if you do.
-# Pairwise separation measured in OKLab (dE x100) under deuteranopia/protanopia:
-#   feasible / pareto        9.1     floor  - legible ONLY via distinct markers
-#   feasible / infeasible   11.2     floor  - legible ONLY via distinct markers
-#   gp_mean  / future       11.7     floor  - legible via linestyle + marker
-# Six simultaneous categorical hues cannot all reach the dE >= 15 comfort target under
-# deuteranopia; that is a property of the color space, not a fixable choice. The floor
-# (dE >= 8) is therefore held by the markers below acting as secondary encoding: if you
-# change a color, keep its marker distinct or the plots stop being colourblind-legible.
-FEASIBLE = "#2ecc71"  # Emerald green  - feasible observations
-INFEASIBLE = "#e74c3c"  # Alizarin red   - infeasible observations
-PARETO = "#f39c12"  # Orange         - Pareto front / best value
-GP_MEAN = "#2980b9"  # Belize blue    - GP posterior mean and bands
-GROUND_TRUTH = "#2c3e50"  # Midnight blue  - dense true-function background
-FUTURE = "#7B3FF2"  # Violet         - proposed next X, forward arrows
-EDGE = "black"  # Marker outline
+# Each palette fills the same six roles. Two rules to keep if you add or edit one:
+#   * ground_truth must stay a neutral grey, lighter than gp_mean. The GP posterior is
+#     drawn on top of the dense ground-truth trace, so a dark ground truth swallows it.
+#   * feasible, infeasible and pareto appear together in one scatter. They are told
+#     apart by marker as well as hue (o / X / *), which is what carries the distinction
+#     when the colours are this soft — keep those markers distinct.
+PALETTE = "tol_muted"
+
+PALETTES = {
+    # Paul Tol's muted qualitative scheme — soft, designed to work together.
+    "tol_muted": dict(
+        feasible="#44AA99",      # muted teal
+        infeasible="#CC6677",    # muted rose
+        pareto="#DDCC77",        # sand
+        gp_mean="#4477AA",       # muted blue
+        ground_truth="#8A8F98",  # neutral grey
+        future="#AA4499",        # muted purple
+    ),
+    # Nord — cool and very low chroma; the quietest of the four.
+    "nordic": dict(
+        feasible="#8FBCBB",      # pale teal
+        infeasible="#BF616A",    # dusty red
+        pareto="#EBCB8B",        # soft gold
+        gp_mean="#5E81AC",       # slate blue
+        ground_truth="#8E95A3",  # neutral grey
+        future="#B48EAD",        # muted mauve
+    ),
+    # Earthy and warm — sage, terracotta, ochre.
+    "dusty": dict(
+        feasible="#7FA98F",      # sage
+        infeasible="#C98383",    # terracotta
+        pareto="#D9A55C",        # ochre
+        gp_mean="#5B7FA6",       # dusty blue
+        ground_truth="#918C84",  # warm grey
+        future="#9B84B8",        # dusty lilac
+    ),
+    # The original flat-ui colours: high chroma, loud next to the three above. Kept
+    # because it is the most colourblind-separable set measured (worst pair dE 9.1
+    # under deuteranopia, against roughly 6-7 for the soft palettes).
+    "vivid": dict(
+        feasible="#2ecc71",      # emerald green
+        infeasible="#e74c3c",    # alizarin red
+        pareto="#f39c12",        # orange
+        gp_mean="#2980b9",       # belize blue
+        ground_truth="#7F8C8D",  # neutral grey
+        future="#7B3FF2",        # violet
+    ),
+}
+
+_p = PALETTES[PALETTE]
+FEASIBLE = _p["feasible"]          # feasible observations
+INFEASIBLE = _p["infeasible"]      # infeasible observations
+PARETO = _p["pareto"]              # Pareto front / best value
+GP_MEAN = _p["gp_mean"]            # GP posterior mean and bands
+GROUND_TRUTH = _p["ground_truth"]  # dense true-function background
+FUTURE = _p["future"]              # proposed next X, forward arrows
+EDGE = "black"                     # marker outline
 
 # --- Marker sizes (points^2) -------------------------------------------------
 # Absolute, and deliberately not scaled by linewidth_scale: scaling an area by a linear
