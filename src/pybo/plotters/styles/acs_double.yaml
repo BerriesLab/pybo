@@ -1,14 +1,7 @@
-description: IEEE (double column)
+description: ACS (double column)
 dpi: 600
-column_width_in: 7.16
+column_width_in: 7.0
 linewidth_scale: 0.65
-font:
-  label: 9
-  legend: 8
-  title: 9
-legend:
-  frameon: true
-  framealpha: 1.0
 rcparams:
   mathtext.fontset: dejavusans
   axes.linewidth: 0.6
@@ -20,8 +13,8 @@ rcparams:
   ps.fonttype: 42
   font.family: sans-serif
   font.sans-serif:
-  - Arial
   - Helvetica
+  - Arial
   - DejaVu Sans
-  xtick.labelsize: 9
-  ytick.labelsize: 9
+  xtick.labelsize: 8
+  ytick.labelsize: 8

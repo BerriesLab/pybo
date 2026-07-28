@@ -5,7 +5,7 @@ from typing import cast
 from matplotlib import pyplot as plt
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import ParCfg
-from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.style import fig_cfg
 from pybo.plotters.base_class import PlotterBase
 
 

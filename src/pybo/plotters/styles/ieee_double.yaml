@@ -1,14 +1,7 @@
-description: Elsevier (1.5 column)
+description: IEEE (double column)
 dpi: 600
-column_width_in: 5.512
+column_width_in: 7.16
 linewidth_scale: 0.65
-font:
-  label: 7
-  legend: 6
-  title: 7
-legend:
-  frameon: true
-  framealpha: 1.0
 rcparams:
   mathtext.fontset: dejavusans
   axes.linewidth: 0.6
@@ -23,5 +16,5 @@ rcparams:
   - Arial
   - Helvetica
   - DejaVu Sans
-  xtick.labelsize: 7
-  ytick.labelsize: 7
+  xtick.labelsize: 9
+  ytick.labelsize: 9

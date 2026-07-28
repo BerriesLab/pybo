@@ -1,14 +1,7 @@
-description: ACS (double column)
+description: ACS (single column)
 dpi: 600
-column_width_in: 7.0
+column_width_in: 3.33
 linewidth_scale: 0.65
-font:
-  label: 8
-  legend: 7
-  title: 8
-legend:
-  frameon: true
-  framealpha: 1.0
 rcparams:
   mathtext.fontset: dejavusans
   axes.linewidth: 0.6

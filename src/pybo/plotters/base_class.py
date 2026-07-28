@@ -2,7 +2,7 @@ from pathlib import Path
 import matplotlib
 import torch
 from pybo.optimizer.optimizer import BayesianOptimizer
-from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.style import fig_cfg
 from matplotlib import pyplot as plt
 
 matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show().

@@ -12,7 +12,7 @@ from sympy import false
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.style import fig_cfg
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 from pybo.samplers.samplers import SobolSampler

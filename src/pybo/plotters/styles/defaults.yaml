@@ -1,13 +1,34 @@
-# pyBO figure settings — this project's domain-specific defaults.
+# pyBO figure settings — the base every figure starts from.
 #
-# Merged on top of the reusable package defaults
-# (pybo/plotters/figure_settings/defaults.yaml):
-#   package defaults -> THIS file -> publisher style (--style, default ieee_double)
+# A *style* in this folder is a partial override of this file, chosen with --style
+# (default: ieee_double). Resolution is a two-step deep merge:
+#   defaults.yaml -> <style>.yaml
+# See pybo/plotters/style.py.
 #
 # Every block below is the exact keyword mapping matplotlib receives; the plotters
 # spread it unchanged (`**fig_cfg["gp"]["mean"]`) and hold no style values of their own.
 # Colours are declared once under `palette` and pulled in by YAML anchor (&name / *name),
 # so a hue is edited in one place.
+
+# --- Output resolution ---
+dpi: 600
+
+# Padding (in font-size units) passed to tight_layout. matplotlib's default is 1.08;
+# a smaller value trims the white border while keeping the exact figsize.
+layout_pad: 0.4
+
+# Physical width of every figure, in inches (height follows each plot's aspect ratio).
+# Publisher styles override this with the journal's column width.
+column_width_in: 10.0
+
+# Multiplies the line widths of the sections named in scaled_sections. 1.0 = no scaling;
+# publisher styles thin lines for narrow columns (e.g. 0.65).
+linewidth_scale: 1.0
+
+# --- matplotlib rcParams (font family, spines, tick direction, savefig, ...) ---
+# Empty base = matplotlib defaults. Publisher styles override these; they are pushed
+# into matplotlib.rcParams by style.py rather than passed by the plotters.
+rcparams: {}
 
 # --- Figure aspect ratios (width / height) ---
 # Shape only, never size: the physical width comes from column_width_in (package /

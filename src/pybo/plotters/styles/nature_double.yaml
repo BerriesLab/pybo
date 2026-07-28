@@ -2,13 +2,6 @@ description: Nature (double column)
 dpi: 600
 column_width_in: 7.205
 linewidth_scale: 0.65
-font:
-  label: 7
-  legend: 6
-  title: 7
-legend:
-  frameon: true
-  framealpha: 1.0
 rcparams:
   mathtext.fontset: dejavusans
   axes.linewidth: 0.6

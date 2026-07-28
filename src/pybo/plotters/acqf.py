@@ -6,7 +6,7 @@ from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
-from pybo.plotters.figure_settings.config import fig_cfg
+from pybo.plotters.style import fig_cfg
 from pybo.samplers.samplers import SobolSampler
 
 
