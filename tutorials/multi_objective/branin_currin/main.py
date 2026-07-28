@@ -5,6 +5,7 @@ from pathlib import Path
 from tqdm import tqdm
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.constraints import Interval
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.plotters.experiment import ParetoFront2DPlotter
 from pybo.samplers.samplers import SobolSampler
@@ -30,7 +31,13 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     objective = BraninCurrin(device=DEVICE, dtype=DTYPE)
 
     """ Instantiate kernel """
-    kernel = ScaleKernel(base_kernel=RBFKernel(ard_num_dims=objective.num_par))
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.dim,
+            lengthscale_constraint=Interval(1e-3, 1.0),
+        ),
+        outputscale_constraint=Interval(1e-3, 1e2),
+    )
 
     """ Generate initial dataset """
     n_initial = n_initial or 5 * (objective.dim + 1)

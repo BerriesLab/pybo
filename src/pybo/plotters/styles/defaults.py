@@ -142,7 +142,7 @@ SETTINGS = {
     # all of them. Set this to coolwarm to restore the old look.
     # "diverging" is here for data with a meaningful midpoint and is not currently used.
     "cmap": {
-        "sequential": "viridis",
+        "sequential": "coolwarm",
         "diverging": "coolwarm",
     },
 
