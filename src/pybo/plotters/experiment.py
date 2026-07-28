@@ -1,20 +1,14 @@
 import torch
 from typing import TypeAlias
-
 import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
-
-from matplotlib.colors import LogNorm
-from sympy import false
-
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 from pybo.plotters.style import fig_cfg
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-
 from pybo.samplers.samplers import SobolSampler
 from pybo.utils.helpers import project_linear_equalities
 
@@ -23,6 +17,7 @@ AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 
 class Experiment1DPlotter(PlotterBase):
     plot_name = "experiment_1d"
+
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
                  y: tuple[str, str | int] = ("obj", 0), z: tuple[str, str | int] | None = None,
                  cmap=None, grid=True, seed=None):
@@ -353,6 +348,7 @@ class Experiment1DPlotter(PlotterBase):
 
 class Experiment2DPlotter(PlotterBase):
     plot_name = "experiment_2d"
+
     def __init__(
             self,
             bo: BayesianOptimizer,
@@ -628,6 +624,7 @@ class Experiment2DPlotter(PlotterBase):
 
 class ParetoFront2DPlotter(PlotterBase):
     plot_name = "pareto_front_2d"
+
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
                  z: tuple[str, str | int] | None = None, cmap=None, grid=False, seed=None):
         """

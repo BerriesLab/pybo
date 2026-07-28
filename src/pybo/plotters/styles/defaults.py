@@ -318,7 +318,6 @@ SETTINGS = {
             linewidth=LINEWIDTH_EVOL,
         ),
         "interconnection": dict(
-            color="gray",
             linestyle="-",
             linewidth=LINEWIDTH_EVOL,
             alpha=0.8
