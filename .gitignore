@@ -28,3 +28,8 @@ __pycache__/
 /build/
 *.egg-info/
 .pytest_cache/
+
+# Reference copies of the other project's analysis scripts, kept on disk for
+# comparison while studies/analysis was written. They import that project's
+# `configs` / `utils` packages, so they do not run here.
+/bayesian_campaign_analysis/

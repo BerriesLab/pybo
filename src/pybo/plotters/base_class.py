@@ -9,6 +9,25 @@ matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show()
 print(f"Matplotlib backend: {matplotlib.get_backend()}")
 
 
+def save_figure(fig, filename: str | Path):
+    """Write `fig` next to the cwd under the resolved file type.
+
+    Each caller picks the stem; the extension comes from the settings, so the file type
+    is decided in one place. Free-standing because the studies/analysis scripts need it
+    too and they have no BayesianOptimizer to hang a PlotterBase off.
+    """
+    ensure_resolved()
+    path = Path(filename).with_suffix("." + fig_cfg["format"])
+    save_path = Path.cwd() / path.parent / path.name
+
+    # tight_layout cannot place a colorbar's axes and would draw it over the plot, so a
+    # figure that brought its own layout engine (constrained, say) keeps it.
+    if fig.get_layout_engine() is None:
+        fig.tight_layout(pad=fig_cfg["layout_pad"])
+    fig.savefig(fname=save_path, dpi=fig_cfg["dpi"])
+    return save_path
+
+
 class PlotterBase:
     # Which entry of fig_cfg["figsize"] this plot is sized by. Subclasses set it; the
     # aspect ratio behind it lives in pybo/plotters/styles/defaults.py, and the
@@ -30,13 +49,7 @@ class PlotterBase:
         # BayesianOptimizer.to_csv(latest=True). The counter this replaced dated
         # from the flat run directory, where it was the only thing separating one
         # step's figures from the next.
-        # Each plotter picks the stem; the extension comes from the resolved settings,
-        # so the file type is decided in one place rather than in ten save_figure calls.
-        path = Path(filename).with_suffix("." + fig_cfg["format"])
-        save_path = Path.cwd() / path.parent / path.name
-
-        self.fig.tight_layout(pad=fig_cfg["layout_pad"])
-        self.fig.savefig(fname=save_path, dpi=self.dpi)
+        save_figure(self.fig, filename)
         return self
 
     def close_figure(self):

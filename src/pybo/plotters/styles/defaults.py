@@ -32,6 +32,9 @@ PALETTES = {
         gp_mean="#4477AA",  # muted blue
         ground_truth="#8A8F98",  # neutral grey
         future="#AA4499",  # muted purple
+        # Categorical series for the campaign-analysis plots: one study or
+        # replicate per entry, assigned in fixed order and never cycled.
+        series=["#4477AA", "#EE7733", "#44AA99", "#CC6677", "#AA4499", "#999933"],
     ),
     # Nord — cool and very low chroma; the quietest of the four.
     "nordic": dict(
@@ -41,6 +44,9 @@ PALETTES = {
         gp_mean="#5E81AC",  # slate blue
         ground_truth="#8E95A3",  # neutral gray
         future="#B48EAD",  # muted mauve
+        # Categorical series for the campaign-analysis plots: one study or
+        # replicate per entry, assigned in fixed order and never cycled.
+        series=["#5E81AC", "#D08770", "#8FBCBB", "#BF616A", "#B48EAD", "#EBCB8B"],
     ),
     # Earthy and warm — sage, terracotta, ochre.
     "dusty": dict(
@@ -50,6 +56,9 @@ PALETTES = {
         gp_mean="#5B7FA6",  # dusty blue
         ground_truth="#918C84",  # warm gray
         future="#9B84B8",  # dusty lilac
+        # Categorical series for the campaign-analysis plots: one study or
+        # replicate per entry, assigned in fixed order and never cycled.
+        series=["#5B7FA6", "#D9A55C", "#7FA98F", "#C98383", "#9B84B8", "#A89B7B"],
     ),
     # The original flat-ui colors: high chroma, loud next to the three above. Kept
     # because it is the most colourblind-separable set measured (worst pair dE 9.1
@@ -61,6 +70,9 @@ PALETTES = {
         gp_mean="#2980b9",  # belize blue
         ground_truth="#7F8C8D",  # neutral gray
         future="#7B3FF2",  # violet
+        # Categorical series for the campaign-analysis plots: one study or
+        # replicate per entry, assigned in fixed order and never cycled.
+        series=["#2980b9", "#e67e22", "#27ae60", "#c0392b", "#8e44ad", "#16a085"],
     ),
 }
 
@@ -71,6 +83,7 @@ PARETO = _p["pareto"]  # Pareto front / best value
 GP_MEAN = _p["gp_mean"]  # GP posterior mean and bands
 GROUND_TRUTH = _p["ground_truth"]  # dense true-function background
 FUTURE = _p["future"]  # proposed next X, forward arrows
+SERIES = _p["series"]  # categorical series, campaign-analysis plots
 EDGE = "black"  # marker outline
 
 # --- Marker sizes (points^2) -------------------------------------------------
@@ -131,6 +144,10 @@ SETTINGS = {
         "hypervolume": 5 / 4,  # HypervolumePlotter
         "hypervolume_improvement": 5 / 4,  # HypervolumeImprovementPlotter
         "elapsed_time": 5 / 4,  # ElapsedTimePlotter
+        # studies/analysis figures
+        "convergence": 3 / 2,  # studies.analysis.convergence
+        "pareto_analysis": 3 / 2,  # studies.analysis.pareto_2d
+        "correlation": 1 / 1,  # studies.analysis.correlation (square matrix)
     },
 
     # --- Colormaps ---
@@ -141,6 +158,10 @@ SETTINGS = {
     # magnitude (perceptually uniform and colourblind-safe), so it is now the default for
     # all of them. Set this to coolwarm to restore the old look.
     # "diverging" is here for data with a meaningful midpoint and is not currently used.
+    # Categorical series colours, in assignment order. Read by the
+    # studies/analysis scripts; never cycled past the end.
+    "series": SERIES,
+
     "cmap": {
         "sequential": "coolwarm",
         "diverging": "coolwarm",
