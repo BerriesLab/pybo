@@ -1,8 +1,13 @@
 import os
-from datetime import datetime
+import warnings
+import torch
+from pathlib import Path
+from tqdm import tqdm
 from botorch.acquisition import *
 from gpytorch.kernels import *
 from gpytorch.constraints import Interval
+from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.utils.cli import build_trial_args_parser, default_output_dir, unique_dir
 from tutorials.single_objective.harmonic.objective import Harmonic
 from pybo.plotters.acqf import Acqf1DPlotter
 from pybo.plotters.experiment import Experiment1DPlotter
@@ -14,10 +19,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_evals=64, q: int = 1, output_dir: Path = None):
-    run_dir = output_dir / f"batch_{q}"
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
+         verbose: bool = True):
+    run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    os.chdir(run_dir)
+    print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
+
+    """ Seed the global torch RNG to ensure reproducibility. """
+    torch.manual_seed(seed)
 
     """ Instantiate true objective """
     objective = Harmonic(device=DEVICE, dtype=DTYPE)
@@ -31,8 +40,9 @@ def main(n_evals=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Generate initial dataset """
-    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=45, )
-    X = sampler.draw_samples(n=2 * (objective.dim + 1))
+    n_initial = n_initial or 5 * (objective.dim + 1)
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=seed)
+    X = sampler.draw_samples(n=n_initial)
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -51,43 +61,73 @@ def main(n_evals=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Main optimization loop """
-    for i in range(int(n_evals / q)):
-        if i > 0 and bo.is_converged(patience=32):
+    n_steps = int(n_evals / q)
+    if not verbose:
+        # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
+        warnings.filterwarnings("ignore")
+    pbar = tqdm(total=n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    for i in range(n_steps):
+        if i > 0 and bo.is_converged(patience=32, verbose=verbose):
             break
 
-        print()
-        print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
+        """ One folder per evaluation step; figures and per-step files go here """
+        step_dir = run_dir / f"step_{i:03d}"
+        step_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(step_dir)
+
+        if verbose:
+            print(f"\n*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
 
         """ Optimize and get new X """
-        bo.optimize()
+        bo.optimize(verbose=verbose)
 
         """ Plot """
-        Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
-        Acqf1DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
-        ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
-        BestValuePlotter(bo=bo).plot().save_figure().close_figure()
-        EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
-        EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
+        if plot:
+            Experiment1DPlotter(bo=bo).plot().save_figure().close_figure()
+            Acqf1DPlotter(bo=bo, z=("obj", 0)).plot().save_figure().close_figure()
+            ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
+            BestValuePlotter(bo=bo).plot().save_figure().close_figure()
+            EvolutionPlotter(bo=bo, y=("obj", 0)).plot().save_figure().close_figure()
+            EvolutionPlotter(bo=bo, y=("par", 0)).plot().save_figure().close_figure()
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
-        bo.compute_acquisition_function_value_at_X(new_X)
-        bo.compute_posterior_mean_at_X(new_X)
+        bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
+        bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
-        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        if verbose:
+            print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+
+        """ Save the running summary (run root) and this step's experiment record """
+        bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=verbose)
+        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=verbose)
+        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=verbose)
+
+        if pbar is not None:
+            pbar.update(q)
+
+    if pbar is not None:
+        pbar.close()
 
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
-    print(f"Running on {DEVICE}.")
-    date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    main_path = Path.cwd() / "data" / date_time
-    main_path.mkdir(parents=True, exist_ok=True)
+    args = build_trial_args_parser(description="Run a single Harmonic BO trial.").parse_args()
+    if args.verbose:
+        print(f"Running on {DEVICE}.")
+    output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
-    batch_sizes = [1, 2, 4]
-    for batch_size in batch_sizes:
-        main(n_evals=32, q=batch_size, output_dir=main_path)
+    main(
+        n_evals=args.n_evals,
+        q=args.q_batch,
+        n_initial=args.n_initial,
+        seed=args.seed,
+        output_dir=output_dir,
+        plot=args.plot,
+        verbose=args.verbose,
+    )

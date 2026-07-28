@@ -19,10 +19,10 @@ Examples:
 
 ```
 python -m studies.variability_study \
-    --target tutorials.multi_objective.branin_currin_cli.main --n-replicates 20
+    --target tutorials.multi_objective.branin_currin.main --n-replicates 20
 
 python -m studies.variability_study \
-    --target tutorials.multi_objective.branin_currin_cli.main --n-initial 5,10,20,40 --n-replicates 5
+    --target tutorials.multi_objective.branin_currin.main --n-initial 5,10,20,40 --n-replicates 5
 ```
 
 Shared sweep flags (see `_common.build_sweep_parser`): `--target`, `--n-evals`,
@@ -44,9 +44,8 @@ A valid `--target` is a tutorial CLI `main.py` that accepts the
 `--output-dir` it is given by calling `BayesianOptimizer.to_json` each
 iteration. The study then derives the aggregated per-iteration `results.csv`
 (including regret) from those summaries, so targets do not write their own
-`results.csv`. See `tutorials/multi_objective/branin_currin_cli/main.py` for the
-reference implementation. Currently it is the only CLI-fied target; the rest of
-the tutorials are CLI-fied once the harness is validated.
+`results.csv`. See `tutorials/multi_objective/branin_currin/main.py` for the
+reference implementation. Every tutorial under `tutorials/` is a valid target.
 
 `_common.py` (and any other `_`-prefixed file) is an internal helper, not a
 runnable study.

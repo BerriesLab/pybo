@@ -4,7 +4,7 @@ Run-to-run variability (reproducibility) study.
 Runs the same tutorial CLI several times with identical settings, varying
 only the random seed, to quantify run-to-run noise in the optimization
 trajectory. Works against any tutorial CLI that follows the studies._common contract, e.g.:
-    python -m studies.variability_study --target tutorials.multi_objective.branin_currin_cli.main
+    python -m studies.variability_study --target tutorials.multi_objective.branin_currin.main
 """
 from datetime import datetime
 from pathlib import Path

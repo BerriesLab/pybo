@@ -1,14 +1,15 @@
 import os
+import warnings
 import torch
 from pathlib import Path
-from datetime import datetime
+from tqdm import tqdm
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.samplers.samplers import SobolSampler
+from pybo.utils.cli import build_trial_args_parser, default_output_dir, unique_dir
 from tutorials.multi_objective.linear_equality.objective import LinearEqualityTest
-from pybo.samplers.samplers import SamplerBase
-from pybo.utils.helpers import create_experiment_directory
 from pybo.plotters.experiment import *
 from pybo.plotters.acqf import *
 from pybo.plotters.metrics import *
@@ -18,10 +19,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(n_evals=64, q: int = 1, output_dir: Path = None):
-    run_dir = output_dir / f"batch_{q}"
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
+         verbose: bool = True):
+    run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    os.chdir(run_dir)
+    print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
+
+    """ Seed the global torch RNG to ensure reproducibility. """
+    torch.manual_seed(seed)
 
     """ Define the objective """
     objective = LinearEqualityTest(device=DEVICE, dtype=DTYPE)
@@ -36,8 +41,9 @@ def main(n_evals=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Generate initial dataset """
-    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective)
-    X = sampler.draw_samples(n=5 * (objective.dim + 1))
+    n_initial = n_initial or 5 * (objective.dim + 1)
+    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=seed)
+    X = sampler.draw_samples(n=n_initial)
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
@@ -56,46 +62,76 @@ def main(n_evals=64, q: int = 1, output_dir: Path = None):
     )
 
     """ Main optimization loop """
-    for i in range(int(n_evals / q)):
-        if i > 0 and bo.is_converged(patience=32):
+    n_steps = int(n_evals / q)
+    if not verbose:
+        # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
+        warnings.filterwarnings("ignore")
+    pbar = tqdm(total=n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    for i in range(n_steps):
+        if i > 0 and bo.is_converged(patience=32, verbose=verbose):
             break
 
-        print()
-        print(f"*** Iteration {i + 1}/{int(n_evals / q)} ***")
+        """ One folder per evaluation step; figures and per-step files go here """
+        step_dir = run_dir / f"step_{i:03d}"
+        step_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(step_dir)
+
+        if verbose:
+            print(f"\n*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
 
         """ Optimize and get new X """
-        bo.optimize()
+        bo.optimize(verbose=verbose)
 
         """ Plot """
-        ParetoFront2DPlotter(
-            bo=bo,
-            x=("obj", 0),
-            y=("obj", 1),
-            z=("par", 0),
-            seed=254,
-        ).plot().save_figure().close_figure()
-        plot_and_save_metrics(bo=bo)
-        plot_and_save_evolutions(bo=bo)
+        if plot:
+            ParetoFront2DPlotter(
+                bo=bo,
+                x=("obj", 0),
+                y=("obj", 1),
+                z=("par", 0),
+                seed=254,
+            ).plot().save_figure().close_figure()
+            plot_and_save_metrics(bo=bo)
+            plot_and_save_evolutions(bo=bo)
 
         """ Evaluate posterior and acquisition function at new X """
         new_X = bo.new_X
-        bo.compute_acquisition_function_value_at_X(new_X)
-        bo.compute_posterior_mean_at_X(new_X)
+        bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
+        bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)
-        print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+        if verbose:
+            print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
         bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj)
+
+        """ Save the running summary (run root) and this step's experiment record """
+        bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=verbose)
+        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=verbose)
+        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=verbose)
+
+        if pbar is not None:
+            pbar.update(q)
+
+    if pbar is not None:
+        pbar.close()
 
     print("Optimization Finished.")
 
 
 if __name__ == "__main__":
-    print(f"Running on {DEVICE}.")
-    date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    main_path = Path.cwd() / "data" / date_time
-    main_path.mkdir(parents=True, exist_ok=True)
+    args = build_trial_args_parser(description="Run a single linear-equality-constrained BO trial.").parse_args()
+    if args.verbose:
+        print(f"Running on {DEVICE}.")
+    output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
-    batch_sizes = [1, 2, 4]
-    for batch_size in batch_sizes:
-        main(n_evals=32, q=batch_size, output_dir=main_path)
+    main(
+        n_evals=args.n_evals,
+        q=args.q_batch,
+        n_initial=args.n_initial,
+        seed=args.seed,
+        output_dir=output_dir,
+        plot=args.plot,
+        verbose=args.verbose,
+    )

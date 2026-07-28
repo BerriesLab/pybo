@@ -7,7 +7,7 @@ target CLI is expected to accept --output-dir, --plot and --verbose (the latter
 two forwarded from the sweep's own flags of the same name, both defaulting to
 False for a sweep), and to write a summary.json into the exact --output-dir it
 was given (BayesianOptimizer.to_json does this; see
-tutorials/multi_objective/branin_currin_cli/main.py for the reference
+tutorials/multi_objective/branin_currin/main.py for the reference
 implementation of this contract). The aggregated per-iteration trace is
 derived here from those summary.json files, so tutorial CLIs no longer write
 their own results.csv.
@@ -63,7 +63,7 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
 
 def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> tuple[Path | None, bool]:
     """Run one trial of `target` (dotted module path to a tutorial's CLI
-    main.py, e.g. "tutorials.multi_objective.branin_currin_cli.main") as a
+    main.py, e.g. "tutorials.multi_objective.branin_currin.main") as a
     subprocess. Returns (summary_path, completed).
 
     A trial that dies partway (e.g. GP fitting diverging at step 7 of 32) still

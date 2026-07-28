@@ -1,7 +1,7 @@
 import torch
-from constraints.output_constraints import Identity, LowerBound, UpperBound
-from objectives.base_class import MCMultiObjectiveBase
-from objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
+from pybo.constraints.output_constraints import Identity, LowerBound, UpperBound
+from pybo.objectives.base_class import MCMultiObjectiveBase
+from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
 
 
 class FormACO(MCMultiObjectiveBase):

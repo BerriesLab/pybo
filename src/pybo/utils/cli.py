@@ -1,6 +1,6 @@
 """
 Shared argparse setup for tutorial CLIs that run a single BO trial (see
-tutorials/multi_objective/branin_currin_cli/main.py for the reference usage).
+tutorials/multi_objective/branin_currin/main.py for the reference usage).
 Keeping the common flags here means every CLI-ified tutorial stays consistent
 with the studies/_common.py contract without repeating the same argparse
 boilerplate in each tutorial's main.py.

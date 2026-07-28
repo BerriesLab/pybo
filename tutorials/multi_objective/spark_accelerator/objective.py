@@ -1,7 +1,7 @@
 import torch
-from constraints.output_constraints import *
-from objectives.base_class import MCMultiObjectiveBase
-from objectives.variable_registry import *
+from pybo.constraints.output_constraints import *
+from pybo.objectives.base_class import MCMultiObjectiveBase
+from pybo.objectives.variable_registry import *
 
 
 class SparkAccelerator(MCMultiObjectiveBase):
