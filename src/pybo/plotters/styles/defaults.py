@@ -9,77 +9,82 @@ Every entry under the semantic sections is the exact keyword mapping matplotlib
 receives; the plotters spread it unchanged (``**fig_cfg["gp"]["mean"]``) and hold no
 style values of their own.
 """
+from torch._C._return_types import linalg_eig
 
 # --- Semantic palette --------------------------------------------------------
 # Pick one by name. Every block below refers to the roles, never to a literal colour,
 # so switching the line below repaints every figure.
 #
 # Each palette fills the same six roles. Two rules to keep if you add or edit one:
-#   * ground_truth must stay a neutral grey, lighter than gp_mean. The GP posterior is
+#   * ground_truth must stay a neutral gray, lighter than gp_mean. The GP posterior is
 #     drawn on top of the dense ground-truth trace, so a dark ground truth swallows it.
 #   * feasible, infeasible and pareto appear together in one scatter. They are told
 #     apart by marker as well as hue (o / X / *), which is what carries the distinction
-#     when the colours are this soft — keep those markers distinct.
-PALETTE = "tol_muted"
+#     when the colors are this soft — keep those markers distinct.
+PALETTE = "dusty"
 
 PALETTES = {
     # Paul Tol's muted qualitative scheme — soft, designed to work together.
     "tol_muted": dict(
-        feasible="#44AA99",      # muted teal
-        infeasible="#CC6677",    # muted rose
-        pareto="#DDCC77",        # sand
-        gp_mean="#4477AA",       # muted blue
+        feasible="#44AA99",  # muted teal
+        infeasible="#CC6677",  # muted rose
+        pareto="#DDCC77",  # sand
+        gp_mean="#4477AA",  # muted blue
         ground_truth="#8A8F98",  # neutral grey
-        future="#AA4499",        # muted purple
+        future="#AA4499",  # muted purple
     ),
     # Nord — cool and very low chroma; the quietest of the four.
     "nordic": dict(
-        feasible="#8FBCBB",      # pale teal
-        infeasible="#BF616A",    # dusty red
-        pareto="#EBCB8B",        # soft gold
-        gp_mean="#5E81AC",       # slate blue
-        ground_truth="#8E95A3",  # neutral grey
-        future="#B48EAD",        # muted mauve
+        feasible="#8FBCBB",  # pale teal
+        infeasible="#BF616A",  # dusty red
+        pareto="#EBCB8B",  # soft gold
+        gp_mean="#5E81AC",  # slate blue
+        ground_truth="#8E95A3",  # neutral gray
+        future="#B48EAD",  # muted mauve
     ),
     # Earthy and warm — sage, terracotta, ochre.
     "dusty": dict(
-        feasible="#7FA98F",      # sage
-        infeasible="#C98383",    # terracotta
-        pareto="#D9A55C",        # ochre
-        gp_mean="#5B7FA6",       # dusty blue
-        ground_truth="#918C84",  # warm grey
-        future="#9B84B8",        # dusty lilac
+        feasible="#7FA98F",  # sage
+        infeasible="#C98383",  # terracotta
+        pareto="#D9A55C",  # ochre
+        gp_mean="#5B7FA6",  # dusty blue
+        ground_truth="#918C84",  # warm gray
+        future="#9B84B8",  # dusty lilac
     ),
-    # The original flat-ui colours: high chroma, loud next to the three above. Kept
+    # The original flat-ui colors: high chroma, loud next to the three above. Kept
     # because it is the most colourblind-separable set measured (worst pair dE 9.1
     # under deuteranopia, against roughly 6-7 for the soft palettes).
     "vivid": dict(
-        feasible="#2ecc71",      # emerald green
-        infeasible="#e74c3c",    # alizarin red
-        pareto="#f39c12",        # orange
-        gp_mean="#2980b9",       # belize blue
-        ground_truth="#7F8C8D",  # neutral grey
-        future="#7B3FF2",        # violet
+        feasible="#2ecc71",  # emerald green
+        infeasible="#e74c3c",  # alizarin red
+        pareto="#f39c12",  # orange
+        gp_mean="#2980b9",  # belize blue
+        ground_truth="#7F8C8D",  # neutral gray
+        future="#7B3FF2",  # violet
     ),
 }
 
 _p = PALETTES[PALETTE]
-FEASIBLE = _p["feasible"]          # feasible observations
-INFEASIBLE = _p["infeasible"]      # infeasible observations
-PARETO = _p["pareto"]              # Pareto front / best value
-GP_MEAN = _p["gp_mean"]            # GP posterior mean and bands
+FEASIBLE = _p["feasible"]  # feasible observations
+INFEASIBLE = _p["infeasible"]  # infeasible observations
+PARETO = _p["pareto"]  # Pareto front / best value
+GP_MEAN = _p["gp_mean"]  # GP posterior mean and bands
 GROUND_TRUTH = _p["ground_truth"]  # dense true-function background
-FUTURE = _p["future"]              # proposed next X, forward arrows
-EDGE = "black"                     # marker outline
+FUTURE = _p["future"]  # proposed next X, forward arrows
+EDGE = "black"  # marker outline
 
 # --- Marker sizes (points^2) -------------------------------------------------
 # Absolute, and deliberately not scaled by linewidth_scale: scaling an area by a linear
 # factor would be wrong. A style that needs smaller markers overrides these entries.
-S_OBS = 64  # a measured observation
-S_GT = 1  # one point of the dense true-function background
+MARKERSIZE_OBS = 8  # a measured observation
+MARKERSIZE_GT = 4
+S_OBS = MARKERSIZE_OBS ** 2  # a measured observation
+S_GT = MARKERSIZE_GT ** 2  # one point of the dense true-function background
 PARETO_FACTOR = 3  # Pareto and best-value stars, relative to the above
 S_PARETO = S_OBS * PARETO_FACTOR
 S_GT_PARETO = S_GT * PARETO_FACTOR
+LINEWIDTH_METRICS = 1
+LINEWIDTH_EVOL = LINEWIDTH_METRICS
 
 SETTINGS = {
     # --- Output ---
@@ -295,8 +300,9 @@ SETTINGS = {
             marker="o",
             markerfacecolor=PARETO,
             markeredgecolor=EDGE,
-            markersize=8,
-            linestyle="-"
+            markersize=MARKERSIZE_OBS,
+            linestyle="-",
+            linewidth=LINEWIDTH_METRICS,
         ),
     },
 
@@ -308,13 +314,14 @@ SETTINGS = {
             edgecolor=EDGE,
             s=S_OBS,
             alpha=1,
-            linestyle="-"
+            linestyle="-",
+            linewidth=LINEWIDTH_EVOL,
         ),
         "interconnection": dict(
             color="gray",
             linestyle="-",
-            linewidth=1,
-            alpha=0.2
+            linewidth=LINEWIDTH_EVOL,
+            alpha=0.8
         ),
     },
 

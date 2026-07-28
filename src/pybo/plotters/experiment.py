@@ -68,7 +68,7 @@ class Experiment1DPlotter(PlotterBase):
         if isinstance(cfg, IneqYConCfg): return Y_con[..., cfg.index]
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
-    def plot_ground_truth(self, zorder: int = 10):
+    def plot_ground_truth(self, zorder: int = 0):
         # 1. Generate Samples
         if self.grid:
             X_gt = self._generate_uniform_grid()
@@ -156,7 +156,7 @@ class Experiment1DPlotter(PlotterBase):
 
         return self
 
-    def plot_gp_posterior(self, zorder: int = 0):
+    def plot_gp_posterior(self, zorder: int = 10):
         if self.bo.model is None or not isinstance(self.y_cfg, ObjCfg):
             return self
 
@@ -334,6 +334,10 @@ class Experiment1DPlotter(PlotterBase):
         leg.set_zorder(zorder)
 
     def plot(self):
+        # Call order sets the legend order, not the visual stacking - that is the zorder
+        # each method defaults to: ground truth 0 (a background reference), GP posterior
+        # 10, observations 20, proposal 30. So the GP mean is drawn over the dense
+        # ground-truth trace while still leading the legend.
         self.plot_gp_posterior()
         self.plot_ground_truth()
         self.plot_observations()
