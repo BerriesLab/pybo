@@ -8,6 +8,7 @@ trajectory. Works against any tutorial CLI that follows the studies._common cont
 """
 from datetime import datetime
 from pathlib import Path
+from pybo.utils.cli import unique_dir
 from studies._common import run_trial, collect_results, build_sweep_parser
 
 
@@ -19,6 +20,11 @@ def main():
         date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         tutorial_name = args.target.split(".")[-2]
         output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
+    # Uniquify the study root, not the individual trials. Pointing a second study at an
+    # --output-dir that already holds one must yield a fresh root (mystudy_001); without
+    # this, every trial dir inside collides instead and gets bumped on its own, and
+    # run_trial then reads the previous study's summary.json from the path it handed out.
+    output_dir = unique_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     n_initials = args.n_initial if args.n_initial is not None else [None]
