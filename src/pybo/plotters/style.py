@@ -55,16 +55,19 @@ def scale_figsize(w: float, h: float) -> list:
     return [_column_width, round(_column_width * h / w, 3)]
 
 
-def resolve(style: str | None = None) -> dict:
+def resolve(style: str | None = None, fmt: str | None = None) -> dict:
     """Rebuild ``fig_cfg`` in place and re-apply rcParams.
 
-    With no argument ``DEFAULT_STYLE`` is used. The choice affects this process only —
-    nothing is written to disk.
+    With no argument ``DEFAULT_STYLE`` is used. ``fmt`` overrides the file type the
+    resolved style asks for (--format). The choice affects this process only — nothing
+    is written to disk.
     """
     global _column_width
 
     cfg = copy.deepcopy(_load(DEFAULTS_PATH))
     _deep_merge(cfg, _load(STYLE_DIR / f"{style or DEFAULT_STYLE}.yaml"))
+    if fmt:
+        cfg["format"] = fmt
 
     # rcParams travel with the settings but are applied to matplotlib, not read as
     # fig_cfg. `description` is style metadata, not a plot setting.

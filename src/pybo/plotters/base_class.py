@@ -26,7 +26,9 @@ class PlotterBase:
         # BayesianOptimizer.to_csv(latest=True). The counter this replaced dated
         # from the flat run directory, where it was the only thing separating one
         # step's figures from the next.
-        path = Path(filename)
+        # Each plotter picks the stem; the extension comes from the resolved settings,
+        # so the file type is decided in one place rather than in ten save_figure calls.
+        path = Path(filename).with_suffix("." + fig_cfg["format"])
         save_path = Path.cwd() / path.parent / path.name
 
         self.fig.tight_layout(pad=fig_cfg["layout_pad"])

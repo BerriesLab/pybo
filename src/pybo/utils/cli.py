@@ -52,6 +52,9 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     parser.add_argument("--style", default=DEFAULT_STYLE, choices=list_styles(),
                         help="Publisher figure style for this run (default: %(default)s).")
+    parser.add_argument("--format", default=None, choices=["png", "pdf", "svg", "eps"],
+                        help="File type for saved figures, overriding the style's own "
+                             "(styles default to png).")
     return parser
 
 
@@ -63,6 +66,5 @@ def parse_trial_args(description: str = ""):
     in place, and the plotters read it at draw time, so the new values are picked up.
     """
     args = build_trial_args_parser(description=description).parse_args()
-    if args.style:
-        resolve(args.style)
+    resolve(args.style, fmt=args.format)
     return args

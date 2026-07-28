@@ -13,6 +13,12 @@
 # --- Output resolution ---
 dpi: 600
 
+# File type every figure is written as; save_figure() applies it to the stem each
+# plotter chooses, so the extension is set here and nowhere else. A style may override
+# it (a journal wanting vector line art sets `format: pdf`), and --format wins over both.
+# Note dpi only affects rasterised content once the format is vector.
+format: png
+
 # Padding (in font-size units) passed to tight_layout. matplotlib's default is 1.08;
 # a smaller value trims the white border while keeping the exact figsize.
 layout_pad: 0.4
