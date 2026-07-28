@@ -17,15 +17,12 @@ class PlotterBase:
         self.n_grid_points: int = 500
 
     def save_figure(self, filename: str | Path | None = None):
+        # Fixed filename: the per-step folder gives uniqueness, mirroring
+        # BayesianOptimizer.to_csv(latest=True). The counter this replaced dated
+        # from the flat run directory, where it was the only thing separating one
+        # step's figures from the next.
         path = Path(filename)
-        stem = path.stem
-        suffix = path.suffix
-        save_path = Path.cwd() / path.parent / f"{stem}_000{suffix}"
-
-        i = 0
-        while save_path.exists():
-            i += 1
-            save_path = Path.cwd() / path.parent / f"{stem}_{i:03d}{suffix}"
+        save_path = Path.cwd() / path.parent / path.name
 
         self.fig.savefig(fname=save_path, dpi=600)
         return self
