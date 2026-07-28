@@ -1,23 +1,32 @@
 """Assembled figure configuration read by every plotter.
 
-Resolves the settings in memory as ``defaults -> active publisher style -> active user
-style`` (pybo/plotters/figure_settings/store.py), derives per-plot figsize and scales line
+Resolves the settings in memory as ``package defaults -> app defaults -> publisher style``
+(pybo/plotters/figure_settings/store.py), derives per-plot figsize and scales line
 widths, and pushes the resolved ``rcparams`` into matplotlib. Plotters read ``fig_cfg``
 (and ``scale_figsize``) at draw time.
 
-``fig_cfg`` is resolved once on import from the selections in ``state.json``. Call
-``resolve()`` to rebuild it for a different style — it mutates the dict in place, so
-modules that already did ``from ... import fig_cfg`` see the new values. That is what lets
-a ``--style`` flag take effect after argparse has run, long after import.
+``fig_cfg`` is resolved once on import, using ``DEFAULT_PUBLISHER``. Call ``resolve()`` to
+rebuild it for a different style — it mutates the dict in place, so modules that already
+did ``from ... import fig_cfg`` see the new values. That is what lets a ``--style`` flag
+take effect after argparse has run, long after import.
+
+There is no runtime state file: pyBO's default is the committed ``DEFAULT_PUBLISHER``
+constant below, overridden per run by ``--style``.
 """
 import copy
 
 from pybo.plotters.figure_settings.store import (
-    load_active_styles, load_app_defaults, load_package_defaults, load_style,
+    load_app_defaults, load_package_defaults, load_style,
 )
 
 # Guards a settings tree that somehow drops column_width_in.
 _DEFAULT_WIDTH = 10.0
+
+# The publisher style used when nothing asks for one. It is a project decision, so it
+# lives in version control rather than in a runtime state file: pybo.utils.cli reads it
+# as the default for --style, which keeps a plain `import pybo.plotters...` and a CLI run
+# on the same style.
+DEFAULT_PUBLISHER = "ieee_double"
 
 fig_cfg: dict = {}
 _column_width: float = _DEFAULT_WIDTH
@@ -38,26 +47,17 @@ def scale_figsize(w: float, h: float) -> list:
     return [_column_width, round(_column_width * h / w, 3)]
 
 
-def resolve(publisher: str | None = None, user: str | None = None) -> dict:
+def resolve(publisher: str | None = None) -> dict:
     """Rebuild ``fig_cfg`` in place and re-apply rcParams.
 
-    With no arguments the active selections in ``state.json`` are used. Passing a name
-    overrides that selection for this process only — nothing is written back to disk.
+    With no argument ``DEFAULT_PUBLISHER`` is used. Passing a name changes the style for
+    this process only — nothing is written to disk.
     """
     global _column_width
 
     resolved = copy.deepcopy(load_package_defaults())
     _deep_merge(resolved, load_app_defaults())
-    if publisher is None and user is None:
-        styles = load_active_styles()
-    else:
-        styles = []
-        if publisher:
-            styles.append(load_style("publisher", publisher))
-        if user:
-            styles.append(load_style("user", user))
-    for style in styles:
-        _deep_merge(resolved, style)
+    _deep_merge(resolved, load_style(publisher or DEFAULT_PUBLISHER))
 
     # rcParams travel with the settings tree but are applied to matplotlib, not read
     # as fig_cfg. `description` is style metadata (shown in the GUI), not a plot setting.

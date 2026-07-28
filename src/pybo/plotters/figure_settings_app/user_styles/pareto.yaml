@@ -1,4 +1,0 @@
-# User style — a partial override of the defaults (see defaults.yaml).
-# List only the keys you want to change; they override the active publisher style.
-scatter:
-  marker_size: 30

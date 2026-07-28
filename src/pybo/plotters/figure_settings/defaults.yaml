@@ -1,10 +1,11 @@
 # Package default figure settings — generic, domain-agnostic knobs only.
 #
 # This is the base of the reusable figure-settings package. The host application adds
-# its own settings (plot aspect ratios, palettes, signal/reference styling, ...) in
-# figure_settings_app/defaults.yaml, then publisher and user styles overlay on top:
-#   package defaults -> app defaults -> publisher style -> user style
-# See configs/figure_settings/config.py. Keep this file free of app-specific keys.
+# its own settings (plot aspect ratios, palettes, marker/reference styling, ...) in the
+# defaults.yaml at store.APP_DIR — for pyBO, pybo/plotters/defaults.yaml — and a
+# publisher style overlays on top:
+#   package defaults -> app defaults -> publisher style
+# See pybo/plotters/figure_settings/config.py. Keep this file free of app-specific keys.
 
 dpi: 600
 
@@ -52,6 +53,6 @@ histogram:
   peak:   {color: gray,      linestyle: ":", linewidth: 0.8, alpha: 0.5}
 
 # --- matplotlib rcParams (font family, spines, savefig, ...) ---
-# Empty base = matplotlib defaults. Publisher/user styles override these; they are
+# Empty base = matplotlib defaults. Publisher styles override these; they are
 # pushed into matplotlib.rcParams by config.py (values the plotters do not pass).
 rcparams: {}

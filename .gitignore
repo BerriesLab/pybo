@@ -28,7 +28,3 @@ __pycache__/
 /build/
 *.egg-info/
 .pytest_cache/
-
-# Which figure style is active is per-user runtime state, not a project setting.
-# Absent, figure_settings/store.py falls back to its built-in default.
-/src/pybo/plotters/figure_settings_app/state.json

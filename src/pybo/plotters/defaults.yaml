@@ -2,7 +2,7 @@
 #
 # Merged on top of the reusable package defaults
 # (pybo/plotters/figure_settings/defaults.yaml):
-#   package defaults -> THIS file -> publisher style -> user style
+#   package defaults -> THIS file -> publisher style (--style, default ieee_double)
 #
 # Every block below is the exact keyword mapping matplotlib receives; the plotters
 # spread it unchanged (`**fig_cfg["gp"]["mean"]`) and hold no style values of their own.

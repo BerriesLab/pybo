@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from pybo.plotters.figure_settings.config import resolve
+from pybo.plotters.figure_settings.config import DEFAULT_PUBLISHER, resolve
 from pybo.plotters.figure_settings.store import list_publisher_styles
 from pybo.utils.helpers import str2bool
 
@@ -51,9 +51,8 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
     parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
-    parser.add_argument("--style", default=None, choices=list_publisher_styles(),
-                        help="Publisher figure style for this run. Defaults to whichever style is "
-                             "active in figure_settings_app/state.json.")
+    parser.add_argument("--style", default=DEFAULT_PUBLISHER, choices=list_publisher_styles(),
+                        help="Publisher figure style for this run (default: %(default)s).")
     return parser
 
 

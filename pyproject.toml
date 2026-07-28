@@ -39,5 +39,5 @@ where = ["src"]
 # The figure settings are YAML, not Python: without this they are dropped from a
 # non-editable install and fig_cfg cannot resolve.
 [tool.setuptools.package-data]
+"pybo.plotters" = ["*.yaml"]
 "pybo.plotters.figure_settings" = ["*.yaml", "publisher_styles/*.yaml"]
-"pybo.plotters.figure_settings_app" = ["*.yaml", "user_styles/*.yaml"]
