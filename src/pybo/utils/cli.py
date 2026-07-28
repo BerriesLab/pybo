@@ -59,11 +59,10 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
 
 
 def parse_trial_args(description: str = ""):
-    """Parse the trial flags and apply --style before any figure is drawn.
+    """Parse the trial flags and resolve the figure settings from --style / --format.
 
-    The style has to be applied here rather than inside main(): fig_cfg is resolved when
-    the plotters are imported, which happens before argparse runs. resolve() rebuilds it
-    in place, and the plotters read it at draw time, so the new values are picked up.
+    This is the only resolve a CLI run performs: style.py deliberately does not resolve
+    on import, so the chosen style is in place before the first figure is built.
     """
     args = build_trial_args_parser(description=description).parse_args()
     resolve(args.style, fmt=args.format)

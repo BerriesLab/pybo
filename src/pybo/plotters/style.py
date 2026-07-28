@@ -5,10 +5,12 @@ override of it, selected with ``--style`` (see pybo/utils/cli.py). Resolving is 
 merge, after which this module derives each plot's figsize, thins line widths for narrow
 columns, and pushes the style's ``rcparams`` into matplotlib.
 
-``fig_cfg`` is resolved on import using ``DEFAULT_STYLE``. Call ``resolve()`` to rebuild it
-for a different style: it mutates the dict in place, so modules that already did
-``from pybo.plotters.style import fig_cfg`` see the new values. That is what lets
-``--style`` take effect after argparse has run, long after import.
+Resolution happens exactly once per process, and deliberately not on import: a CLI run
+calls ``resolve()`` with the chosen ``--style`` once argparse has run, and anything else
+falls back to ``ensure_resolved()`` when the first plotter is built. ``resolve()`` mutates
+``fig_cfg`` in place, so modules that did ``from pybo.plotters.style import fig_cfg`` see
+the values either way. Nothing may read ``fig_cfg`` at import time — a module-level read
+(a constructor default argument, say) would capture an unresolved or stale value.
 """
 import copy
 from pathlib import Path
@@ -104,4 +106,13 @@ def resolve(style: str | None = None, fmt: str | None = None) -> dict:
     return fig_cfg
 
 
-resolve()
+def ensure_resolved() -> dict:
+    """Resolve with ``DEFAULT_STYLE`` unless something already has.
+
+    Resolution is not done on import: a CLI run calls ``resolve()`` with the chosen
+    ``--style`` once argparse has run, and this is the fallback for everything else
+    (a notebook, a test, library use), so exactly one resolve happens either way.
+    """
+    if not fig_cfg:
+        resolve()
+    return fig_cfg

@@ -25,7 +25,7 @@ class Experiment1DPlotter(PlotterBase):
     plot_name = "experiment_1d"
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
                  y: tuple[str, str | int] = ("obj", 0), z: tuple[str, str | int] | None = None,
-                 cmap=fig_cfg["cmap"]["sequential"], grid=True, seed=None):
+                 cmap=None, grid=True, seed=None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -35,7 +35,7 @@ class Experiment1DPlotter(PlotterBase):
         self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
-        self.cmap = cmap
+        self.cmap = cmap or fig_cfg["cmap"]["sequential"]
         self.n_grid_points = 100000
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
@@ -355,7 +355,7 @@ class Experiment2DPlotter(PlotterBase):
             x: AxisSpec = ("par", 0),
             y: AxisSpec = ("par", 1),
             z: AxisSpec | None = ("obj", 0),
-            cmap=fig_cfg["cmap"]["sequential"],
+            cmap=None,
             grid=True,
             seed=None
     ):
@@ -368,7 +368,7 @@ class Experiment2DPlotter(PlotterBase):
         self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
-        self.cmap = cmap
+        self.cmap = cmap or fig_cfg["cmap"]["sequential"]
         self.n_grid_points = 1000
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
@@ -625,7 +625,7 @@ class Experiment2DPlotter(PlotterBase):
 class ParetoFront2DPlotter(PlotterBase):
     plot_name = "pareto_front_2d"
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
-                 z: tuple[str, str | int] | None = None, cmap=fig_cfg["cmap"]["sequential"], grid=False, seed=None):
+                 z: tuple[str, str | int] | None = None, cmap=None, grid=False, seed=None):
         """
         Initializes the 2D Pareto Plotter.
         Args:
@@ -643,7 +643,7 @@ class ParetoFront2DPlotter(PlotterBase):
         self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
-        self.cmap = cmap
+        self.cmap = cmap or fig_cfg["cmap"]["sequential"]
         self.n_grid_points = 100
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None  # To store the scatter for the colorbar

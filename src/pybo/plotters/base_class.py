@@ -2,7 +2,7 @@ from pathlib import Path
 import matplotlib
 import torch
 from pybo.optimizer.optimizer import BayesianOptimizer
-from pybo.plotters.style import fig_cfg
+from pybo.plotters.style import ensure_resolved, fig_cfg
 from matplotlib import pyplot as plt
 
 matplotlib.use("Agg")  # A pure renderer backend, not compatible with plt.show().
@@ -16,6 +16,9 @@ class PlotterBase:
     plot_name: str = "experiment_1d"
 
     def __init__(self, bo: BayesianOptimizer):
+        # No-op under the CLI, which has already resolved with --style; this covers a
+        # notebook or a test that builds a plotter without going through argparse.
+        ensure_resolved()
         self.bo = bo
         self.figsize = fig_cfg["figsize"][self.plot_name]
         self.dpi = fig_cfg["dpi"]

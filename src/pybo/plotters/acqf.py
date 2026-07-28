@@ -14,7 +14,7 @@ class Acqf1DPlotter(PlotterBase):
     plot_name = "acqf_1d"
 
     def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
-                 z: tuple[str, str] | None = None, cmap=fig_cfg["cmap"]["sequential"], grid: bool = True, seed=None):
+                 z: tuple[str, str] | None = None, cmap=None, grid: bool = True, seed=None):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -24,7 +24,7 @@ class Acqf1DPlotter(PlotterBase):
         # self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
-        self.cmap = cmap
+        self.cmap = cmap or fig_cfg["cmap"]["sequential"]
         self.n_grid_points = 100000
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
@@ -170,7 +170,7 @@ class Acqf2DPlotter(PlotterBase):
             x: tuple[str, str | int] = ("par", 0),
             y: tuple[str, str | int] = ("par", 1),
             z: tuple[str, str | int] | None = None,
-            cmap=fig_cfg["cmap"]["sequential"], grid=True
+            cmap=None, grid=True
     ):
         super().__init__(bo=bo)
 
@@ -181,7 +181,7 @@ class Acqf2DPlotter(PlotterBase):
         self.y_cfg = bo.objective.get_config(*y)
         self.z_cfg = bo.objective.get_config(*z) if z else None
 
-        self.cmap = cmap
+        self.cmap = cmap or fig_cfg["cmap"]["sequential"]
         self.n_grid_points = 100
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)
         self.mappable = None
