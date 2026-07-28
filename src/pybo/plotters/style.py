@@ -89,15 +89,25 @@ def resolve(style: str | None = None, fmt: str | None = None) -> dict:
         for name, aspect in cfg["aspect"].items()
     }
 
-    # --- Style: thin point-based strokes to suit the physical figure size --------
-    # Line widths are absolute points and do NOT scale with the figure, so on a narrow
-    # column the screen-tuned defaults look heavy. Marker sizes are left alone: scaling
-    # an area by a linear factor would be wrong, and a style can override `s` directly.
-    lw_scale = cfg.pop("linewidth_scale", None)
-    for section in cfg.pop("scaled_sections", []) if lw_scale and lw_scale != 1 else []:
-        for entry in cfg.get(section, {}).values():
-            if isinstance(entry, dict) and "linewidth" in entry:
-                entry["linewidth"] = round(entry["linewidth"] * lw_scale, 3)
+    # --- Style: scale point-based elements to the physical figure size -----------
+    # Strokes and markers are absolute points and do NOT follow the figure size, so on a
+    # narrow column the screen-tuned defaults look heavy. Both factors are linear;
+    # matplotlib's `s` is an *area* in points^2, so it takes the square.
+    lw_scale = cfg.pop("linewidth_scale", None) or 1
+    mk_scale = cfg.pop("marker_scale", None) or 1
+    sections = cfg.pop("scaled_sections", [])
+    if lw_scale != 1 or mk_scale != 1:
+        for section in sections:
+            for entry in cfg.get(section, {}).values():
+                if not isinstance(entry, dict):
+                    continue
+                for key in ("linewidth", "lw", "linewidths"):  # matplotlib's aliases
+                    if key in entry:
+                        entry[key] = round(entry[key] * lw_scale, 3)
+                if "s" in entry:                # scatter: area
+                    entry["s"] = round(entry["s"] * mk_scale ** 2, 3)
+                if "markersize" in entry:       # plot: diameter
+                    entry["markersize"] = round(entry["markersize"] * mk_scale, 3)
 
     # Mutate in place: callers hold a reference to this exact dict.
     fig_cfg.clear()

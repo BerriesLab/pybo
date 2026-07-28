@@ -4,6 +4,7 @@ SETTINGS = {
     'dpi': 600,
     'column_width_in': 3.33,
     'linewidth_scale': 0.65,
+    'marker_scale': 0.65,
     "rcparams": {
         'mathtext.fontset': 'dejavusans',
         'axes.linewidth': 0.6,
@@ -14,6 +15,15 @@ SETTINGS = {
         'ps.fonttype': 42,
         'font.family': 'sans-serif',
         'font.sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans'],
+        # Type sizes this journal specifies. Applied globally through
+        # rcParams, so no plotter passes a fontsize.
+        'font.size': 8,
+        'axes.labelsize': 8,
+        'axes.titlesize': 8,
+        'legend.fontsize': 7,
+        'legend.frameon': True,
+        'legend.framealpha': 1.0,
+        'legend.loc': 'upper right',
         'xtick.labelsize': 8,
         'ytick.labelsize': 8,
     },

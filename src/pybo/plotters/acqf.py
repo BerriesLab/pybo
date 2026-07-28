@@ -146,7 +146,7 @@ class Acqf1DPlotter(PlotterBase):
         self.cbar.ax.tick_params()
 
     def plot_legend(self, zorder: int = 100):
-        leg = self.ax.legend(loc='upper right', frameon=True)
+        leg = self.ax.legend()
         leg.set_zorder(zorder)
 
     def plot(self):
@@ -401,7 +401,7 @@ class Acqf2DPlotter(PlotterBase):
         self.plot_trajectory()
         self.plot_new_X()
         self.add_colorbar()
-        self.ax.legend(loc='upper right', fontsize='x-small', frameon=True)
+        self.ax.legend()
         return self
 
     def save_figure(self, filename: str | Path | None = None):
