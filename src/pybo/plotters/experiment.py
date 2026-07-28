@@ -13,14 +13,6 @@ from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 from pybo.plotters.figure_settings.config import fig_cfg
-from pybo.plotters.styles import (
-    arrow_future, arrow_past, experiment_scatter_gnd_truth_best_value,
-    experiment_scatter_gnd_truth_feasible, experiment_scatter_gnd_truth_infeasible,
-    experiment_scatter_gnd_truth_pareto_front, experiment_scatter_observations_best_value,
-    experiment_scatter_observations_feasible, experiment_scatter_observations_infeasible,
-    experiment_scatter_observations_pareto_front, gp_confidence_interval_1sigma,
-    gp_confidence_interval_2sigma, gp_confidence_interval_3sigma, gp_mean, next_X_1d, next_X_2d,
-)
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 
 from pybo.samplers.samplers import SobolSampler
@@ -117,7 +109,7 @@ class Experiment1DPlotter(PlotterBase):
 
         # Layer 1: Infeasible
         if is_infeasible.any():
-            kwargs = experiment_scatter_gnd_truth_infeasible.copy()
+            kwargs = fig_cfg["ground_truth"]["infeasible"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_infeasible].cpu(),
@@ -132,7 +124,7 @@ class Experiment1DPlotter(PlotterBase):
 
         # Layer 2: Feasible but not best
         if is_feasible.any():
-            kwargs = experiment_scatter_gnd_truth_feasible.copy()
+            kwargs = fig_cfg["ground_truth"]["feasible"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             scatter = self.ax.scatter(
                 x=x_vals[is_exclusive_feasible].cpu(),
@@ -149,7 +141,7 @@ class Experiment1DPlotter(PlotterBase):
 
         # Layer 3: Best
         if is_best.any():
-            kwargs = experiment_scatter_gnd_truth_best_value.copy()
+            kwargs = fig_cfg["ground_truth"]["best_value"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_best].cpu(),
@@ -194,7 +186,7 @@ class Experiment1DPlotter(PlotterBase):
             X_np,
             m_np,
             zorder=zorder + 3,
-            **gp_mean
+            **fig_cfg["gp"]["mean"]
         )
 
         # Layer 2: GP 1 * sigma
@@ -203,7 +195,7 @@ class Experiment1DPlotter(PlotterBase):
             y1=m_np - s_np,
             y2=m_np + s_np,
             zorder=zorder + 2,
-            **gp_confidence_interval_1sigma
+            **fig_cfg["gp"]["band_1sigma"]
         )
 
         # Layer 2: GP 2 * sigma
@@ -212,7 +204,7 @@ class Experiment1DPlotter(PlotterBase):
             y1=m_np - 2 * s_np,
             y2=m_np + 2 * s_np,
             zorder=zorder + 1,
-            **gp_confidence_interval_2sigma
+            **fig_cfg["gp"]["band_2sigma"]
         )
 
         # Layer 2: GP 3 * sigma
@@ -221,7 +213,7 @@ class Experiment1DPlotter(PlotterBase):
             y1=m_np - 3 * s_np,
             y2=m_np + 3 * s_np,
             zorder=zorder,
-            **gp_confidence_interval_3sigma
+            **fig_cfg["gp"]["band_3sigma"]
         )
 
         return self
@@ -252,7 +244,7 @@ class Experiment1DPlotter(PlotterBase):
         is_exclusive_feasible = torch.logical_and(is_feasible, torch.logical_not(is_best))
 
         if is_infeasible.any():
-            kwargs = experiment_scatter_observations_infeasible.copy()
+            kwargs = fig_cfg["observation"]["infeasible"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[is_infeasible].cpu(),
@@ -266,7 +258,7 @@ class Experiment1DPlotter(PlotterBase):
             )
 
         if is_exclusive_feasible.any():
-            kwargs = experiment_scatter_observations_feasible.copy()
+            kwargs = fig_cfg["observation"]["feasible"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             scatter = self.ax.scatter(
                 x=x_obs[is_exclusive_feasible].cpu(),
@@ -282,7 +274,7 @@ class Experiment1DPlotter(PlotterBase):
                 self.mappable = scatter
 
         if is_best.any():
-            kwargs = experiment_scatter_observations_best_value.copy()
+            kwargs = fig_cfg["observation"]["best_value"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[is_best].cpu(),
@@ -299,7 +291,7 @@ class Experiment1DPlotter(PlotterBase):
 
     def plot_next_X(self, zorder: int = 30):
         if self.bo.new_X is not None:
-            kwargs = next_X_1d.copy()
+            kwargs = fig_cfg["next_X"]["line_1d"].copy()
             label = kwargs.pop("label")  # Get label if it exists
             new_x_np = self.bo.new_X.detach().cpu().numpy().flatten()
 
@@ -487,7 +479,7 @@ class Experiment2DPlotter(PlotterBase):
                 x=x_obs[is_infeasible].cpu().numpy(),
                 y=y_obs[is_infeasible].cpu().numpy(),
                 zorder=zorder,
-                **experiment_scatter_observations_infeasible
+                **fig_cfg["observation"]["infeasible"]
             )
 
         if is_exclusive_feasible.any():
@@ -495,7 +487,7 @@ class Experiment2DPlotter(PlotterBase):
                 x=x_obs[is_exclusive_feasible].cpu().numpy(),
                 y=y_obs[is_exclusive_feasible].cpu().numpy(),
                 zorder=zorder + 1,
-                **experiment_scatter_observations_feasible
+                **fig_cfg["observation"]["feasible"]
             )
 
         if is_best.any():
@@ -503,7 +495,7 @@ class Experiment2DPlotter(PlotterBase):
                 x=x_obs[is_best].cpu().numpy(),
                 y=y_obs[is_best].cpu().numpy(),
                 zorder=zorder + 2,
-                **experiment_scatter_observations_best_value,
+                **fig_cfg["observation"]["best_value"],
             )
 
         return self
@@ -515,7 +507,7 @@ class Experiment2DPlotter(PlotterBase):
                 x=X_new[:, self.x_cfg.index],
                 y=X_new[:, self.y_cfg.index],
                 zorder=zorder,
-                **next_X_2d
+                **fig_cfg["next_X"]["marker_2d"]
             )
         return self
 
@@ -545,7 +537,7 @@ class Experiment2DPlotter(PlotterBase):
                             xy=(X_new[j, idx_x], X_new[j, idx_y]),
                             xytext=(X_np[i, idx_x], X_np[i, idx_y]),
                             zorder=zorder,
-                            arrowprops=arrow_future,
+                            arrowprops=fig_cfg["arrow"]["future"],
                         )
             return self
 
@@ -566,7 +558,7 @@ class Experiment2DPlotter(PlotterBase):
                     xy=(first_batch[j, idx_x], first_batch[j, idx_y]),
                     xytext=(X_np[i, idx_x], X_np[i, idx_y]),
                     zorder=zorder,
-                    arrowprops=arrow_past,
+                    arrowprops=fig_cfg["arrow"]["past"],
                 )
 
         # 2) connect observed batch k -> batch k+1
@@ -580,7 +572,7 @@ class Experiment2DPlotter(PlotterBase):
                         xy=(float(B[j, idx_x]), float(B[j, idx_y])),
                         xytext=(float(A[i, idx_x]), float(A[i, idx_y])),
                         zorder=zorder,
-                        arrowprops=arrow_past,
+                        arrowprops=fig_cfg["arrow"]["past"],
                     )
 
         # 3) last observed batch -> pending new_X
@@ -593,7 +585,7 @@ class Experiment2DPlotter(PlotterBase):
                         xy=(float(X_new[j, idx_x]), float(X_new[j, idx_y])),
                         xytext=(float(last_batch[i, idx_x]), float(last_batch[i, idx_y])),
                         zorder=zorder + 2,
-                        arrowprops=arrow_future,
+                        arrowprops=fig_cfg["arrow"]["future"],
                     )
 
         return self
@@ -733,7 +725,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
         # Layer 1: Infeasible
         if is_infeasible.any():
-            kwargs = experiment_scatter_gnd_truth_infeasible.copy()
+            kwargs = fig_cfg["ground_truth"]["infeasible"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_infeasible].cpu().numpy(),
@@ -747,7 +739,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
         # Layer 2: Feasible but Dominated
         if mask_exclusive_feasible.any():
-            kwargs = experiment_scatter_gnd_truth_feasible.copy()
+            kwargs = fig_cfg["ground_truth"]["feasible"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.mappable = self.ax.scatter(
                 x=x_vals[mask_exclusive_feasible].cpu().numpy(),
@@ -761,7 +753,7 @@ class ParetoFront2DPlotter(PlotterBase):
 
         # Layer 3: Pareto Front
         if is_pareto.any():
-            kwargs = experiment_scatter_gnd_truth_pareto_front.copy()
+            kwargs = fig_cfg["ground_truth"]["pareto"].copy()
             if z_vals is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_vals[is_pareto].cpu().numpy(),
@@ -801,7 +793,7 @@ class ParetoFront2DPlotter(PlotterBase):
         mask_dominated = torch.logical_and(is_feasible, torch.logical_not(is_pareto))
 
         if mask_infeasible.any():
-            kwargs = experiment_scatter_observations_infeasible.copy()
+            kwargs = fig_cfg["observation"]["infeasible"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[mask_infeasible].cpu().numpy(),
@@ -814,7 +806,7 @@ class ParetoFront2DPlotter(PlotterBase):
             )
 
         if mask_dominated.any():
-            kwargs = experiment_scatter_observations_feasible.copy()
+            kwargs = fig_cfg["observation"]["feasible"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             scatter_obs = self.ax.scatter(
                 x=x_obs[mask_dominated].cpu().numpy(),
@@ -831,7 +823,7 @@ class ParetoFront2DPlotter(PlotterBase):
                 self.mappable = scatter_obs
 
         if is_pareto.any():
-            kwargs = experiment_scatter_observations_pareto_front.copy()
+            kwargs = fig_cfg["observation"]["pareto"].copy()
             if z_obs is not None: kwargs.pop("facecolor")
             self.ax.scatter(
                 x=x_obs[is_pareto].cpu().numpy(),

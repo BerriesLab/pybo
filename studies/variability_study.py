@@ -43,6 +43,7 @@ def main():
                     "--seed": seed,
                     "--plot": args.plot,
                     "--verbose": args.verbose,
+                    "--style": args.style,
                 },
                 run_name=run_name,
                 output_dir=output_dir / run_name,

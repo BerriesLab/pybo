@@ -5,8 +5,8 @@ from typing import cast
 from matplotlib import pyplot as plt
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.variable_registry import ParCfg
+from pybo.plotters.figure_settings.config import fig_cfg
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.styles import evolution_interconnections, evolution_scatter, general_axline
 
 
 def plot_and_save_evolutions(bo: BayesianOptimizer, ):
@@ -92,16 +92,16 @@ class EvolutionPlotter(PlotterBase):
 
             for y1, x1 in zip(y_start, x_start):
                 for y2, x2 in zip(y_end, x_end):
-                    self.ax.plot([x1, x2], [y1, y2], **evolution_interconnections)
+                    self.ax.plot([x1, x2], [y1, y2], **fig_cfg["evolution"]["interconnection"])
 
     def plot(self):
         n_iter, x_all, y_all = self._prepare_xy()
         if len(y_all) > 0:
             self._connect_subsequent_batches(n_iter, x_all, y_all)
-            self.ax.scatter(x_all, y_all, label=self.config.label, **evolution_scatter)
+            self.ax.scatter(x_all, y_all, label=self.config.label, **fig_cfg["evolution"]["scatter"])
 
             # Vertical line showing end of initialisation
-            self.ax.axvline(x=self.bo.n_initial_samples, **general_axline)
+            self.ax.axvline(x=self.bo.n_initial_samples, **fig_cfg["refline"]["initial_samples"])
 
             # Plot horizontal bounds if they exist (Common for parameters/constraints)
             # Use 'cast' so the IDE sees the bounds attribute

@@ -7,11 +7,6 @@ from pybo.plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
 from pybo.plotters.figure_settings.config import fig_cfg
-from pybo.plotters.styles import (
-    acqf_1d, arrow_future, arrow_past, experiment_scatter_observations_best_value,
-    experiment_scatter_observations_feasible, experiment_scatter_observations_infeasible,
-    next_X_1d, next_X_2d,
-)
 from pybo.samplers.samplers import SobolSampler
 
 
@@ -92,7 +87,7 @@ class Acqf1DPlotter(PlotterBase):
         else:
             y = acq_np
 
-        kwargs = acqf_1d.copy()
+        kwargs = fig_cfg["acqf"]["line_1d"].copy()
         if z_vals is not None:
             kwargs.pop("color")
         scatter = self.ax.scatter(
@@ -112,7 +107,7 @@ class Acqf1DPlotter(PlotterBase):
 
     def plot_next_X(self, zorder: int = 1):
         if self.bo.new_X is not None:
-            kwargs = next_X_1d.copy()
+            kwargs = fig_cfg["next_X"]["line_1d"].copy()
             label = kwargs.pop("label")  # Get label if it exists
             new_x_np = self.bo.new_X.detach().cpu().numpy().flatten()
 
@@ -276,7 +271,7 @@ class Acqf2DPlotter(PlotterBase):
                 x=x_obs[is_infeasible].cpu().numpy(),
                 y=y_obs[is_infeasible].cpu().numpy(),
                 zorder=zorder,
-                **experiment_scatter_observations_infeasible
+                **fig_cfg["observation"]["infeasible"]
             )
 
         if is_exclusive_feasible.any():
@@ -284,7 +279,7 @@ class Acqf2DPlotter(PlotterBase):
                 x=x_obs[is_exclusive_feasible].cpu().numpy(),
                 y=y_obs[is_exclusive_feasible].cpu().numpy(),
                 zorder=zorder + 1,
-                **experiment_scatter_observations_feasible
+                **fig_cfg["observation"]["feasible"]
             )
 
         if is_best.any():
@@ -292,7 +287,7 @@ class Acqf2DPlotter(PlotterBase):
                 x=x_obs[is_best].cpu().numpy(),
                 y=y_obs[is_best].cpu().numpy(),
                 zorder=zorder + 2,
-                **experiment_scatter_observations_best_value,
+                **fig_cfg["observation"]["best_value"],
             )
 
         return self
@@ -304,7 +299,7 @@ class Acqf2DPlotter(PlotterBase):
                 x=X[:, self.x_cfg.index],
                 y=X[:, self.y_cfg.index],
                 zorder=zorder,
-                **next_X_2d
+                **fig_cfg["next_X"]["marker_2d"]
             )
         return self
 
@@ -330,7 +325,7 @@ class Acqf2DPlotter(PlotterBase):
                             xy=(X_new[j, idx_x], X_new[j, idx_y]),
                             xytext=(X_np[i, idx_x], X_np[i, idx_y]),
                             zorder=zorder,
-                            arrowprops=arrow_future,
+                            arrowprops=fig_cfg["arrow"]["future"],
                         )
             return self
 
@@ -351,7 +346,7 @@ class Acqf2DPlotter(PlotterBase):
                     xy=(first_batch[j, idx_x], first_batch[j, idx_y]),
                     xytext=(X_np[i, idx_x], X_np[i, idx_y]),
                     zorder=zorder,
-                    arrowprops=arrow_past,
+                    arrowprops=fig_cfg["arrow"]["past"],
                 )
 
         # 2) connect observed batches
@@ -365,7 +360,7 @@ class Acqf2DPlotter(PlotterBase):
                         xy=(float(B[j, idx_x]), float(B[j, idx_y])),
                         xytext=(float(A[i, idx_x]), float(A[i, idx_y])),
                         zorder=zorder,
-                        arrowprops=arrow_past,
+                        arrowprops=fig_cfg["arrow"]["past"],
                     )
 
         # 3) last observed batch -> pending new_X
@@ -378,7 +373,7 @@ class Acqf2DPlotter(PlotterBase):
                         xy=(float(X_new[j, idx_x]), float(X_new[j, idx_y])),
                         xytext=(float(last_batch[i, idx_x]), float(last_batch[i, idx_y])),
                         zorder=zorder + 2,
-                        arrowprops=arrow_future,
+                        arrowprops=fig_cfg["arrow"]["future"],
                     )
 
         return self

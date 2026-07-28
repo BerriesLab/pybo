@@ -3,9 +3,11 @@
 # Merged on top of the reusable package defaults
 # (pybo/plotters/figure_settings/defaults.yaml):
 #   package defaults -> THIS file -> publisher style -> user style
-# Everything here is named after pyBO's plots and its optimization semantics
-# (feasible / infeasible / Pareto / GP posterior / ground truth), so it does not
-# belong in the shared package.
+#
+# Every block below is the exact keyword mapping matplotlib receives; the plotters
+# spread it unchanged (`**fig_cfg["gp"]["mean"]`) and hold no style values of their own.
+# Colours are declared once under `palette` and pulled in by YAML anchor (&name / *name),
+# so a hue is edited in one place.
 
 # --- Figure aspect ratios (width / height) ---
 # Shape only, never size: the physical width comes from column_width_in (package /
@@ -25,6 +27,13 @@ aspect:
   hypervolume_improvement: 1.143    # HypervolumeImprovementPlotter
   elapsed_time: 1.143               # ElapsedTimePlotter
 
+# --- Sections whose `linewidth` follows linewidth_scale ---
+# Publisher styles thin every stroke on a narrow column (e.g. 0.65 for a 3.5 in
+# journal column); config.py walks exactly these sections. Marker sizes are absolute
+# and are NOT scaled — a style that needs smaller markers overrides the `s` /
+# `markersize` values below directly.
+scaled_sections: [refline, gp, next_X, metrics, evolution]
+
 # --- Colormaps ---
 # Every surface and z-coloured scatter in pyBO encodes magnitude (a posterior mean, an
 # acquisition value, a parameter), so they all take `sequential`, which must be a single
@@ -38,99 +47,73 @@ cmap:
   diverging: coolwarm
 
 # --- Semantic palette --------------------------------------------------------
-# These seven roles are the single source of truth for colour; no plotter may hardcode
-# a colour literal.
+# The single source of truth for colour; every block below refers to these by anchor.
 #
 # COLOURBLIND SAFETY — read before editing, and re-measure if you do.
-# Pairwise separation was measured in OKLab (dE x100) under deuteranopia/protanopia:
+# Pairwise separation measured in OKLab (dE x100) under deuteranopia/protanopia:
 #   feasible / pareto        9.1     floor  - legible ONLY via distinct markers
 #   feasible / infeasible   11.2     floor  - legible ONLY via distinct markers
 #   gp_mean  / future       11.7     floor  - legible via linestyle + marker
 # Six simultaneous categorical hues cannot all reach the dE >= 15 comfort target under
 # deuteranopia; that is a property of the colour space, not a fixable choice. The floor
-# (dE >= 8) is therefore held by the `markers` block below acting as secondary encoding.
-# If you override `colors` in a style, override `markers` too or the plots stop being
-# colourblind-legible.
-colors:
-  feasible: "#2ecc71"        # Emerald green  - feasible observations
-  infeasible: "#e74c3c"      # Alizarin red   - infeasible observations
-  pareto: "#f39c12"          # Orange         - Pareto front / best value
-  gp_mean: "#2980b9"         # Belize blue    - GP posterior mean and its bands
-  ground_truth: "#2c3e50"    # Midnight blue  - dense true-function background
-  future: "#7B3FF2"          # Violet         - proposed next X and forward arrows
-  evolution: "#f39c12"       # Orange         - evolution traces (matches pareto)
-
-# --- Per-role markers ---
-# Load-bearing, not decoration: these carry the identity that colour alone cannot at
-# the separations recorded above.
-markers:
-  feasible: "o"
-  infeasible: "X"
-  pareto: "*"
-  best_value: "*"
-  ground_truth: "o"
-  ground_truth_infeasible: "x"
-  next_X: "*"
-
-# --- Marker sizes (points^2) ---
-# One knob per concept. Publisher and user styles override marker_size to suit a
-# narrow column; the Pareto/best-value stars follow it through pareto_factor.
-scatter:
-  marker_size: 64          # observations
-  ground_truth_size: 1     # the dense background grid (hundreds of points)
-  pareto_factor: 3         # Pareto & best-value stars, relative to the above
-  edge_color: black
-  edge_width: 0.5
+# (dE >= 8) is therefore held by the markers below acting as secondary encoding: if you
+# change a colour, keep its marker distinct or the plots stop being colourblind-legible.
+palette:
+  feasible: &feasible "#2ecc71"        # Emerald green  - feasible observations
+  infeasible: &infeasible "#e74c3c"    # Alizarin red   - infeasible observations
+  pareto: &pareto "#f39c12"            # Orange         - Pareto front / best value
+  gp_mean: &gp_mean "#2980b9"          # Belize blue    - GP posterior mean and bands
+  ground_truth: &ground_truth "#2c3e50"  # Midnight blue - dense true-function background
+  future: &future "#7B3FF2"            # Violet         - proposed next X, forward arrows
+  edge: &edge black                    # Marker outline
 
 # --- Observations (the measured points) ---
 observation:
-  feasible:   {alpha: 0.8, label: "Feasible Obs"}
-  infeasible: {alpha: 0.8, label: "Infeasible Obs"}
-  pareto:     {alpha: 0.8, label: "Pareto Obs"}
-  best_value: {alpha: 0.8, label: "Best Obs"}
+  feasible:   {marker: o,   facecolor: *feasible,   edgecolor: *edge, s: 64,  alpha: 0.8, label: Feasible Obs}
+  infeasible: {marker: X,   facecolor: *infeasible, edgecolor: *edge, s: 64,  alpha: 0.8, label: Infeasible Obs}
+  pareto:     {marker: "*", facecolor: *pareto,     edgecolor: *edge, s: 192, alpha: 0.8, label: Pareto Obs}
+  best_value: {marker: "*", facecolor: *pareto,     edgecolor: *edge, s: 192, alpha: 0.8, label: Best Obs}
 
-# --- Ground truth (the dense true-function background) ---
+# --- Ground truth (the dense true-function background: hundreds of tiny points) ---
 ground_truth:
-  feasible:   {alpha: 0.25, label: "Feasible GT"}
-  infeasible: {alpha: 0.15, label: "Infeasible GT"}
-  pareto:     {alpha: 0.70, edge_width: 0.6, label: "Pareto GT"}
-  best_value: {alpha: 0.70, edge_width: 0.6, label: "Best GT Value"}
+  feasible:   {marker: o,   facecolor: *ground_truth, edgecolor: null, s: 1, alpha: 0.25, label: Feasible GT}
+  infeasible: {marker: x,   facecolor: *infeasible,   edgecolor: null, s: 1, alpha: 0.15, label: Infeasible GT}
+  pareto:     {marker: "*", facecolor: *pareto, edgecolor: *edge, linewidths: 0.6, s: 3, alpha: 0.7, label: Pareto GT}
+  best_value: {marker: "*", facecolor: *pareto, edgecolor: *edge, linewidths: 0.6, s: 3, alpha: 0.7, label: Best GT Value}
 
-# --- GP posterior (1D plots) ---
-# Bands fade as they widen so the 1-sigma envelope reads strongest.
+# --- GP posterior (1D plots); bands fade as they widen ---
 gp:
-  mean:        {label: "GP $\\mu$"}
-  band_1sigma: {alpha: 0.10, label: "GP $\\pm 1 \\sigma$"}
-  band_2sigma: {alpha: 0.05, label: "GP $\\pm 2 \\sigma$"}
-  band_3sigma: {alpha: 0.02, label: "GP $\\pm 3 \\sigma$"}
+  mean:        {color: *gp_mean, label: 'GP $\mu$'}
+  band_1sigma: {color: *gp_mean, alpha: 0.10, label: 'GP $\pm 1 \sigma$'}
+  band_2sigma: {color: *gp_mean, alpha: 0.05, label: 'GP $\pm 2 \sigma$'}
+  band_3sigma: {color: *gp_mean, alpha: 0.02, label: 'GP $\pm 3 \sigma$'}
 
 # --- The proposed next X ---
 next_X:
-  line_1d:   {linestyle: ":", linewidth: 2, label: "New $X$"}
-  marker_2d: {alpha: 0.8, label: "Next X"}
+  line_1d:   {color: *future, linestyle: ":", linewidth: 2, label: 'New $X$'}
+  marker_2d: {marker: "*", facecolor: *future, edgecolors: *edge, s: 64, alpha: 0.8, label: Next X}
 
 # --- Trajectory arrows between successive proposals ---
-# `past` is drawn over the coloured surface, so it stays white for contrast; `future`
-# carries the `future` palette colour.
+# `past` is drawn over the coloured surface, so it stays white for contrast.
 arrow:
-  future: {arrowstyle: "->", lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
+  future: {arrowstyle: "->", color: *future, lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
            connectionstyle: "arc3,rad=0.1", ls: "--"}
-  past:   {arrowstyle: "->", lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
-           connectionstyle: "arc3,rad=0.1", color: white}
+  past:   {arrowstyle: "->", color: white,   lw: 1.5, alpha: 0.8, shrinkA: 3, shrinkB: 3,
+           connectionstyle: "arc3,rad=0.1"}
 
 # --- Acquisition function trace (1D) ---
 acqf:
-  line_1d: {color: black, label: "Acqf."}
+  line_1d: {color: *edge, s: 1, label: "Acqf."}
 
 # --- Metrics panels (best value, hypervolume, HVI, elapsed time) ---
 metrics:
-  line: {marker: "o", markeredgecolor: black, markersize: 8, linestyle: "-"}
+  line: {marker: o, markerfacecolor: *pareto, markeredgecolor: *edge, markersize: 8, linestyle: "-"}
 
 # --- Evolution panels (one per parameter / objective / constraint) ---
 evolution:
-  scatter:        {marker: "o", edgecolor: black, alpha: 1, linestyle: "-"}
+  scatter:         {marker: o, color: *pareto, edgecolor: *edge, s: 64, alpha: 1, linestyle: "-"}
   interconnection: {color: gray, linestyle: "-", linewidth: 1, alpha: 0.2}
 
 # --- Reference lines ---
 refline:
-  initial_samples: {linestyle: "--", linewidth: 1, color: black, alpha: 0.5}
+  initial_samples: {linestyle: "--", linewidth: 1, color: *edge, alpha: 0.5}

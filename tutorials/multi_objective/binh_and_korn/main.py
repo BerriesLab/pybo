@@ -7,7 +7,7 @@ from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImpr
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.samplers.samplers import SobolSampler
-from pybo.utils.cli import build_trial_args_parser, default_output_dir, unique_dir
+from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
 from tutorials.multi_objective.binh_and_korn.objective import BinhAndKorn
 from pybo.plotters.evolution import plot_and_save_evolutions
 from pybo.plotters.experiment import ParetoFront2DPlotter
@@ -113,7 +113,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
 
 if __name__ == "__main__":
-    args = build_trial_args_parser(description="Run a single Binh-and-Korn BO trial.").parse_args()
+    args = parse_trial_args(description="Run a single Binh-and-Korn BO trial.")
     if args.verbose:
         print(f"Running on {DEVICE}.")
     output_dir = unique_dir(args.output_dir or default_output_dir(__file__))

@@ -8,7 +8,7 @@ from gpytorch.constraints import Interval
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.samplers.samplers import SobolSampler
-from pybo.utils.cli import build_trial_args_parser, default_output_dir, unique_dir
+from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
 from tutorials.multi_objective.osyczka_kundu.objective import OsyczkaKundu
 from pybo.plotters.experiment import *
 from pybo.plotters.metrics import *
@@ -120,7 +120,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
 
 if __name__ == "__main__":
-    args = build_trial_args_parser(description="Run a single Osyczka-Kundu BO trial.").parse_args()
+    args = parse_trial_args(description="Run a single Osyczka-Kundu BO trial.")
     if args.verbose:
         print(f"Running on {DEVICE}.")
     output_dir = unique_dir(args.output_dir or default_output_dir(__file__))

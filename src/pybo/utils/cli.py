@@ -9,6 +9,8 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+from pybo.plotters.figure_settings.config import resolve
+from pybo.plotters.figure_settings.store import list_publisher_styles
 from pybo.utils.helpers import str2bool
 
 
@@ -49,4 +51,20 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
     parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
+    parser.add_argument("--style", default=None, choices=list_publisher_styles(),
+                        help="Publisher figure style for this run. Defaults to whichever style is "
+                             "active in figure_settings_app/state.json.")
     return parser
+
+
+def parse_trial_args(description: str = ""):
+    """Parse the trial flags and apply --style before any figure is drawn.
+
+    The style has to be applied here rather than inside main(): fig_cfg is resolved when
+    the plotters are imported, which happens before argparse runs. resolve() rebuilds it
+    in place, and the plotters read it at draw time, so the new values are picked up.
+    """
+    args = build_trial_args_parser(description=description).parse_args()
+    if args.style:
+        resolve(publisher=args.style)
+    return args

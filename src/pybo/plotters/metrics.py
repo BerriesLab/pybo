@@ -3,8 +3,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from pybo.optimizer.optimizer import BayesianOptimizer
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
+from pybo.plotters.figure_settings.config import fig_cfg
 from pybo.plotters.base_class import PlotterBase
-from pybo.plotters.styles import metrics_line2d
 
 
 def plot_and_save_metrics(bo: BayesianOptimizer):
@@ -30,7 +30,7 @@ class BestValuePlotter(PlotterBase):
     def plot(self):
         best_values = np.array(self.bo.best_values)
         x = self.bo.n_initial_samples + np.arange(len(best_values)) * self.bo.batch_size
-        self.ax.plot(x, best_values, **metrics_line2d)
+        self.ax.plot(x, best_values, **fig_cfg["metrics"]["line"])
         if self.bo.objective.best_value is not None:
             self.ax.axhline(y=self.bo.objective.best_value, linestyle='--', color='black', label='Max HV')
         return self
@@ -57,7 +57,7 @@ class HypervolumePlotter(PlotterBase):
         # X-axis: number of observations beyond the initial front
         x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
 
-        self.ax.plot(x, hv, **metrics_line2d)
+        self.ax.plot(x, hv, **fig_cfg["metrics"]["line"])
         if self.bo.objective.max_hv is not None:
             self.ax.axhline(y=self.bo.objective.max_hv, linestyle='--', color='black', label='Max HV')
         return self
@@ -91,7 +91,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
         # X-axis: number of observations beyond the initial front
         x = self.bo.n_initial_samples + np.arange(len(hv)) * self.bo.batch_size
         mask = ~np.isnan(hvi_log)
-        self.ax.plot(x[mask], hvi_log[mask], **metrics_line2d)
+        self.ax.plot(x[mask], hvi_log[mask], **fig_cfg["metrics"]["line"])
         return self
 
     def save_figure(self, filename: str | Path | None = None):
@@ -112,7 +112,7 @@ class ElapsedTimePlotter(PlotterBase):
         elapsed_time = self.bo.elapsed_time
         x = self.bo.n_initial_samples + np.arange(len(elapsed_time)) * self.bo.batch_size
         y = elapsed_time
-        self.ax.plot(x, y, **metrics_line2d)
+        self.ax.plot(x, y, **fig_cfg["metrics"]["line"])
         return self
 
     def save_figure(self, filename: str | Path | None = None):

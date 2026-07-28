@@ -58,6 +58,8 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Whether each trial prints per-step progress. Off by default (unlike the trial CLI, "
                              "which defaults to on) so a sweep shows one tqdm bar per trial instead of interleaving "
                              "every optimizer step.")
+    parser.add_argument("--style", default=None,
+                        help="Publisher figure style forwarded to every trial. Only matters with --plot true.")
     return parser
 
 
