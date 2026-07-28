@@ -1,9 +1,10 @@
 """The resolved figure configuration every plotter reads.
 
-``styles/defaults.yaml`` is the base; each sibling ``styles/<name>.yaml`` is a partial
-override of it, selected with ``--style`` (see pybo/utils/cli.py). Resolving is one deep
-merge, after which this module derives each plot's figsize, thins line widths for narrow
-columns, and pushes the style's ``rcparams`` into matplotlib.
+``styles/defaults.py`` is the base; each sibling ``styles/<name>.py`` exposes a
+``SETTINGS`` mapping that partially overrides it, selected with ``--style`` (see
+pybo/utils/cli.py). Resolving is one deep merge, after which this module derives each
+plot's figsize, thins line widths for narrow columns, and pushes the style's
+``rcparams`` into matplotlib.
 
 Resolution happens exactly once per process, and deliberately not on import: a CLI run
 calls ``resolve()`` with the chosen ``--style`` once argparse has run, and anything else
@@ -13,12 +14,11 @@ the values either way. Nothing may read ``fig_cfg`` at import time — a module-
 (a constructor default argument, say) would capture an unresolved or stale value.
 """
 import copy
+import importlib
 from pathlib import Path
 
-import yaml
-
+STYLE_PKG = "pybo.plotters.styles"
 STYLE_DIR = Path(__file__).parent / "styles"
-DEFAULTS_PATH = STYLE_DIR / "defaults.yaml"
 
 # The style used when nothing asks for one. A project decision, so it lives in version
 # control rather than in a runtime state file; pybo.utils.cli reads it as the default for
@@ -33,13 +33,15 @@ _column_width: float = _DEFAULT_WIDTH
 
 
 def list_styles() -> list:
-    """Names accepted by resolve() / --style, i.e. every YAML here but the base."""
-    return sorted(p.stem for p in STYLE_DIR.glob("*.yaml") if p != DEFAULTS_PATH)
+    """Names accepted by resolve() / --style: every module in styles/ but the base."""
+    return sorted(p.stem for p in STYLE_DIR.glob("*.py")
+                  if p.stem not in ("defaults", "__init__"))
 
 
-def _load(path: Path) -> dict:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data if isinstance(data, dict) else {}
+def _load(name: str) -> dict:
+    """The SETTINGS mapping of a style module. Imports are cached by Python, so a
+    re-resolve costs nothing after the first."""
+    return getattr(importlib.import_module(f"{STYLE_PKG}.{name}"), "SETTINGS", {})
 
 
 def _deep_merge(base: dict, overrides: dict) -> None:
@@ -66,8 +68,10 @@ def resolve(style: str | None = None, fmt: str | None = None) -> dict:
     """
     global _column_width
 
-    cfg = copy.deepcopy(_load(DEFAULTS_PATH))
-    _deep_merge(cfg, _load(STYLE_DIR / f"{style or DEFAULT_STYLE}.yaml"))
+    # deepcopy both: the modules are imported once and cached, so merging into them
+    # would leak one resolve's overrides into the next.
+    cfg = copy.deepcopy(_load("defaults"))
+    _deep_merge(cfg, copy.deepcopy(_load(style or DEFAULT_STYLE)))
     if fmt:
         cfg["format"] = fmt
 

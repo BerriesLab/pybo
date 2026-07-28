@@ -11,7 +11,7 @@ print(f"Matplotlib backend: {matplotlib.get_backend()}")
 
 class PlotterBase:
     # Which entry of fig_cfg["figsize"] this plot is sized by. Subclasses set it; the
-    # aspect ratio behind it lives in pybo/plotters/defaults.yaml, and the
+    # aspect ratio behind it lives in pybo/plotters/styles/defaults.py, and the
     # physical width comes from the active publisher style.
     plot_name: str = "experiment_1d"
 
