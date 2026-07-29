@@ -1,6 +1,6 @@
 """How the optimization metric develops, per study, averaged over replicates.
 
-Hypervolume for a multi-objective problem, best value for a single one — whichever the
+Hypervolume for a multi-objective problem, best value for a single one - whichever the
 runs recorded.
 
     python -m studies.analysis.convergence --study data/A

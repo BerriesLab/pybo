@@ -14,7 +14,11 @@ from pybo.plotters.style import DEFAULT_STYLE, list_styles
 
 def build_analysis_parser(description: str = "") -> argparse.ArgumentParser:
     """Flags every analysis script shares: which runs to read, and where output goes."""
-    parser = argparse.ArgumentParser(description=description)
+    # Raw: each script passes its module docstring as the description, and the default
+    # formatter rewraps it into one paragraph - collapsing the formula tables and the
+    # worked examples that are the reason those docstrings are worth showing.
+    parser = argparse.ArgumentParser(description=description,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--study", action="append", required=True, type=Path,
                         help="A run or study directory (repeatable). One study compares its "
                              "replicates; several compare the studies.")
@@ -65,8 +69,8 @@ def build_gain_parser(description: str = "") -> argparse.ArgumentParser:
                              "default: 0.5 0.9 0.99).")
     parser.add_argument("--optimum", type=float, default=None,
                         help="Reference optimum m*, overriding the problem's max_hv / "
-                             "best_value. Needed for gamma~ and it_tau when the problem "
-                             "declares none.")
+                             "best_value. Needed for gamma_norm and the it columns when "
+                             "the problem declares none.")
     parser.add_argument("--patience", type=int, default=10,
                         help="Iterations of improvement below --tol that mark convergence "
                              "(default: %(default)s, as BayesianOptimizer.is_converged).")
