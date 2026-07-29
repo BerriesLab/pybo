@@ -35,14 +35,17 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     and where output goes. An experiment that needs more (e.g. a list of
     acquisition functions to compare) adds its own before calling parse_args()."""
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--target", required=True, help="Dotted module path to the tutorial CLI to launch.")
+    parser.add_argument("--target", required=True,
+                        help="Dotted module path to the tutorial CLI to launch.")
     parser.add_argument("--n-evals", type=int, default=32,
                         help="Total objective evaluations per trial (the loop runs n_evals // q optimization steps).")
-    parser.add_argument("--q-batch", type=int, default=1, help="q-batch size per trial.")
+    parser.add_argument("--q-batch", type=int, default=1,
+                        help="q-batch size per trial.")
     parser.add_argument("--n-initial", type=int_list, default=None,
                         help="Initial sample count(s) per trial, comma-separated for a sweep (e.g. 5,10,20). "
                              "Each value is a separate setting, replicated. Defaults to the target CLI's own default.")
-    parser.add_argument("--base-seed", type=int, default=2063, help="First seed; trials increment from here.")
+    parser.add_argument("--base-seed", type=int, default=2063,
+                        help="First seed; trials increment from here.")
     parser.add_argument("--n-replicates", type=int, default=5,
                         help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
