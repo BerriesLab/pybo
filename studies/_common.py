@@ -47,6 +47,10 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
+    parser.add_argument("--device", default=None,
+                        help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
+                             "A sweep is where GPU memory runs out, since the trials that "
+                             "exhaust it are the long ones near the end.")
     parser.add_argument("--plot", type=str2bool, default=False,
                         help="Whether each trial generates plots. Off by default: a sweep plots every step of "
                              "every trial, which dominates the runtime.")

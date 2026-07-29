@@ -7,7 +7,7 @@ from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from pybo.optimizer.optimizer import BayesianOptimizer
-from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
+from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from pybo.plotters.acqf import Acqf1DPlotter
 from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
 from pybo.plotters.experiment import Experiment1DPlotter
@@ -20,7 +20,7 @@ DTYPE = torch.float64
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
-         verbose: bool = True):
+         verbose: bool = True, device: torch.device = DEVICE):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -29,7 +29,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     torch.manual_seed(seed)
 
     """ Instantiate true objective """
-    objective = PolynomialConstrained(device=DEVICE, dtype=DTYPE)
+    objective = PolynomialConstrained(device=device, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -42,14 +42,14 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
     """ Generate initial dataset """
     n_initial = n_initial or 5 * (objective.dim + 1)
-    sampler = SobolSampler(device=DEVICE, dtype=DTYPE, objective=objective, seed=seed)
+    sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective, seed=seed)
     X = sampler.draw_samples(n=n_initial)
     Y_obj = objective.evaluate_true_objective(X)
     Y_con = objective.evaluate_true_constraint(X)
 
     """ Instantiate Bayesian optimizer """
     bo = BayesianOptimizer(
-        device=DEVICE,
+        device=device,
         dtype=DTYPE,
         objective=objective,
         acqf=qLogNoisyExpectedImprovement,
@@ -122,8 +122,9 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
 if __name__ == "__main__":
     args = parse_trial_args(description="Run a single constrained-Polynomial BO trial.")
+    device = resolve_device(args.device)
     if args.verbose:
-        print(f"Running on {DEVICE}.")
+        print(f"Running on {device}.")
     output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
     main(
@@ -134,4 +135,5 @@ if __name__ == "__main__":
         output_dir=output_dir,
         plot=args.plot,
         verbose=args.verbose,
+        device=device,
     )

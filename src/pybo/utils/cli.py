@@ -9,8 +9,56 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+import torch
+
 from pybo.plotters.style import DEFAULT_STYLE, list_styles, resolve
 from pybo.utils.helpers import str2bool
+
+
+def mps_available() -> bool:
+    """Whether torch can use Apple's Metal backend on this machine."""
+    backend = getattr(torch.backends, "mps", None)
+    return bool(backend is not None and backend.is_available())
+
+
+def resolve_device(name: str = "auto") -> torch.device:
+    """The torch device a run should use, from the --device flag.
+
+    "auto" is the old hard-coded behaviour: cuda when torch reports one, else cpu. The
+    point of naming a device explicitly is "cpu": a GP fit that exhausts GPU memory
+    brings the run down partway through, and falling back to system memory finishes it,
+    slower, rather than not at all.
+
+    "mps" (Apple Metal) is accepted but deliberately never chosen by "auto". Metal has no
+    float64, and every tutorial runs DTYPE = torch.float64, so a run that lands there
+    fails on the first tensor it builds. Auto-selecting it would turn a working cpu
+    default on Apple silicon into a broken one; asking for it by name, having dropped the
+    tutorial to float32, is a choice this function does not need to second-guess.
+
+    An unavailable or misspelled device fails here, with the flag in the message, rather
+    than several steps later inside a tensor op.
+    """
+    if name == "auto":
+        name = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        device = torch.device(name)
+    except RuntimeError as error:
+        raise SystemExit(f"--device {name}: {error}")
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise SystemExit(f"--device {name}: torch reports no CUDA device on this machine. "
+                             f"Use --device cpu, or auto to pick whatever is there.")
+        count = torch.cuda.device_count()
+        if device.index is not None and device.index >= count:
+            raise SystemExit(f"--device {name}: this machine has {count} CUDA device"
+                             f"{'' if count == 1 else 's'}, numbered 0 to {count - 1}.")
+    if device.type == "mps":
+        if not mps_available():
+            raise SystemExit(f"--device {name}: torch reports no Metal (MPS) backend on this "
+                             f"machine. It needs Apple silicon and a torch built with MPS.")
+        print("! --device mps: Metal has no float64. Set DTYPE = torch.float32 in the "
+              "tutorial, or this run will fail on its first tensor.")
+    return device
 
 
 def default_output_dir(script_file: str | Path) -> Path:
@@ -46,6 +94,11 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=2063, help="Sobol sampler seed for the initial dataset.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
+    parser.add_argument("--device", default="auto",
+                        help="Torch device: auto (default: cuda when available, else cpu), "
+                             "cpu, cuda, or cuda:N. Force cpu when a run collapses on GPU "
+                             "memory. mps (Apple Metal) works only if the tutorial is "
+                             "dropped to float32, so auto never picks it.")
     parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     parser.add_argument("--plot-style", default=DEFAULT_STYLE, choices=list_styles(),

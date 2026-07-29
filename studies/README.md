@@ -26,9 +26,13 @@ python -m studies.variability_study \
 ```
 
 Shared sweep flags (see `_common.build_sweep_parser`): `--target`, `--n-evals`,
-`--q-batch`, `--n-initial`, `--base-seed`, `--output-dir`. `--n-initial` accepts
-a single value or a comma-separated list; each value is run as a separate
-setting. Each study adds its own extras (e.g. `--n-replicates`).
+`--q-batch`, `--n-initial`, `--base-seed`, `--output-dir`, `--device`.
+`--n-initial` accepts a single value or a comma-separated list; each value is
+run as a separate setting. Each study adds its own extras (e.g.
+`--n-replicates`).
+
+`--device` is forwarded to every trial: pass `cpu` when a sweep dies on GPU
+memory, which trades speed for finishing at all.
 
 ## Available studies
 
@@ -40,7 +44,7 @@ setting. Each study adds its own extras (e.g. `--n-replicates`).
 
 A valid `--target` is a tutorial CLI `main.py` that accepts the
 `pybo.utils.cli.build_trial_args_parser` flags (`--n-evals --q-batch
---n-initial --seed --output-dir --plot`) and writes a `summary.json` into the
+--n-initial --seed --output-dir --plot --device`) and writes a `summary.json` into the
 `--output-dir` it is given by calling `BayesianOptimizer.to_json` each
 iteration. See `tutorials/multi_objective/branin_currin/main.py` for the
 reference implementation. Every tutorial under `tutorials/` is a valid target.

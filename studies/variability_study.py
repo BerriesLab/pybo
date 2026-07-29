@@ -39,6 +39,7 @@ def main():
                     "--q-batch": args.q_batch,
                     "--n-initial": n_initial,
                     "--seed": seed,
+                    "--device": args.device,
                     "--plot": args.plot,
                     "--verbose": args.verbose,
                     "--plot-style": args.plot_style,
