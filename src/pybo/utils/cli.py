@@ -72,8 +72,15 @@ def default_output_dir(script_file: str | Path) -> Path:
 def unique_dir(path: str | Path) -> Path:
     """Return a run directory safe to write into without clobbering a previous
     run: `path` itself when it does not exist or is empty, otherwise the first
-    free `path_NNN` (path_001, path_002, ...)."""
-    path = Path(path)
+    free `path_NNN` (path_001, path_002, ...).
+
+    Always absolute. The trial loop chdirs into each step's directory so the
+    plotters write there, which leaves a relative --output-dir resolving against
+    a different place every step: the run would nest its own output inside
+    step_000, write summary.json where nothing looks for it, and eventually die
+    on the path length. Resolving here fixes it for every tutorial at once,
+    since they all pass --output-dir through this function."""
+    path = Path(path).resolve()
     if not path.exists() or not any(path.iterdir()):
         return path
     i = 1
