@@ -1,8 +1,7 @@
 """How the optimization metric develops, per study, averaged over replicates.
 
-The plot the studies harness was missing: variability_study writes a results.csv that
-nothing drew. Hypervolume for a multi-objective problem, best value for a single one —
-whichever the runs recorded.
+Hypervolume for a multi-objective problem, best value for a single one — whichever the
+runs recorded.
 
     python -m studies.analysis.convergence --study data/A
     python -m studies.analysis.convergence --study data/A --study data/B \
@@ -14,18 +13,14 @@ since overlaying every replicate of every study is unreadable.
 import matplotlib.pyplot as plt
 
 from pybo.plotters.base_class import save_figure
-from pybo.plotters.style import fig_cfg
-from studies.analysis._common import (
-    build_analysis_parser, discover_trials, metric_frame, parse_analysis_args,
-)
+from pybo.plotters.style import fig_cfg, resolve
+from studies.analysis.cli import build_convergence_parser
+from studies.analysis.utils import discover_trials, metric_frame
 
 
 def main():
-    parser = build_analysis_parser(description=__doc__)
-    parser.add_argument("--regret", action="store_true",
-                        help="Plot regret against the known optimum instead of the raw "
-                             "metric. Only available when the problem declares one.")
-    args = parse_analysis_args(parser=parser)
+    args = build_convergence_parser(description=__doc__).parse_args()
+    resolve(args.style, fmt=args.format)
 
     trials = discover_trials(args.study, args.label)
     df = metric_frame(trials)

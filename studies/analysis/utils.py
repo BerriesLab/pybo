@@ -1,12 +1,7 @@
 """Shared loading for the campaign-analysis scripts.
 
-These read what a finished run left on disk, not a live optimizer: each trial's
-``summary.json``, which carries the problem definition alongside the observations. That
-is why these scripts need none of the flags an external analysis tool would —
-``to_minimize``, the constraint list and the axis labels are all in the file.
-
-``results.csv`` (studies/_common.collect_results) is deliberately not the source: it keeps
-only the metric trace and drops the observations, so nothing here could be built from it.
+These read what a finished run left on disk: each trial's ``summary.json``,
+which carries the problem definition alongside the observations.
 
 Discovery globs ``**/summary.json`` under each ``--study`` root, which matches both a
 study (``replicateN_seedM/summary.json``) and the single summary a tutorial run writes.
@@ -14,28 +9,26 @@ One root means the series are its replicates; several mean the series are the st
 with replicates aggregated inside each. Every script follows that one rule, which is what
 lets them serve a single study and a comparison of studies without branching.
 """
-import argparse
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
-
-from pybo.plotters.style import DEFAULT_STYLE, list_styles, resolve
 
 _SEED_RE = re.compile(r"seed(\d+)")
 
 
 @dataclass
 class Trial:
-    """One finished run: its summary, and where it sat in the study."""
-    study: str          # series label when several studies are compared
-    name: str           # the run directory's name, e.g. replicate0_seed2063
-    seed: int | None    # parsed from the name; series label within one study
-    path: Path
-    summary: dict
+    """One finished run: its summary, and where it sat in the study.
+    Note: a trial is "whatever" produced a "summary.json", i.e. a
+    replicate inside a study, or a single run of a standalone tutorial run."""
+    study: str  # series label when several studies are compared
+    name: str  # the run directory's name, e.g. replicate0_seed2063
+    seed: int | None  # parsed from the name; series label within one study
+    path: Path  # the path to that study
+    summary: dict  # the experiment summary file as dict
 
     @property
     def n_initial(self) -> int:
@@ -51,9 +44,9 @@ class Trial:
 
 
 def discover_trials(roots: list[Path], labels: list[str] | None = None) -> list[Trial]:
-    """Every trial under each root, labelled by study.
+    """Every trial under each root, labeled by study.
 
-    `labels` is matched positionally to `roots`; a root without one is labelled by its
+    `labels` is matched positionally to `roots`; a root without one is labeled by its
     directory name.
     """
     labels = list(labels or [])
@@ -87,8 +80,8 @@ def metric_frame(trials: list[Trial]) -> pd.DataFrame:
     """Long frame of the per-iteration metric: one row per (trial, iteration).
 
     The metric is hypervolume for a multi-objective problem and best value for a single
-    one — chosen by which key `metrics` holds, as studies/_common.collect_results does.
-    Regret needs a known optimum, so it is NaN for problems that declare none.
+    one — chosen by which key `metrics` holds. Regret needs a known optimum, so it is NaN
+    for problems that declare none.
     """
     rows = []
     for t in trials:
@@ -154,34 +147,3 @@ def minimized(trials: list[Trial]) -> dict:
     """label -> True when the objective is minimized. Read from the problem, so no
     --maximize flag is needed."""
     return {o["label"]: bool(o["to_minimize"]) for o in trials[0].objectives}
-
-
-def build_analysis_parser(description: str = "") -> argparse.ArgumentParser:
-    """Flags every analysis script shares. --style/--format mirror the trial CLI so a
-    campaign figure can be produced at a journal's column width like any other."""
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--study", action="append", required=True, type=Path,
-                        help="A run or study directory (repeatable). One study compares its "
-                             "replicates; several compare the studies.")
-    parser.add_argument("--label", action="append", default=[],
-                        help="Series name for the matching --study (repeatable). Defaults to "
-                             "the directory name.")
-    parser.add_argument("--output-dir", type=Path, default=None,
-                        help="Where the figure is written (defaults to the first --study).")
-    parser.add_argument("--style", default=DEFAULT_STYLE, choices=list_styles(),
-                        help="Publisher figure style (default: %(default)s).")
-    parser.add_argument("--format", default=None, choices=["png", "pdf", "svg", "eps"],
-                        help="File type, overriding the style's own.")
-    return parser
-
-
-def parse_analysis_args(description: str = "", parser: argparse.ArgumentParser | None = None):
-    """Parse and apply --style/--format before any figure is built.
-
-    Pass `parser` when a script has added flags of its own to build_analysis_parser's
-    result; otherwise a plain one is built here.
-    """
-    parser = parser or build_analysis_parser(description=description)
-    args = parser.parse_args()
-    resolve(args.style, fmt=args.format)
-    return args

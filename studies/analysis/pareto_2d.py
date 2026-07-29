@@ -14,18 +14,21 @@ configuration achieved anywhere, not the best of one lucky seed.
 import matplotlib.pyplot as plt
 
 from pybo.plotters.base_class import save_figure
-from pybo.plotters.style import fig_cfg
-from studies.analysis._common import (
-    build_analysis_parser, discover_trials, minimized, objective_labels,
-    observation_frame, parse_analysis_args,
+from pybo.plotters.style import fig_cfg, resolve
+from studies.analysis.cli import build_pareto_parser
+from studies.analysis.utils import (
+    discover_trials, minimized, objective_labels, observation_frame,
 )
 
 
 def pareto_front(points, sx: float, sy: float):
     """Non-dominated points, given per-axis senses (+1 minimize, -1 maximize).
 
-    Domination is decided in signed space so a maximized objective needs no special
-    case; the points returned keep their real coordinates for plotting.
+    sx/sy are +1 when that axis's objective is minimized and -1 when it is maximized
+    (set by the caller from `minimized(trials)`). Multiplying each coordinate by its
+    sense before comparing folds a maximized objective into minimize space.
+    Domination is decided in that signed space; the points returned keep their
+    real coordinates for plotting.
     """
     ordered = sorted(points, key=lambda p: (sx * p[0], sy * p[1]))
     front, best = [], float("inf")
@@ -37,12 +40,8 @@ def pareto_front(points, sx: float, sy: float):
 
 
 def main():
-    parser = build_analysis_parser(description=__doc__)
-    parser.add_argument("--x", default=None, help="Objective label for the x axis "
-                                                 "(default: the problem's first).")
-    parser.add_argument("--y", default=None, help="Objective label for the y axis "
-                                                 "(default: the problem's second).")
-    args = parse_analysis_args(parser=parser)
+    args = build_pareto_parser(description=__doc__).parse_args()
+    resolve(args.style, fmt=args.format)
 
     trials = discover_trials(args.study, args.label)
     labels = objective_labels(trials)

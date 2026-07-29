@@ -19,19 +19,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pybo.plotters.base_class import save_figure
-from pybo.plotters.style import fig_cfg
-from studies.analysis._common import (
-    build_analysis_parser, discover_trials, objective_labels, observation_frame,
-    parameter_labels, parse_analysis_args,
+from pybo.plotters.style import fig_cfg, resolve
+from studies.analysis.cli import build_correlation_parser
+from studies.analysis.utils import (
+    discover_trials, objective_labels, observation_frame, parameter_labels,
 )
 
 
 def main():
-    parser = build_analysis_parser(description=__doc__)
-    parser.add_argument("--initial-only", action="store_true",
-                        help="Use only the initial design, whose sampling is space-filling "
-                             "and so free of the optimizer's own selection bias.")
-    args = parse_analysis_args(parser=parser)
+    args = build_correlation_parser(description=__doc__).parse_args()
+    resolve(args.style, fmt=args.format)
 
     trials = discover_trials(args.study, args.label)
     df = observation_frame(trials)
