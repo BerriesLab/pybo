@@ -67,9 +67,7 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> t
     A trial that dies partway (e.g. GP fitting diverging at step 7 of 32) still
     has every iteration up to that point in its summary.json, because the target
     CLI rewrites the running summary after each step. Those iterations are valid,
-    so the path is returned with completed=False rather than discarded - dropping
-    them would bias a sweep towards the seeds where fitting happened to behave.
-    summary_path is None only when the trial left nothing to read.
+    so the path is returned with completed=False rather than discarded.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [PYTHON, "-m", target, "--output-dir", str(output_dir)]
