@@ -2,8 +2,8 @@
 
 Sweep harness for benchmarking the Bayesian optimizer. Each study repeatedly
 launches a tutorial's single-trial CLI as an isolated subprocess, varying one
-thing (seed, initial-dataset size, ...), then aggregates the per-trial
-`summary.json` files into one combined `results.csv`.
+thing (seed, initial-dataset size, ...), each trial writing its own
+`summary.json`. See `studies/analysis` for turning those into figures.
 
 Each study is generic over its target: pass the tutorial CLI to launch via
 `--target` (a dotted module path), so the same study script works across
@@ -42,9 +42,7 @@ A valid `--target` is a tutorial CLI `main.py` that accepts the
 `pybo.utils.cli.build_trial_args_parser` flags (`--n-evals --q-batch
 --n-initial --seed --output-dir --plot`) and writes a `summary.json` into the
 `--output-dir` it is given by calling `BayesianOptimizer.to_json` each
-iteration. The study then derives the aggregated per-iteration `results.csv`
-(including regret) from those summaries, so targets do not write their own
-`results.csv`. See `tutorials/multi_objective/branin_currin/main.py` for the
+iteration. See `tutorials/multi_objective/branin_currin/main.py` for the
 reference implementation. Every tutorial under `tutorials/` is a valid target.
 
 `_common.py` (and any other `_`-prefixed file) is an internal helper, not a

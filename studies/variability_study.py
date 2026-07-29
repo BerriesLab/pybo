@@ -9,7 +9,7 @@ trajectory. Works against any tutorial CLI that follows the studies._common cont
 from datetime import datetime
 from pathlib import Path
 from pybo.utils.cli import unique_dir
-from studies._common import run_trial, collect_results, build_sweep_parser
+from studies._common import run_trial, build_sweep_parser
 
 
 def main():
@@ -51,16 +51,14 @@ def main():
             tags = {"n_initial": n_initial, "seed": seed, "batch_size": args.q_batch, "completed": completed}
             trials.append((summary_path, tags))
 
-    df, n_missing = collect_results(trials)
-    results_path = output_dir / "results.csv"
-    df.to_csv(results_path, index=False)
+    n_missing = sum(1 for path, _ in trials if path is None)
     n_partial = sum(1 for path, tags in trials if path is not None and not tags["completed"])
-    print(f"\nSaved {len(df)} rows from {len(trials) - n_missing} runs to {results_path}")
+    print(f"\n{len(trials) - n_missing} of {len(trials)} runs left a summary.json under {output_dir}")
     if n_partial:
         print(f"{n_partial} of those stopped early; the iterations they did finish are "
-              f"included and tagged completed=False.")
+              f"still in their summary.json (see the FAILED lines above).")
     if n_missing:
-        print(f"{n_missing} of {len(trials)} trials left no output at all and were excluded (see log above).")
+        print(f"{n_missing} of {len(trials)} trials left no output at all and were excluded.")
 
 
 if __name__ == "__main__":

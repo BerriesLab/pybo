@@ -8,18 +8,14 @@ two forwarded from the sweep's own flags of the same name, both defaulting to
 False for a sweep), and to write a summary.json into the exact --output-dir it
 was given (BayesianOptimizer.to_json does this; see
 tutorials/multi_objective/branin_currin/main.py for the reference
-implementation of this contract). The aggregated per-iteration trace is
-derived here from those summary.json files, so tutorial CLIs no longer write
-their own results.csv.
+implementation of this contract). studies/analysis reads those summary.json
+files directly, so a sweep has nothing further to aggregate.
 """
 import argparse
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-
-import pandas as pd
 
 from pybo.utils.helpers import str2bool
 
@@ -97,39 +93,3 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> t
         print(f"!!! Trial {run_name} FAILED (exit {result.returncode}) - keeping the "
               f"iterations it completed before dying", flush=True)
     return summary_path, completed
-
-
-def collect_results(trials: list) -> tuple:
-    """Aggregate per-trial summary.json files into one tidy per-iteration
-    DataFrame. `trials` is a list of (summary_json_path, tags) pairs, where a
-    None path marks a trial that left nothing to read (skipped) and `tags` is a
-    dict of per-trial identity columns (e.g. seed, n_initial, batch_size, and
-    run_trial's `completed` flag) attached to every row of that trial. Reads
-    each run's metric trace, derives regret from the stored problem optimum, and
-    returns (combined_dataframe, n_missing).
-
-    A trial that stopped early simply contributes fewer rows: the metric trace
-    and elapsed_time are zipped, so a run that managed 6 of 32 iterations yields
-    6 rows, tagged completed=False so analysis can censor or keep them."""
-    n_missing = sum(1 for path, _ in trials if path is None)
-    rows = []
-    for path, tags in trials:
-        if path is None:
-            continue
-        with open(path) as file:
-            summary = json.load(file)
-        metrics = summary["metrics"]
-        problem = summary["problem"]
-        if "hypervolume" in metrics:
-            metric_name, values, optimum = "hypervolume", metrics["hypervolume"], problem.get("max_hv")
-        else:
-            metric_name, values, optimum = "best_value", metrics["best_values"], problem.get("best_value")
-        for i, (value, elapsed) in enumerate(zip(values, metrics["elapsed_time"])):
-            rows.append({
-                **tags,
-                "iteration": i + 1,
-                metric_name: value,
-                "regret": (optimum - value) if optimum is not None else None,
-                "elapsed_time": elapsed,
-            })
-    return pd.DataFrame(rows), n_missing
