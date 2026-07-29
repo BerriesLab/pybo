@@ -1,13 +1,13 @@
 """The resolved figure configuration every plotter reads.
 
 ``styles/defaults.py`` is the base; each sibling ``styles/<name>.py`` exposes a
-``SETTINGS`` mapping that partially overrides it, selected with ``--style`` (see
+``SETTINGS`` mapping that partially overrides it, selected with ``--plot-style`` (see
 pybo/utils/cli.py). Resolving is one deep merge, after which this module derives each
 plot's figsize, thins line widths for narrow columns, and pushes the style's
 ``rcparams`` into matplotlib.
 
 Resolution happens exactly once per process, and deliberately not on import: a CLI run
-calls ``resolve()`` with the chosen ``--style`` once argparse has run, and anything else
+calls ``resolve()`` with the chosen ``--plot-style`` once argparse has run, and anything else
 falls back to ``ensure_resolved()`` when the first plotter is built. ``resolve()`` mutates
 ``fig_cfg`` in place, so modules that did ``from pybo.plotters.style import fig_cfg`` see
 the values either way. Nothing may read ``fig_cfg`` at import time — a module-level read
@@ -22,7 +22,7 @@ STYLE_DIR = Path(__file__).parent / "styles"
 
 # The style used when nothing asks for one. A project decision, so it lives in version
 # control rather than in a runtime state file; pybo.utils.cli reads it as the default for
-# --style, which keeps a plain `import pybo.plotters...` and a CLI run on the same style.
+# --plot-style, which keeps a plain `import pybo.plotters...` and a CLI run on the same style.
 DEFAULT_STYLE = "acs_single"
 
 # Guards a settings tree that somehow drops column_width_in.
@@ -33,7 +33,7 @@ _column_width: float = _DEFAULT_WIDTH
 
 
 def list_styles() -> list:
-    """Names accepted by resolve() / --style: every module in styles/ but the base."""
+    """Names accepted by resolve() / --plot-style: every module in styles/ but the base."""
     return sorted(p.stem for p in STYLE_DIR.glob("*.py")
                   if p.stem not in ("defaults", "__init__"))
 
@@ -124,7 +124,7 @@ def ensure_resolved() -> dict:
     """Resolve with ``DEFAULT_STYLE`` unless something already has.
 
     Resolution is not done on import: a CLI run calls ``resolve()`` with the chosen
-    ``--style`` once argparse has run, and this is the fallback for everything else
+    ``--plot-style`` once argparse has run, and this is the fallback for everything else
     (a notebook, a test, library use), so exactly one resolve happens either way.
     """
     if not fig_cfg:

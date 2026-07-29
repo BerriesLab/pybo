@@ -1,6 +1,6 @@
 """pyBO figure settings — the base every figure starts from.
 
-A *style* in this folder is a partial override of this module, chosen with ``--style``
+A *style* in this folder is a partial override of this module, chosen with ``--plot-style``
 (default: ieee_double). Resolution is a two-step deep merge:
     defaults.SETTINGS -> <style>.SETTINGS
 See pybo/plotters/style.py.

@@ -12,7 +12,7 @@ from pybo.plotters.style import DEFAULT_STYLE, list_styles
 
 
 def build_analysis_parser(description: str = "") -> argparse.ArgumentParser:
-    """Flags every analysis script shares. --style/--format mirror the trial CLI so a
+    """Flags every analysis script shares. --plot-style/--format mirror the trial CLI so a
     campaign figure can be produced at a journal's column width like any other."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--study", action="append", required=True, type=Path,
@@ -23,7 +23,7 @@ def build_analysis_parser(description: str = "") -> argparse.ArgumentParser:
                              "the directory name.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Where the figure is written (defaults to the first --study).")
-    parser.add_argument("--style", default=DEFAULT_STYLE, choices=list_styles(),
+    parser.add_argument("--plot-style", default=DEFAULT_STYLE, choices=list_styles(),
                         help="Publisher figure style (default: %(default)s).")
     parser.add_argument("--format", default=None, choices=["png", "pdf", "svg", "eps"],
                         help="File type, overriding the style's own.")

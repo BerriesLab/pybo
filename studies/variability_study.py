@@ -3,7 +3,7 @@ Run-to-run variability (reproducibility) study.
 
 Runs the same tutorial CLI several times with identical settings, varying
 only the random seed, to quantify run-to-run noise in the optimization
-trajectory. Works against any tutorial CLI that follows the studies._common contract, e.g.:
+trajectory. Works against any tutorial, e.g.:
     python -m studies.variability_study --target tutorials.multi_objective.branin_currin.main
 """
 from datetime import datetime
@@ -21,9 +21,7 @@ def main():
         tutorial_name = args.target.split(".")[-2]
         output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
     # Uniquify the study root, not the individual trials. Pointing a second study at an
-    # --output-dir that already holds one must yield a fresh root (mystudy_001); without
-    # this, every trial dir inside collides instead and gets bumped on its own, and
-    # run_trial then reads the previous study's summary.json from the path it handed out.
+    # --output-dir that already holds one must yield a fresh root (mystudy_001).
     output_dir = unique_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -43,16 +41,15 @@ def main():
                     "--seed": seed,
                     "--plot": args.plot,
                     "--verbose": args.verbose,
-                    "--style": args.style,
+                    "--plot-style": args.plot_style,
                 },
                 run_name=run_name,
                 output_dir=output_dir / run_name,
             )
-            tags = {"n_initial": n_initial, "seed": seed, "batch_size": args.q_batch, "completed": completed}
-            trials.append((summary_path, tags))
+            trials.append((summary_path, completed))
 
     n_missing = sum(1 for path, _ in trials if path is None)
-    n_partial = sum(1 for path, tags in trials if path is not None and not tags["completed"])
+    n_partial = sum(1 for path, completed in trials if path is not None and not completed)
     print(f"\n{len(trials) - n_missing} of {len(trials)} runs left a summary.json under {output_dir}")
     if n_partial:
         print(f"{n_partial} of those stopped early; the iterations they did finish are "

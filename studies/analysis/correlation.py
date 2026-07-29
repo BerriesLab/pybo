@@ -28,7 +28,7 @@ from studies.analysis.utils import (
 
 def main():
     args = build_correlation_parser(description=__doc__).parse_args()
-    resolve(args.style, fmt=args.format)
+    resolve(args.plot_style, fmt=args.format)
 
     trials = discover_trials(args.study, args.label)
     df = observation_frame(trials)

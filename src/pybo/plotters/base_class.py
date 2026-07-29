@@ -35,7 +35,7 @@ class PlotterBase:
     plot_name: str = "experiment_1d"
 
     def __init__(self, bo: BayesianOptimizer):
-        # No-op under the CLI, which has already resolved with --style; this covers a
+        # No-op under the CLI, which has already resolved with --plot-style; this covers a
         # notebook or a test that builds a plotter without going through argparse.
         self.fig = None
         ensure_resolved()

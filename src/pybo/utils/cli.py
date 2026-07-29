@@ -24,9 +24,7 @@ def default_output_dir(script_file: str | Path) -> Path:
 def unique_dir(path: str | Path) -> Path:
     """Return a run directory safe to write into without clobbering a previous
     run: `path` itself when it does not exist or is empty, otherwise the first
-    free `path_NNN` (path_001, path_002, ...). The empty-dir passthrough keeps
-    the studies harness working - it pre-creates an empty trial dir that the
-    tutorial is expected to write into."""
+    free `path_NNN` (path_001, path_002, ...)."""
     path = Path(path)
     if not path.exists() or not any(path.iterdir()):
         return path
@@ -50,7 +48,7 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
     parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
-    parser.add_argument("--style", default=DEFAULT_STYLE, choices=list_styles(),
+    parser.add_argument("--plot-style", default=DEFAULT_STYLE, choices=list_styles(),
                         help="Publisher figure style for this run (default: %(default)s).")
     parser.add_argument("--format", default=None, choices=["png", "pdf", "svg", "eps"],
                         help="File type for saved figures, overriding the style's own "
@@ -59,11 +57,11 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
 
 
 def parse_trial_args(description: str = ""):
-    """Parse the trial flags and resolve the figure settings from --style / --format.
+    """Parse the trial flags and resolve the figure settings from --plot-style / --format.
 
     This is the only resolve a CLI run performs: style.py deliberately does not resolve
     on import, so the chosen style is in place before the first figure is built.
     """
     args = build_trial_args_parser(description=description).parse_args()
-    resolve(args.style, fmt=args.format)
+    resolve(args.plot_style, fmt=args.format)
     return args

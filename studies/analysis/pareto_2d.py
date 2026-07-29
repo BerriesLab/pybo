@@ -41,7 +41,7 @@ def pareto_front(points, sx: float, sy: float):
 
 def main():
     args = build_pareto_parser(description=__doc__).parse_args()
-    resolve(args.style, fmt=args.format)
+    resolve(args.plot_style, fmt=args.format)
 
     trials = discover_trials(args.study, args.label)
     labels = objective_labels(trials)
