@@ -35,6 +35,10 @@ class Trial:
         return self.summary["config"]["n_initial_samples"] or 0
 
     @property
+    def batch_size(self) -> int:
+        return self.summary["config"]["batch_size"] or 1
+
+    @property
     def objectives(self) -> list:
         return self.summary["problem"]["objectives"]
 
@@ -95,9 +99,12 @@ def metric_frame(trials: list[Trial]) -> pd.DataFrame:
             rows.append({
                 "study": t.study, "run": t.name, "seed": t.seed,
                 "iteration": i + 1,
-                # The x axis readers care about is evaluations, not loop steps: the
-                # initial design is already on the board before iteration 1.
-                "evaluations": t.n_initial + i + 1,
+                # The x axis readers care about is evaluations, not loop steps. optimize()
+                # computes the metric over the data it has *before* proposing, so entry i
+                # is the front reached by n_initial + i*q evaluations: entry 0 is the
+                # initial design alone, and the last batch acquired is never scored (the
+                # loop ends without a further optimize()).
+                "evaluations": t.n_initial + i * t.batch_size,
                 "metric": name,
                 "value": value,
                 "regret": (optimum - value) if optimum is not None else np.nan,
