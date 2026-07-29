@@ -29,7 +29,7 @@ from botorch.acquisition.multi_objective.parego import qLogNParEGO
 from torch import Tensor
 
 from pybo.objectives.base_class import MCObjectiveBase, MCSingleObjectiveBase, MCMultiObjectiveBase
-from pybo.samplers.samplers import SobolSampler
+from pybo.samplers.sobol import SobolSampler
 from pybo.samplers.base_class import SamplerBase
 
 

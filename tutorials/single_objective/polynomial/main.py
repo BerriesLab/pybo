@@ -6,11 +6,12 @@ from tqdm import tqdm
 from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.sobol import SobolOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from tutorials.single_objective.polynomial.objective import Polynomial
 from pybo.plotters.acqf import Acqf1DPlotter
-from pybo.samplers.samplers import *
+from pybo.samplers.sobol import *
 from pybo.plotters.experiment import *
 from pybo.plotters.acqf import *
 from pybo.plotters.evolution import *
@@ -21,7 +22,7 @@ DTYPE = torch.float64
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
-         verbose: bool = True, device: torch.device = DEVICE):
+         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo"):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -48,7 +49,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     Y_obj = objective.evaluate_true_objective(X)
 
     """ Instantiate Bayesian optimizer """
-    bo = BayesianOptimizer(
+    optimizer_class = SobolOptimizer if strategy == "sobol" else BayesianOptimizer
+    bo = optimizer_class(
         device=device,
         dtype=DTYPE,
         objective=objective,
@@ -60,6 +62,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         Y_con=None,
         Y_con_var=None,
         batch_size=q,
+        **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
     """ Main optimization loop """
@@ -69,9 +72,6 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         warnings.filterwarnings("ignore")
     pbar = tqdm(total=n_evals, unit="eval", desc="Optimizing") if not verbose else None
     for i in range(n_steps):
-        if i > 0 and bo.is_converged(patience=32, verbose=verbose):
-            break
-
         """ One folder per evaluation step; figures and per-step files go here """
         step_dir = run_dir / f"step_{i:03d}"
         step_dir.mkdir(parents=True, exist_ok=True)
@@ -134,4 +134,5 @@ if __name__ == "__main__":
         plot=args.plot,
         verbose=args.verbose,
         device=device,
+        strategy=args.strategy,
     )

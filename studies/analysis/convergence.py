@@ -63,7 +63,10 @@ def main():
 
     ax.set_xlabel("Evaluations")
     ax.set_ylabel("Regret" if args.regret else df["metric"].iloc[0].replace("_", " ").capitalize())
-    ax.legend()
+    # Not loc="best": it weighs the lines but not the std bands, and on a two-arm
+    # comparison it parks an opaque box over the winning arm's plateau. The metric rises
+    # to the right and regret falls to it, so the empty corner is known in advance.
+    ax.legend(loc="upper right" if args.regret else "upper left")
 
     out = (args.output_dir or args.study[0]) / ("regret" if args.regret else "convergence")
     out.parent.mkdir(parents=True, exist_ok=True)

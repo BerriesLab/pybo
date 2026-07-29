@@ -50,6 +50,10 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
+    parser.add_argument("--strategy", default=None, choices=["bo", "sobol"],
+                        help="Search strategy for every trial: bo, or sobol for the random "
+                             "baseline. Run the sweep twice, once each, with the same "
+                             "--base-seed, and studies.analysis compares the two roots.")
     parser.add_argument("--device", default=None,
                         help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
                              "A sweep is where GPU memory runs out, since the trials that "

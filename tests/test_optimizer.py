@@ -1,6 +1,6 @@
 import torch
 import pytest
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg
 

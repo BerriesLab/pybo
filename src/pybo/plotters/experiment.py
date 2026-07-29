@@ -4,12 +4,12 @@ import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 from pybo.plotters.style import fig_cfg
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
-from pybo.samplers.samplers import SobolSampler
+from pybo.samplers.sobol import SobolSampler
 from pybo.utils.helpers import project_linear_equalities
 
 AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from typing import cast
 from matplotlib import pyplot as plt
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.objectives.variable_registry import ParCfg
 from pybo.plotters.style import fig_cfg
 from pybo.plotters.base_class import PlotterBase
@@ -23,6 +23,7 @@ def plot_and_save_evolutions(bo: BayesianOptimizer, ):
 
 class EvolutionPlotter(PlotterBase):
     plot_name = "evolution"
+
     def __init__(self, bo: BayesianOptimizer, y: tuple[str, str | int]):
         """
         Args:

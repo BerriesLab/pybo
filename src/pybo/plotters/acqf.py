@@ -1,13 +1,13 @@
 import torch
 from pathlib import Path
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.objectives.base_class import MCSingleObjectiveBase
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 import numpy as np
 import matplotlib.pyplot as plt
 from pybo.plotters.style import fig_cfg
-from pybo.samplers.samplers import SobolSampler
+from pybo.samplers.sobol import SobolSampler
 
 
 class Acqf1DPlotter(PlotterBase):

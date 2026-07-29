@@ -1,7 +1,7 @@
 from pathlib import Path
 import matplotlib
 import torch
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.plotters.style import ensure_resolved, fig_cfg
 from matplotlib import pyplot as plt
 

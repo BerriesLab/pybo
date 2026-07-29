@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
-from pybo.optimizer.optimizer import BayesianOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.plotters.style import fig_cfg
 from pybo.plotters.base_class import PlotterBase
@@ -19,6 +19,7 @@ def plot_and_save_metrics(bo: BayesianOptimizer):
 
 class BestValuePlotter(PlotterBase):
     plot_name = "best_value"
+
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
         if not isinstance(bo.objective, MCSingleObjectiveBase):
@@ -42,6 +43,7 @@ class BestValuePlotter(PlotterBase):
 
 class HypervolumePlotter(PlotterBase):
     plot_name = "hypervolume"
+
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
@@ -69,6 +71,7 @@ class HypervolumePlotter(PlotterBase):
 
 class HypervolumeImprovementPlotter(PlotterBase):
     plot_name = "hypervolume_improvement"
+
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
@@ -101,6 +104,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
 
 class ElapsedTimePlotter(PlotterBase):
     plot_name = "elapsed_time"
+
     def __init__(self, bo: BayesianOptimizer):
         super().__init__(bo=bo)
 
