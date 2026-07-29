@@ -1156,6 +1156,27 @@ class BayesianOptimizer:
             save_path = base / f"{p.stem}_{i:03d}{p.suffix}"
         return save_path
 
+    @staticmethod
+    def _atomic_replace(tmp_path: Path, out_path: Path):
+        """Swap a freshly written temp file over `out_path`, retrying the
+        transient PermissionError Windows raises when another process holds a
+        handle on either path.
+
+        A virus scanner or the search indexer opens each file it just saw
+        written for a few ms, and os.replace needs exclusive access to both, so
+        it fails outright rather than blocking. Frequent snapshots provoke it: a
+        Sobol trial saves ~160 times a second, where a BO trial's steps are
+        seconds apart and never collide. The handle is always released long
+        before the last attempt."""
+        for attempt in range(10):
+            try:
+                os.replace(tmp_path, out_path)
+                return
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.05 * 2 ** attempt)
+
     def to_file(self, filepath: str | Path | None = None, verbose=True):
         if verbose:
             print("Saving optimizer to file... ", end="")
@@ -1167,7 +1188,7 @@ class BayesianOptimizer:
         tmp_path = out_path.with_name(out_path.name + ".tmp")
         with open(tmp_path, "wb") as file:
             pickle.dump(self, file)  # type: ignore
-        os.replace(tmp_path, out_path)
+        self._atomic_replace(tmp_path, out_path)
 
         if verbose:
             self._print_success()
@@ -1337,7 +1358,7 @@ class BayesianOptimizer:
         tmp_path = out_path.with_name(out_path.name + ".tmp")
         with open(tmp_path, "w") as file:
             json.dump(payload, file, indent=2)
-        os.replace(tmp_path, out_path)
+        self._atomic_replace(tmp_path, out_path)
 
         if verbose:
             self._print_success()
