@@ -1,4 +1,5 @@
 import os
+import math
 import warnings
 import torch
 from pathlib import Path
@@ -41,11 +42,11 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         outputscale_constraint=Interval(1e-3, 1e2),
     )
 
-    """ Generate initial dataset """
+    """ Draw the initial parameter set """
     n_initial = n_initial or 5 * (objective.dim + 1)
-    sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective, seed=seed)
-    X = sampler.draw_samples(n=n_initial)
-    Y_obj = objective.evaluate_true_objective(X)
+    n_initial = math.ceil(n_initial / q) * q
+    sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
+    X_initial = sampler.draw_samples(n=n_initial)
 
     """ Instantiate Bayesian optimizer """
     optimizer_class = SobolOptimizer if strategy == "sobol" else BayesianOptimizer
@@ -55,8 +56,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         objective=objective,
         acqf=qLogNoisyExpectedHypervolumeImprovement,
         kernel=kernel,
-        X=X,
-        Y_obj=Y_obj,
+        X=None,
+        Y_obj=None,
         Y_obj_var=None,
         Y_con=None,
         Y_con_var=None,
@@ -65,39 +66,48 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     )
 
     """ Main optimization loop """
-    n_steps = int(n_evals / q)
+    n_initial_steps = n_initial // q
+    n_steps = n_initial_steps + int(n_evals / q)
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    pbar = tqdm(total=n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    pbar = tqdm(total=n_initial + n_evals, unit="eval", desc="Optimizing") if not verbose else None
+
     for i in range(n_steps):
-        """ One folder per evaluation step; figures and per-step files go here """
+        # One folder per evaluation step
         step_dir = run_dir / f"step_{i:03d}"
         step_dir.mkdir(parents=True, exist_ok=True)
         os.chdir(step_dir)
 
+        modelling = i >= n_initial_steps
         if verbose:
-            print(f"\n*** Step {i + 1}/{n_steps} | eval {(i + 1) * q}/{n_evals} ***")
+            phase = "propose" if modelling else "initial design"
+            print(f"\n*** Step {i + 1}/{n_steps} ({phase}) | eval {(i + 1) * q}/{n_initial + n_evals} ***")
 
-        """ Optimize and get new X """
-        bo.optimize(verbose=verbose)
+        if modelling:
+            """ Optimize and get new X """
+            bo.optimize(verbose=verbose)
 
-        """ Plot """
-        if plot:
-            ParetoFront2DPlotter(
-                bo=bo,
-                x=("obj", 0),
-                y=("obj", 1),
-                z=("par", 0),
-                seed=254,
-            ).plot().save_figure().close_figure()
-            plot_and_save_metrics(bo=bo)
-            plot_and_save_evolutions(bo=bo)
+            """ Plot """
+            if plot:
+                ParetoFront2DPlotter(
+                    bo=bo,
+                    x=("obj", 0),
+                    y=("obj", 1),
+                    z=("par", 0),
+                    seed=254,
+                ).plot().save_figure().close_figure()
+                plot_and_save_metrics(bo=bo)
+                plot_and_save_evolutions(bo=bo)
 
-        """ Evaluate posterior and acquisition function at new X """
-        new_X = bo.new_X
-        bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
-        bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
+            """ Evaluate posterior and acquisition function at new X """
+            new_X = bo.new_X
+            bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
+            bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
+
+        else:
+            """ Take the next batch of the initial design """
+            new_X = X_initial[i * q:(i + 1) * q]
 
         """ Simulate experiment at new X """
         new_Y_obj = objective.evaluate_true_objective(new_X)

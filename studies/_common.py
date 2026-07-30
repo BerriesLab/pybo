@@ -38,7 +38,9 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--target", required=True,
                         help="Dotted module path to the tutorial CLI to launch.")
     parser.add_argument("--n-evals", type=int, default=32,
-                        help="Total objective evaluations per trial (the loop runs n_evals // q optimization steps).")
+                        help="Proposed objective evaluations per trial, on top of the initial design "
+                             "(the loop runs n_evals // q optimization steps, so a trial costs "
+                             "n_initial + n_evals evaluations).")
     parser.add_argument("--q-batch", type=int, default=1,
                         help="q-batch size per trial.")
     parser.add_argument("--n-initial", type=int_list, default=None,

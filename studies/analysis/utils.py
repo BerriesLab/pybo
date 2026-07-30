@@ -39,6 +39,12 @@ class Trial:
         return self.summary["config"]["batch_size"] or 1
 
     @property
+    def strategy(self) -> str | None:
+        """What proposed the non-initial observations ("bayesian" or "sobol"). None for
+        runs written before the arm was recorded."""
+        return self.summary["config"].get("strategy")
+
+    @property
     def objectives(self) -> list:
         return self.summary["problem"]["objectives"]
 
@@ -118,8 +124,11 @@ def observation_frame(trials: list[Trial]) -> pd.DataFrame:
     """Long frame of the observations: one row per (trial, observation).
 
     Parameters, objectives and constraints become columns named by their labels from the
-    problem definition. `is_initial` marks the rows that came from the initial design
-    rather than from the optimizer.
+    problem definition. `source` names what produced each row - "initial" for the initial
+    design, else the strategy that proposed it ("bayesian" or "sobol") - and `is_initial`
+    is the same distinction as a boolean. Both are derived here from the run's
+    n_initial_samples and strategy rather than recorded per observation, so they read the
+    same however the rows arrived: as one block before the loop, or batch by batch inside it.
     """
     rows = []
     for t in trials:
@@ -131,8 +140,12 @@ def observation_frame(trials: list[Trial]) -> pd.DataFrame:
         obj_labels = [o["label"] for o in t.objectives]
         con_labels = [c["label"] for c in t.summary["problem"].get("constraints", [])]
         for i, x in enumerate(X):
+            # Provenance is derived, not read: the initial design is the first n_initial
+            # rows and everything after it came from the arm the run declares. Runs written
+            # before the arm was recorded leave the proposed rows None.
+            src = "initial" if i < t.n_initial else t.strategy
             row = {"study": t.study, "run": t.name, "seed": t.seed,
-                   "obs_index": i, "is_initial": i < t.n_initial}
+                   "obs_index": i, "source": src, "is_initial": src == "initial"}
             row.update(dict(zip(par_labels, x)))
             if i < len(Y_obj):
                 row.update(dict(zip(obj_labels, Y_obj[i])))

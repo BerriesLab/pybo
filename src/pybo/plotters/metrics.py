@@ -1,13 +1,13 @@
 from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
-from pybo.optimizer.bayesian import BayesianOptimizer
+from pybo.optimizer.base_class import OptimizerBase
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.plotters.style import fig_cfg
 from pybo.plotters.base_class import PlotterBase
 
 
-def plot_and_save_metrics(bo: BayesianOptimizer):
+def plot_and_save_metrics(bo: OptimizerBase):
     """ A helper function to plot and save all metrics. """
     ElapsedTimePlotter(bo=bo).plot().save_figure().close_figure()
     if isinstance(bo.objective, MCSingleObjectiveBase):
@@ -20,7 +20,7 @@ def plot_and_save_metrics(bo: BayesianOptimizer):
 class BestValuePlotter(PlotterBase):
     plot_name = "best_value"
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: OptimizerBase):
         super().__init__(bo=bo)
         if not isinstance(bo.objective, MCSingleObjectiveBase):
             raise TypeError("Objective must be of type MCSingleObjectiveBase")
@@ -44,7 +44,7 @@ class BestValuePlotter(PlotterBase):
 class HypervolumePlotter(PlotterBase):
     plot_name = "hypervolume"
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: OptimizerBase):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
@@ -72,7 +72,7 @@ class HypervolumePlotter(PlotterBase):
 class HypervolumeImprovementPlotter(PlotterBase):
     plot_name = "hypervolume_improvement"
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: OptimizerBase):
         super().__init__(bo=bo)
 
         if not isinstance(bo.objective, MCMultiObjectiveBase):
@@ -105,7 +105,7 @@ class HypervolumeImprovementPlotter(PlotterBase):
 class ElapsedTimePlotter(PlotterBase):
     plot_name = "elapsed_time"
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: OptimizerBase):
         super().__init__(bo=bo)
 
         self.fig, self.ax = plt.subplots(1, 1, figsize=self.figsize, dpi=self.dpi)

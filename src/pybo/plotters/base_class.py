@@ -1,7 +1,7 @@
 from pathlib import Path
 import matplotlib
 import torch
-from pybo.optimizer.bayesian import BayesianOptimizer
+from pybo.optimizer.base_class import OptimizerBase
 from pybo.plotters.style import ensure_resolved, fig_cfg
 from matplotlib import pyplot as plt
 
@@ -14,7 +14,7 @@ def save_figure(fig, filename: str | Path):
 
     Each caller picks the stem; the extension comes from the settings, so the file type
     is decided in one place. Free-standing because the studies/analysis scripts need it
-    too and they have no BayesianOptimizer to hang a PlotterBase off.
+    too and they have no optimizer to hang a PlotterBase off.
     """
     ensure_resolved()
     path = Path(filename).with_suffix("." + fig_cfg["format"])
@@ -34,7 +34,7 @@ class PlotterBase:
     # physical width comes from the active publisher style.
     plot_name: str = "experiment_1d"
 
-    def __init__(self, bo: BayesianOptimizer):
+    def __init__(self, bo: OptimizerBase):
         # No-op under the CLI, which has already resolved with --plot-style; this covers a
         # notebook or a test that builds a plotter without going through argparse.
         self.fig = None
@@ -46,7 +46,7 @@ class PlotterBase:
 
     def save_figure(self, filename: str | Path):
         # Fixed filename: the per-step folder gives uniqueness, mirroring
-        # BayesianOptimizer.to_csv(latest=True). The counter this replaced dated
+        # OptimizerBase.to_csv(latest=True). The counter this replaced dated
         # from the flat run directory, where it was the only thing separating one
         # step's figures from the next.
         save_figure(self.fig, filename)

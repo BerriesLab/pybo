@@ -100,17 +100,43 @@ def test_pareto_front_excludes_dominated_point():
     assert [5.0, 5.0] not in front.tolist()
 
 
-def test_Y_obj_setter_validates_objective_count():
+def test_validate_state_rejects_wrong_objective_count():
+    # The setters only coerce, so the objective count is checked by _validate_state at the
+    # top of optimize() - called directly here, since optimize() would fit a GP.
     obj = SingleMin()
     X = torch.tensor([[0.0], [2.0]], dtype=DTYPE)
     Y = torch.tensor([[4.0], [1.0]], dtype=DTYPE)
     bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
-    # Correct shape (last dim == num_objectives) is accepted via the public setter
-    bo.Y_obj = torch.tensor([[3.0], [2.0]], dtype=DTYPE)
-    assert bo.Y_obj.shape[-1] == 1
-    # Wrong number of objective columns is rejected
+    bo._validate_state()
+
+    # A second objective column is stored without complaint, then rejected before the run
+    bo.Y_obj = torch.tensor([[3.0, 3.0], [2.0, 2.0]], dtype=DTYPE)
+    assert bo.Y_obj.shape[-1] == 2
     with pytest.raises(ValueError):
-        bo.Y_obj = torch.tensor([[3.0, 3.0], [2.0, 2.0]], dtype=DTYPE)
+        bo._validate_state()
+
+
+def test_validate_state_rejects_misaligned_rows():
+    obj = SingleMin()
+    X = torch.tensor([[0.0], [2.0], [4.0]], dtype=DTYPE)
+    Y = torch.tensor([[4.0], [1.0]], dtype=DTYPE)  # one observation short
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    with pytest.raises(ValueError):
+        bo._validate_state()
+
+
+def test_validate_state_requires_Y_con_when_objective_declares_constraints():
+    # The feasibility mask reads Y_con, so an objective that declares output constraints
+    # cannot be run without it.
+    obj = NeverFeasible()
+    X = torch.tensor([[0.0], [2.0], [4.0]], dtype=DTYPE)
+    Y = obj.evaluate_true_objective(X)
+    bo = BayesianOptimizer(device=DEVICE, dtype=DTYPE, objective=obj, X=X, Y_obj=Y)
+    with pytest.raises(RuntimeError):
+        bo._validate_state()
+
+    bo.Y_con = torch.zeros(3, 1, dtype=DTYPE)
+    bo._validate_state()
 
 
 def test_n_model_fit_restarts_rejects_zero():

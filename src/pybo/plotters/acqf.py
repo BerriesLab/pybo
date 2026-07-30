@@ -1,6 +1,6 @@
 import torch
 from pathlib import Path
-from pybo.optimizer.bayesian import BayesianOptimizer
+from pybo.optimizer.base_class import OptimizerBase
 from pybo.objectives.base_class import MCSingleObjectiveBase
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
@@ -10,10 +10,34 @@ from pybo.plotters.style import fig_cfg
 from pybo.samplers.sobol import SobolSampler
 
 
-class Acqf1DPlotter(PlotterBase):
+class AcqfPlotterBase(PlotterBase):
+    """Shared handling of an arm that has no acquisition function to plot.
+
+    The sampling baseline optimizes nothing, so there is no surface to draw. A tutorial
+    plots whichever arm it is holding with one unconditional line, so the plotter skips
+    itself rather than making every caller ask first: plot() draws nothing and
+    save_figure() writes nothing, while both still return self so the usual
+    `.plot().save_figure().close_figure()` chain runs unchanged and the empty figure is
+    still closed. A sampling run therefore simply has no acqf figure in its step folders.
+
+    The skip is keyed on `acqf` (the arm optimizes no acquisition function at all), not on
+    `acqf_instance` (which is also None on a modelling arm that has not run optimize()
+    yet - a real mistake, and still an error)."""
+
+    @property
+    def has_acqf(self) -> bool:
+        return self.bo.acqf is not None
+
+    def save_figure(self, filename: str | Path):
+        if not self.has_acqf:
+            return self
+        return super().save_figure(filename=filename)
+
+
+class Acqf1DPlotter(AcqfPlotterBase):
     plot_name = "acqf_1d"
 
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
+    def __init__(self, bo: OptimizerBase, x: tuple[str, str | int] = ("par", 0),
                  z: tuple[str, str] | None = None, cmap=None, grid: bool = True, seed=None):
         super().__init__(bo=bo)
 
@@ -34,7 +58,8 @@ class Acqf1DPlotter(PlotterBase):
         self.vmin, self.vmax = None, None
 
         self.ax.set_xlabel(self.x_cfg.label.capitalize())
-        self.ax.set_ylabel(self.bo.acqf.__name__)
+        if self.has_acqf:
+            self.ax.set_ylabel(self.bo.acqf.__name__)
 
         if hasattr(self.x_cfg, 'bounds') and self.x_cfg.bounds is not None:
             low, high = self.x_cfg.bounds
@@ -54,6 +79,8 @@ class Acqf1DPlotter(PlotterBase):
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
     def plot_acquisition(self, zorder: int = 0):
+        if not self.has_acqf:
+            return self
         if self.bo.acqf_instance is None:
             raise ValueError("Acquisition function must be set before plotting.")
 
@@ -150,6 +177,8 @@ class Acqf1DPlotter(PlotterBase):
         leg.set_zorder(zorder)
 
     def plot(self):
+        if not self.has_acqf:
+            return self
         self.plot_acquisition()
         self.add_colorbar()
         self.plot_next_X()
@@ -161,12 +190,12 @@ class Acqf1DPlotter(PlotterBase):
         return super().save_figure(filename=filename)
 
 
-class Acqf2DPlotter(PlotterBase):
+class Acqf2DPlotter(AcqfPlotterBase):
     plot_name = "acqf_2d"
 
     def __init__(
             self,
-            bo: BayesianOptimizer,
+            bo: OptimizerBase,
             x: tuple[str, str | int] = ("par", 0),
             y: tuple[str, str | int] = ("par", 1),
             z: tuple[str, str | int] | None = None,
@@ -208,6 +237,11 @@ class Acqf2DPlotter(PlotterBase):
         raise TypeError(f"Unrecognised configuration type: {type(cfg)}")
 
     def plot_acquisition(self, zorder: int = 0):
+        if not self.has_acqf:
+            return self
+        if self.bo.acqf_instance is None:
+            raise ValueError("Acquisition function must be set before plotting.")
+
         # Generate grid
         X_grid = self._generate_uniform_grid()
         N = self.n_grid_points
@@ -396,6 +430,8 @@ class Acqf2DPlotter(PlotterBase):
         self.cbar.ax.tick_params()
 
     def plot(self):
+        if not self.has_acqf:
+            return self
         self.plot_acquisition()
         self.plot_observations()
         self.plot_trajectory()

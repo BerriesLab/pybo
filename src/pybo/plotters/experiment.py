@@ -4,7 +4,7 @@ import numpy as np
 from botorch.utils.multi_objective import is_non_dominated
 from matplotlib import pyplot as plt
 from pathlib import Path
-from pybo.optimizer.bayesian import BayesianOptimizer
+from pybo.optimizer.base_class import OptimizerBase
 from pybo.objectives.variable_registry import *
 from pybo.plotters.base_class import PlotterBase
 from pybo.plotters.style import fig_cfg
@@ -18,7 +18,7 @@ AxisSpec: TypeAlias = tuple[str, str | int, bool]  # (kind, id, use_log)
 class Experiment1DPlotter(PlotterBase):
     plot_name = "experiment_1d"
 
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int] = ("par", 0),
+    def __init__(self, bo: OptimizerBase, x: tuple[str, str | int] = ("par", 0),
                  y: tuple[str, str | int] = ("obj", 0), z: tuple[str, str | int] | None = None,
                  cmap=None, grid=True, seed=None):
         super().__init__(bo=bo)
@@ -351,7 +351,7 @@ class Experiment2DPlotter(PlotterBase):
 
     def __init__(
             self,
-            bo: BayesianOptimizer,
+            bo: OptimizerBase,
             x: AxisSpec = ("par", 0),
             y: AxisSpec = ("par", 1),
             z: AxisSpec | None = ("obj", 0),
@@ -625,12 +625,12 @@ class Experiment2DPlotter(PlotterBase):
 class ParetoFront2DPlotter(PlotterBase):
     plot_name = "pareto_front_2d"
 
-    def __init__(self, bo: BayesianOptimizer, x: tuple[str, str | int], y: tuple[str, str | int],
+    def __init__(self, bo: OptimizerBase, x: tuple[str, str | int], y: tuple[str, str | int],
                  z: tuple[str, str | int] | None = None, cmap=None, grid=False, seed=None):
         """
         Initializes the 2D Pareto Plotter.
         Args:
-            bo: The BayesianOptimizer instance.
+            bo: The OptimizerBase instance.
             x: Tuple of (category, y) e.g., ("par", "P1") or ("obj", 0).
             y: Tuple of (category, y).
             z: Optional tuple for the color map (Heatmap).
