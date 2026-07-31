@@ -10,7 +10,7 @@ from gpytorch.constraints import GreaterThan
 from gpytorch.mlls import SumMarginalLogLikelihood
 from botorch.optim import optimize_acqf
 from botorch.optim.optimize import optimize_acqf_list
-from botorch.sampling import SobolQMCNormalSampler
+from botorch.sampling import MCSampler, SobolQMCNormalSampler
 from botorch.utils.multi_objective import is_non_dominated
 from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
 from botorch.models.gp_regression import SingleTaskGP
@@ -22,7 +22,6 @@ from botorch.acquisition.multi_objective.parego import qLogNParEGO
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.optimizer.base_class import OptimizerBase
 from pybo.samplers.sobol import SobolSampler
-from pybo.samplers.base_class import SamplerBase
 
 
 class BayesianOptimizer(OptimizerBase):
@@ -79,7 +78,7 @@ class BayesianOptimizer(OptimizerBase):
         # ===== Optimization attributes =====
         self._acqf = acqf
         self._kernel = kernel
-        self._sampler = None
+        self._sampler = None  # A Sobol QMC sampler used to compute the acquisition function.
         self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization
         self._n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function.
         self._n_model_fit_restarts = n_model_fit_restarts  # Fit attempts per output model (BoTorch resamples hyperparameters after the first)
@@ -99,8 +98,20 @@ class BayesianOptimizer(OptimizerBase):
         return self._acqf
 
     @property
-    def sampler(self) -> SamplerBase:
+    def sampler(self) -> MCSampler | None:
+        """The MC sampler handed to the acquisition function, or None until one is built.
+
+        This is BoTorch's posterior sampler, not a pybo SamplerBase: it draws from the
+        model's posterior to estimate an MC acquisition value, and never sees X. The
+        candidate-point sampler with the same name lives on SobolOptimizer."""
         return self._sampler
+
+    # @sampler.setter
+    # def sampler(self, sampler: MCSampler):
+    #     if not isinstance(sampler, MCSampler):
+    #         raise ValueError(
+    #             f"sampler must be a BoTorch MCSampler, got {type(sampler).__name__}: {sampler}")
+    #     self._sampler = sampler
 
     @property
     def n_acqf_opt_iter(self) -> int:
@@ -130,12 +141,6 @@ class BayesianOptimizer(OptimizerBase):
                 f"Got {type(af_type).__name__}: {af_type}"
             )
         self._acqf = af_type
-
-    @sampler.setter
-    def sampler(self, sampler):
-        if not isinstance(sampler, SamplerBase):
-            raise ValueError("SamplerBase type must be of type SamplerType")
-        self._sampler = sampler
 
     @n_acqf_opt_iter.setter
     def n_acqf_opt_iter(self, n_acqf_opt_iter):
