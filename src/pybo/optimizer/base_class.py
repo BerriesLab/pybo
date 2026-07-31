@@ -180,56 +180,56 @@ class OptimizerBase(ABC):
         return self._X
 
     @X.setter
-    def X(self, X: torch.Tensor | None):
-        self._X = _set_tensor(X, device=self._device, dtype=self._dtype)
+    def X(self, value: torch.Tensor | None):
+        self._X = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_obj(self):
         return self._Y_obj
 
     @Y_obj.setter
-    def Y_obj(self, Y_obj: torch.Tensor | None):
-        self._Y_obj = _set_tensor(Y_obj, device=self._device, dtype=self._dtype)
+    def Y_obj(self, value: torch.Tensor | None):
+        self._Y_obj = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_obj_var(self):
         return self._Y_obj_var
 
     @Y_obj_var.setter
-    def Y_obj_var(self, Y_obj_var: torch.Tensor | None):
-        self._Y_obj_var = _set_tensor(Y_obj_var, device=self._device, dtype=self._dtype)
+    def Y_obj_var(self, value: torch.Tensor | None):
+        self._Y_obj_var = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_con(self):
         return self._Y_con
 
     @Y_con.setter
-    def Y_con(self, Y_con: torch.Tensor | None):
-        self._Y_con = _set_tensor(Y_con, device=self._device, dtype=self._dtype)
+    def Y_con(self, value: torch.Tensor | None):
+        self._Y_con = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_con_var(self):
         return self._Y_con_var
 
     @Y_con_var.setter
-    def Y_con_var(self, Y_con_var: torch.Tensor | None):
-        self._Y_con_var = _set_tensor(Y_con_var, device=self._device, dtype=self._dtype)
+    def Y_con_var(self, value: torch.Tensor | None):
+        self._Y_con_var = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_trk(self):
         return self._Y_trk
 
     @Y_trk.setter
-    def Y_trk(self, Y_trk: torch.Tensor | None):
-        self._Y_trk = _set_tensor(Y_trk, device=self._device, dtype=self._dtype)
+    def Y_trk(self, value: torch.Tensor | None):
+        self._Y_trk = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def Y_trk_var(self):
         return self._Y_trk_var
 
     @Y_trk_var.setter
-    def Y_trk_var(self, Y_trk_var: torch.Tensor | None):
-        self._Y_trk_var = _set_tensor(Y_trk_var, device=self._device, dtype=self._dtype)
+    def Y_trk_var(self, value: torch.Tensor | None):
+        self._Y_trk_var = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
 
     @property
     def batch_size(self):
@@ -347,44 +347,61 @@ class OptimizerBase(ABC):
 
     def _validate_state(self):
         """ Validate data against objective """
+        self._validate_objective()
+        self._validate_X()
+        self._validate_Y_obj()
+        self._validate_Y_con()
+        self._validate_Y_trk()
+
+    def _validate_objective(self):
         if self.objective is None:
             raise RuntimeError("No objective to optimize: set objective before calling optimize().")
+
+    def _validate_X(self):
         if self._X is None:
             raise RuntimeError("No data to optimize: set X before calling optimize().")
+        # X sets the row count every other tensor is held to below.
+        _check_tensor(self._X, name="X", last_dim=self._objective.dim)
+
+    def _validate_Y_obj(self):
         if self._Y_obj is None:
-            raise RuntimeError("No data to optimize: set Y before calling optimize().")
-
-        obj = self.objective
-
-        if self._X.ndim != 2:
-            raise ValueError(f"X must be 2-dimensional (n x d), got {self._X.ndim} dimensions.")
-        _check_tensor(self._X, name="X", last_dim=obj.dim)
-
-        n = self._X.shape[0]
-        _check_tensor(self._Y_obj, name="Y_obj", last_dim=obj.num_obj, n_rows=n)
+            raise RuntimeError("No data to optimize: set Y_obj before calling optimize().")
+        n_rows = self._X.shape[0]
+        _check_tensor(self._Y_obj, name="Y_obj", last_dim=self._objective.num_obj, n_rows=n_rows)
         if self._Y_obj_var is not None:
-            _check_tensor(self._Y_obj_var, name="Y_obj_var", last_dim=obj.num_obj, n_rows=n)
+            _check_tensor(self._Y_obj_var, name="Y_obj_var", last_dim=self._objective.num_obj, n_rows=n_rows)
 
-        # Output constraints are scored from Y_con, so an objective that declares them
-        # cannot be run without it - and one that declares none has nothing to do with a
-        # Y_con it was handed, which is a mismatched dataset rather than spare data.
-        if obj.num_con > 0:
-            if self._Y_con is None:
-                raise RuntimeError(
-                    f"Objective declares {obj.num_con} output constraint(s): set Y_con before calling optimize()."
-                )
-            _check_tensor(self._Y_con, name="Y_con", last_dim=obj.num_con, n_rows=n)
-        elif self._Y_con is not None:
-            raise ValueError("Y_con was provided, but the objective declares no output constraints.")
+    def _validate_Y_con(self):
+        if self._objective.num_con == 0:
+            if self._Y_con is not None:
+                raise ValueError("Y_con was provided, but the objective declares no output constraints.")
+            if self._Y_con_var is not None:
+                raise ValueError("Y_con_var was provided, but the objective declares no output constraints.")
+            return
+        if self._Y_con is None:
+            raise RuntimeError(
+                f"Objective declares {self._objective.num_con} output constraint(s): "
+                f"set Y_con before calling optimize().")
+        _check_tensor(self._Y_con, name="Y_con", last_dim=self._objective.num_con, n_rows=self._X.shape[0])
         if self._Y_con_var is not None:
-            _check_tensor(self._Y_con_var, name="Y_con_var", last_dim=obj.num_con, n_rows=n)
+            _check_tensor(self._Y_con_var, name="Y_con_var", last_dim=self._objective.num_con,
+                          n_rows=self._X.shape[0])
 
-        # Trackers are recorded and plotted, never optimized against, so they are only
-        # checked when present.
-        if self._Y_trk is not None:
-            _check_tensor(self._Y_trk, name="Y_trk", last_dim=obj.num_trk, n_rows=n)
+    def _validate_Y_trk(self):
+        if self._objective.num_trk == 0:
+            if self._Y_trk is not None:
+                raise ValueError("Y_trk was provided, but the objective declares no trackers.")
+            if self._Y_trk_var is not None:
+                raise ValueError("Y_trk_var was provided, but the objective declares no trackers.")
+            return
+        if self._Y_trk is None:
+            raise RuntimeError(
+                f"Objective declares {self._objective.num_trk} tracker(s): "
+                f"set Y_trk before calling optimize().")
+        _check_tensor(self._Y_trk, name="Y_trk", last_dim=self._objective.num_trk, n_rows=self._X.shape[0])
         if self._Y_trk_var is not None:
-            _check_tensor(self._Y_trk_var, name="Y_trk_var", last_dim=obj.num_trk, n_rows=n)
+            _check_tensor(self._Y_trk_var, name="Y_trk_var", last_dim=self._objective.num_trk,
+                          n_rows=self._X.shape[0])
 
     @abstractmethod
     def _propose(self, verbose=True):
@@ -681,36 +698,46 @@ class OptimizerBase(ABC):
         self.update_Y_con(new_Y_con, new_Y_con_var)
         self.update_Y_trk(new_Y_trk, new_Y_trk_var)
 
-    def _append(self, current: torch.Tensor | None, new: torch.Tensor) -> torch.Tensor:
-        """Stack a batch onto a history that may not exist yet.
-
-        Measuring the initial design inside the loop means the first batch arrives here
-        with nothing to append to, so an empty history takes the batch as-is."""
-        new = new.to(self._device, self._dtype)
-        return new if current is None else torch.cat([current, new], dim=0)
+    # Each batch is coerced before it is concatenated, because torch.cat would take a
+    # non-tensor, a foreign dtype or a wrongly-shaped batch further in than the property
+    # setter can catch it - only an empty history routes the batch through the setter.
+    # An empty history takes the batch as-is: the initial design is measured inside the
+    # loop, so the first batch arrives with nothing to append to.
+    # Row counts are not checked here - update_XY sets X, then Y_obj, then Y_con, then
+    # Y_trk, and between those calls they legitimately disagree. _validate_state() checks
+    # them once they must all hold.
 
     def update_X(self, new_X: torch.Tensor):
         if new_X is not None:
-            # Through the property, so the shape checks and dtype move still apply.
-            self.X = self._append(self._X, new_X)
+            new_X = _set_tensor(new_X, device=self._device, dtype=self._dtype, ndim=2)
+            self.X = new_X if self._X is None else torch.cat([self._X, new_X], dim=0)
 
     def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor | None = None):
         if new_Y_obj is not None:
-            self._Y_obj = self._append(self._Y_obj, new_Y_obj)
+            new_Y_obj = _set_tensor(new_Y_obj, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_obj = new_Y_obj if self._Y_obj is None else torch.cat([self._Y_obj, new_Y_obj], dim=0)
         if new_Y_obj_var is not None:
-            self._Y_obj_var = self._append(self._Y_obj_var, new_Y_obj_var)
+            new_Y_obj_var = _set_tensor(new_Y_obj_var, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_obj_var = (new_Y_obj_var if self._Y_obj_var is None
+                              else torch.cat([self._Y_obj_var, new_Y_obj_var], dim=0))
 
     def update_Y_con(self, new_Y_con: torch.Tensor | None, new_Y_con_var: torch.Tensor | None = None):
         if new_Y_con is not None:
-            self._Y_con = self._append(self._Y_con, new_Y_con)
+            new_Y_con = _set_tensor(new_Y_con, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_con = new_Y_con if self._Y_con is None else torch.cat([self._Y_con, new_Y_con], dim=0)
         if new_Y_con_var is not None:
-            self._Y_con_var = self._append(self._Y_con_var, new_Y_con_var)
+            new_Y_con_var = _set_tensor(new_Y_con_var, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_con_var = (new_Y_con_var if self._Y_con_var is None
+                              else torch.cat([self._Y_con_var, new_Y_con_var], dim=0))
 
     def update_Y_trk(self, new_Y_track: torch.Tensor | None, new_Y_track_var: torch.Tensor | None = None):
         if new_Y_track is not None:
-            self._Y_trk = self._append(self._Y_trk, new_Y_track)
+            new_Y_track = _set_tensor(new_Y_track, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_trk = new_Y_track if self._Y_trk is None else torch.cat([self._Y_trk, new_Y_track], dim=0)
         if new_Y_track_var is not None:
-            self._Y_trk_var = self._append(self._Y_trk_var, new_Y_track_var)
+            new_Y_track_var = _set_tensor(new_Y_track_var, device=self._device, dtype=self._dtype, ndim=2)
+            self.Y_trk_var = (new_Y_track_var if self._Y_trk_var is None
+                              else torch.cat([self._Y_trk_var, new_Y_track_var], dim=0))
 
     """ =============== """
     """ ===== I/O ===== """
