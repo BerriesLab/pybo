@@ -1,35 +1,35 @@
 from pybo.optimizer.base_class import OptimizerBase
-from pybo.samplers.base_class import SamplerBase
 from pybo.samplers.sobol import SobolSampler
 
 
 class SobolOptimizer(OptimizerBase):
     """An optimizer that proposes by sampling, never by modelling."""
 
-    def __init__(self, sampler: SamplerBase | None = None, acqf=None, kernel=None, **kwargs):
+    # acqf and kernel are accepted and ignored: the tutorials pick the arm at runtime and
+    # pass the modeling arguments to whichever class they chose, so this one has to
+    # swallow them. Dropping them makes every --strategy sobol run fail in the base
+    # __init__ on an unexpected keyword.
+    def __init__(self, sampler: SobolSampler | None = None, acqf=None, kernel=None, **kwargs):
         super().__init__(**kwargs)
         self._candidate_sampler = sampler
 
     @property
-    def sampler(self) -> SamplerBase | None:
-        """The sampler that draws the candidates, or None until the first proposal
-        builds the default one."""
+    def sampler(self) -> SobolSampler | None:
+        """The sampler that draws the candidates, or None until optimize() builds one."""
         return self._candidate_sampler
 
-    def _propose(self, verbose=True):
-        """Draw the next batch instead of modeling it.
-
-        draw_samples() rejects against the objective's X constraints, so the baseline
-        searches the same feasible region the modeling arm is restricted to.
-
-        A sampler needs the objective, so one that was not supplied is built here rather
-        than in __init__: optimize() validates the objective before proposing, which lets
-        the optimizer be constructed before the objective exists."""
+    def _instantiate_sampler(self):
+        super()._validate_objective()
         if self._candidate_sampler is None:
             self._candidate_sampler = SobolSampler(
                 device=self._device, dtype=self._dtype, objective=self.objective
             )
 
+    def optimize(self, verbose=True):
+        self._instantiate_sampler()
+        super().optimize(verbose=verbose)
+
+    def _propose(self, verbose=True):
         if verbose:
             print("Drawing random candidates... ", end="")
 
@@ -37,3 +37,22 @@ class SobolOptimizer(OptimizerBase):
 
         if verbose:
             self._print_success(msg=f"New X: {self._new_X.detach().cpu().numpy()}")
+
+    def _validate_state(self):
+        super()._validate_state()
+        self._validate_sampler()
+
+    def _validate_sampler(self):
+        # optimize() builds one before validating, so None here means _validate_state was
+        # called on its own. Nothing to check either way.
+        if self._candidate_sampler is None:
+            return
+
+        if not isinstance(self._candidate_sampler, SobolSampler):
+            raise TypeError(
+                f"sampler must be a SobolSampler, got {type(self._candidate_sampler).__name__}.")
+
+        if self._candidate_sampler.objective is not self.objective:
+            raise ValueError(
+                "sampler.objective is not the objective being optimized: the sampler would "
+                "draw candidates from a different search space.")
