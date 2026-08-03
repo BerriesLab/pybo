@@ -24,12 +24,19 @@ dependencies = [
     "sympy == 1.14.0",
     "pandas >= 2.3",
     "imageio >= 2.37",
-    "tqdm >= 4.67"
+    "tqdm >= 4.67",
+    # Sandboxed evaluation of the campaign plots' --constraint expressions.
+    "asteval >= 1.0"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest >= 8.0",
+]
+# Qt, for pybo_gui.gui only. Optional: the library and the analysis modules the GUI
+# launches are all runnable without it.
+gui = [
+    "PySide6 >= 6.7",
 ]
 
 [tool.setuptools.packages.find]
