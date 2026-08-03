@@ -62,6 +62,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         Y_con=None,
         Y_con_var=None,
         batch_size=q,
+        # Reuse the initial design's sampler, so the sobol arm continues that
+        # sequence instead of starting a second one.
         **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
@@ -80,6 +82,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         os.chdir(step_dir)
 
         modelling = i >= n_initial_steps
+        if pbar is not None:
+            pbar.set_description("Optimizing" if modelling else "Initial design")
         if verbose:
             phase = "propose" if modelling else "initial design"
             print(f"\n*** Step {i + 1}/{n_steps} ({phase}) | eval {(i + 1) * q}/{n_initial + n_evals} ***")
@@ -112,13 +116,11 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         new_Y_con = objective.evaluate_true_constraint(new_X)
         if verbose:
             print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con)
+        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, new_Y_con=new_Y_con, source="proposed" if modelling else "initial")
 
         """ Save the running summary (run root) and this step's experiment record """
         bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
-        bo.to_json(filepath=run_dir / "summary.json", latest=False, verbose=verbose)
-        bo.to_json(filepath=step_dir / "experiment.json", latest=True, verbose=verbose)
-        bo.to_csv(filepath=step_dir / "experiment.csv", latest=True, verbose=verbose)
+        bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
 
         if pbar is not None:
             pbar.update(q)

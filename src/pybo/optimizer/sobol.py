@@ -5,6 +5,8 @@ from pybo.samplers.sobol import SobolSampler
 class SobolOptimizer(OptimizerBase):
     """An optimizer that proposes by sampling, never by modelling."""
 
+    experiment_type = "sobol"
+
     # acqf and kernel are accepted and ignored: the tutorials pick the arm at runtime and
     # pass the modeling arguments to whichever class they chose, so this one has to
     # swallow them. Dropping them makes every --strategy sobol run fail in the base

@@ -1,5 +1,6 @@
 import datetime
 import glob
+import json
 import os
 import pickle
 import time
@@ -16,9 +17,11 @@ from pybo.optimizer.validators import _set_tensor, _check_tensor
 class OptimizerBase(ABC):
     """Data, scoring, metrics and I/O for an optimization run of any kind."""
 
-    # Attributes dropped on pickling because they do not survive it; subclasses that
-    # hold such objects list their own (see BayesianOptimizer).
+    # Attributes dropped on pickling because they do not survive it.
     _unpicklable_attrs: tuple[str, ...] = ()
+
+    # What proposed the observations, written into every record this optimizer saves.
+    experiment_type: str = "base"
 
     def __init__(
             self,
@@ -51,9 +54,10 @@ class OptimizerBase(ABC):
         self._Y_trk = None
         self._Y_trk_var = None
         self._batch_size = None
+        self._source: list[str] = []  # What produced X (one entry per row), e.g. initial sampling or optimization.
 
         # State attributes
-        self._new_X: torch.Tensor | None = None
+        self._new_X: torch.Tensor | None = None  # The new X proposed by the optimizer
         self._feasible_mask: torch.Tensor | None = None  # Boolean mask, true where observations are feasible
 
         # Single-objective Attributes
@@ -102,6 +106,10 @@ class OptimizerBase(ABC):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._transient = None
+        # Pickles written before provenance was recorded carry no _source. Without this
+        # they unpickle but raise on first access, including from the X setter.
+        if not hasattr(self, "_source"):
+            self._source = []
 
     def _print_caught_warnings(self, flush=True):
         ORANGE = "\033[38;5;208m"
@@ -182,6 +190,13 @@ class OptimizerBase(ABC):
     @X.setter
     def X(self, value: torch.Tensor | None):
         self._X = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
+        # Provenance is per row, so it follows X's length here - the one place every
+        # assignment passes through, whether it comes from the constructor or update_X.
+        # Rows that arrive without a stated source are the initial design; update_X
+        # renames the ones it appends. Rows that disappear take their entry with them.
+        n_rows = 0 if self._X is None else self._X.shape[0]
+        del self._source[n_rows:]
+        self._source += ["initial"] * (n_rows - len(self._source))
 
     @property
     def Y_obj(self):
@@ -230,6 +245,20 @@ class OptimizerBase(ABC):
     @Y_trk_var.setter
     def Y_trk_var(self, value: torch.Tensor | None):
         self._Y_trk_var = _set_tensor(value=value, device=self.device, dtype=self.dtype, ndim=2)
+
+    @property
+    def source(self) -> list[str]:
+        """What produced each observation, one entry per row of X: "initial" for the
+        initial design, else whatever the caller named the batch (the tutorials use
+        "proposed"), falling back to this optimizer's experiment_type. A copy, so the
+        history cannot be rewritten from outside."""
+        return list(self._source)
+
+    @property
+    def n_initial_samples(self) -> int:
+        """How many observations came from the initial design. Counted from the recorded
+        provenance rather than declared, so a run that never took one reports 0."""
+        return self._source.count("initial")
 
     @property
     def batch_size(self):
@@ -362,6 +391,10 @@ class OptimizerBase(ABC):
             raise RuntimeError("No data to optimize: set X before calling optimize().")
         # X sets the row count every other tensor is held to below.
         _check_tensor(self._X, name="X", last_dim=self._objective.dim)
+        if len(self._source) != self._X.shape[0]:
+            raise RuntimeError(f"Provenance is out of step with the data: {len(self._source)} "
+                               f"source entries for {self._X.shape[0]} observations. Rows must "
+                               f"be appended through update_X, which records where they came from.")
 
     def _validate_Y_obj(self):
         if self._Y_obj is None:
@@ -695,25 +728,21 @@ class OptimizerBase(ABC):
     def update_XY(self, new_X: torch.Tensor, new_Y_obj: torch.Tensor, new_Y_trk: torch.Tensor | None = None,
                   new_Y_obj_var: torch.Tensor | None = None,
                   new_Y_con: torch.Tensor | None = None, new_Y_con_var=None,
-                  new_Y_trk_var: torch.Tensor | None = None) -> None:
-        self.update_X(new_X)
+                  new_Y_trk_var: torch.Tensor | None = None, source: str | None = None) -> None:
+        self.update_X(new_X, source=source)
         self.update_Y_obj(new_Y_obj, new_Y_obj_var)
         self.update_Y_con(new_Y_con, new_Y_con_var)
         self.update_Y_trk(new_Y_trk, new_Y_trk_var)
 
-    # Each batch is coerced before it is concatenated, because torch.cat would take a
-    # non-tensor, a foreign dtype or a wrongly-shaped batch further in than the property
-    # setter can catch it - only an empty history routes the batch through the setter.
-    # An empty history takes the batch as-is: the initial design is measured inside the
-    # loop, so the first batch arrives with nothing to append to.
-    # Row counts are not checked here - update_XY sets X, then Y_obj, then Y_con, then
-    # Y_trk, and between those calls they legitimately disagree. _validate_state() checks
-    # them once they must all hold.
-
-    def update_X(self, new_X: torch.Tensor):
+    def update_X(self, new_X: torch.Tensor, source: str | None = None):
         if new_X is not None:
             new_X = _set_tensor(new_X, device=self._device, dtype=self._dtype, ndim=2)
             self.X = new_X if self._X is None else torch.cat([self._X, new_X], dim=0)
+            # The setter has already grown _source to match; name the rows just appended.
+            # Unnamed batches are the arm's own proposals, so only the initial design has
+            # to say what it is.
+            n_new = new_X.shape[0]
+            self._source[len(self._source) - n_new:] = [source or self.experiment_type] * n_new
 
     def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor | None = None):
         if new_Y_obj is not None:
@@ -792,6 +821,102 @@ class OptimizerBase(ABC):
         with open(tmp_path, "wb") as file:
             pickle.dump(self, file)  # type: ignore
         self._atomic_replace(tmp_path, out_path)
+
+        if verbose:
+            self._print_success()
+
+    def to_json_tensors(self, filepath: str | Path | None = None, verbose=True):
+        """Write the observations of the latest step to JSON, as raw tensor rows.
+
+        Superseded by to_json, which labels the columns from the problem definition.
+        Kept as a fallback for reading back files written in this shape.
+        """
+        if verbose:
+            print("Saving observations to JSON... ", end="")
+
+        q = self._batch_size
+        n_observations = self._X.shape[0]
+
+        def _last(tensor):
+            return tensor[-q:].detach().cpu().numpy().tolist() if tensor is not None else None
+
+        payload = {
+            "datetime": self._datetime.isoformat(),
+            "experiment_type": self.experiment_type,
+            "observation_n": list(range(n_observations - q, n_observations)),
+            "batch_size": q,
+            "data": {
+                "source": self._source[-q:],
+                "X": _last(self._X),
+                "Y_obj": _last(self._Y_obj),
+                "Y_obj_var": _last(self._Y_obj_var),
+                "Y_con": _last(self._Y_con),
+                "Y_con_var": _last(self._Y_con_var),
+                "Y_trk": _last(self._Y_trk),
+                "Y_trk_var": _last(self._Y_trk_var),
+            },
+        }
+
+        with open(Path(filepath or "experiment.json"), "w") as file:
+            json.dump(payload, file, indent=2)
+
+        if verbose:
+            self._print_success()
+
+    def to_json(self, filepath: str | Path | None = None, verbose=True):
+        """Write the observations of the latest step to JSON, one record per observation.
+
+        Each record carries its position in the run, what produced it, and its values
+        named from the problem definition rather than left as bare tensor columns.
+        """
+        if verbose:
+            print("Saving observations to JSON... ", end="")
+
+        q = self._batch_size
+        n_observations = self._X.shape[0]
+
+        def _last(tensor):
+            """The batch's rows as lists, or one None per observation when the run
+            records nothing for that tensor."""
+            if tensor is None:
+                return [None] * q
+            return tensor[-q:].detach().cpu().numpy().tolist()
+
+        def _named(cfgs, values, variances):
+            """label -> value for one observation, each with its <label>_var partner."""
+            named = {}
+            for i, cfg in enumerate(cfgs or []):
+                named[cfg.label] = None if values is None else values[i]
+                named[f"{cfg.label}_var"] = None if variances is None else variances[i]
+            return named
+
+        X = _last(self._X)
+        Y_obj, Y_obj_var = _last(self._Y_obj), _last(self._Y_obj_var)
+        Y_con, Y_con_var = _last(self._Y_con), _last(self._Y_con_var)
+        Y_trk, Y_trk_var = _last(self._Y_trk), _last(self._Y_trk_var)
+        par_labels = [cfg.label for cfg in self._objective.par_cfg or []]
+
+        data = []
+        for i in range(q):
+            n = n_observations - q + i
+            data.append({
+                "observation_n": n,
+                "source": self._source[n],
+                "parameters": dict(zip(par_labels, X[i])),
+                "objectives": _named(self._objective.obj_cfg, Y_obj[i], Y_obj_var[i]),
+                "constraints": _named(self._objective.ineq_Y_con_cfg, Y_con[i], Y_con_var[i]),
+                "trackers": _named(self._objective.trk_cfg, Y_trk[i], Y_trk_var[i]),
+            })
+
+        payload = {
+            "datetime": self._datetime.isoformat(),
+            "experiment_type": self.experiment_type,
+            "batch_size": q,
+            "data": data,
+        }
+
+        with open(Path(filepath or "experiment.json"), "w") as file:
+            json.dump(payload, file, indent=2)
 
         if verbose:
             self._print_success()
