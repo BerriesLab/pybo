@@ -424,6 +424,8 @@ class OptimizerBase(ABC):
 
         if verbose:
             n_points = self.X.shape[0]
+            # At this points, feasible_mask cannot be None
+            assert self._feasible_mask is not None
             n_feasible = self._feasible_mask.sum().item()
             self._print_success(msg=f"({n_feasible}/{n_points} feasible)")
 
@@ -510,7 +512,7 @@ class OptimizerBase(ABC):
 
         feasible_X, feasible_Y = self._compute_feasible_XY(verbose=False)
 
-        if feasible_X is not None:
+        if isinstance(feasible_X, torch.Tensor) and isinstance(feasible_Y, torch.Tensor):
             feasible_Y_max = feasible_Y.clone()
             feasible_Y_max[..., self._objective.to_minimize] *= -1
             best_idx = feasible_Y_max.squeeze(-1).argmax()
@@ -523,6 +525,7 @@ class OptimizerBase(ABC):
             self._best_f_mask = best_f_mask.unsqueeze(-1)
 
             if verbose:
+                assert self._best_feasible_Y is not None
                 self._print_success(msg=f"({self._best_feasible_Y.item():.4f} in orig. space)")
 
         else:

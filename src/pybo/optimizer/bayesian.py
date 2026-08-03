@@ -106,13 +106,6 @@ class BayesianOptimizer(OptimizerBase):
         candidate-point sampler with the same name lives on SobolOptimizer."""
         return self._sampler
 
-    # @sampler.setter
-    # def sampler(self, sampler: MCSampler):
-    #     if not isinstance(sampler, MCSampler):
-    #         raise ValueError(
-    #             f"sampler must be a BoTorch MCSampler, got {type(sampler).__name__}: {sampler}")
-    #     self._sampler = sampler
-
     @property
     def n_acqf_opt_iter(self) -> int:
         return self._n_acqf_opt_max_iter

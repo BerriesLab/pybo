@@ -1,6 +1,5 @@
 import torch
 from scipy.stats._qmc import LatinHypercube
-
 from pybo.samplers.base_class import SamplerBase
 
 
