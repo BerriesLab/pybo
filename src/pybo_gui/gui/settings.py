@@ -1,21 +1,25 @@
-"""GUI-wide settings, held for the session.
+"""GUI-wide settings shared by the tabs.
 
-One object is built by the app and handed to every tab, so a choice made in Settings is
-visible to the tab that launches the plots. Nothing is written to disk: the analysis
-scripts take these as flags, so a scripted run stays entirely described by its command
-line rather than by what the GUI last remembered.
+The figure style is not held in memory here: a plot runs as its own process and resolves
+the style itself at startup, from configs/figure_settings_app/state.json. So the Settings
+tab writes that file and this object only proxies the store - which also means a style
+chosen in the GUI survives a restart, and applies to a script run straight from a
+terminal.
 """
 from dataclasses import dataclass
 
-from pybo.plotters.style import DEFAULT_STYLE
+from pybo_gui.configs.figure_settings import store
 
 
 @dataclass
 class Settings:
-    """What the tabs share. Fields map one-to-one onto analysis-script flags."""
+    """What the tabs share. Style access is delegated to the figure-settings store."""
 
-    plot_style: str = DEFAULT_STYLE
+    @property
+    def plot_style(self):
+        """The active publisher style, or None when the campaign uses the bare defaults."""
+        return store.get_active()["publisher"]
 
-    def plot_args(self) -> list:
-        """The flags every launched plot should carry."""
-        return ["--plot-style", self.plot_style]
+    @plot_style.setter
+    def plot_style(self, name) -> None:
+        store.set_active_publisher(name or None)

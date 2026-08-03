@@ -1,0 +1,27 @@
+description: Elsevier (single column)
+dpi: 600
+column_width_in: 3.543
+linewidth_scale: 0.65
+font:
+  label: 7
+  legend: 6
+  title: 7
+legend:
+  frameon: true
+  framealpha: 1.0
+rcparams:
+  mathtext.fontset: dejavusans
+  axes.linewidth: 0.6
+  xtick.direction: in
+  ytick.direction: in
+  savefig.dpi: 600
+  savefig.format: png
+  pdf.fonttype: 42
+  ps.fonttype: 42
+  font.family: sans-serif
+  font.sans-serif:
+  - Arial
+  - Helvetica
+  - DejaVu Sans
+  xtick.labelsize: 7
+  ytick.labelsize: 7

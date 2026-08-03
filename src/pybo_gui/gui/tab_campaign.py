@@ -9,15 +9,21 @@ problem definition, so the axis keys, the min/max senses and the hypervolume ref
 point all come from the run's objective.py. Every sense stays editable afterwards: the
 objective is the default, not the last word.
 """
+import json
+import tempfile
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
+    QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
+from pybo_gui.configs import settings as configs_settings
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
+from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
-from pybo_gui.modules.bayesian_campaign_analysis.steps import find_steps, group_labels
 from pybo_gui.gui.launchers import launch_analysis, watch
 from pybo_gui.gui.widgets import (
     bind_label_entry, make_constraints_widget, make_objective_checklist, make_sense_toggle,
@@ -25,6 +31,88 @@ from pybo_gui.gui.widgets import (
 )
 
 DIMENSIONS = ("1D", "2D", "3D", "N-D")
+MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
+
+
+def _result_keys(exp_map: dict) -> list:
+    """Every result key in the experiment map, or [] when nothing is built yet."""
+    keys = []
+    for entry in (exp_map or {}).get("experiments", []):
+        for key in entry.get("results", {}):
+            if key not in keys:
+                keys.append(key)
+    return sorted(keys)
+
+
+def _view_json_dialog(parent: QWidget, payload, title: str) -> None:
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.resize(700, 600)
+    v = QVBoxLayout(dlg)
+    txt = QPlainTextEdit()
+    txt.setReadOnly(True)
+    txt.setPlainText(json.dumps(payload, indent=2) if payload else
+                     "Nothing built yet — click “Rebuild map now” first.")
+    v.addWidget(txt)
+    dlg.show()
+
+
+def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Group map")
+    dlg.resize(700, 600)
+    v = QVBoxLayout(dlg)
+
+    if not groups:
+        v.addWidget(QLabel("Nothing built yet — click “Rebuild map now” first."))
+        dlg.show()
+        return
+
+    gid_to_exps = {}
+    for e in (exp_map or {}).get("experiments", []):
+        gid = e.get("group_id")
+        # experiment_id, where the rig listed a folder: a pybo observation has no
+        # directory of its own, it is one row of a step record.
+        gid_to_exps.setdefault(gid, []).append(e["experiment_id"])
+
+    cols = list(groups[0].keys())
+    splitter = QSplitter(Qt.Orientation.Vertical)
+
+    tree = QTreeWidget()
+    tree.setColumnCount(len(cols))
+    tree.setHeaderLabels(cols)
+    tree.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    for g in groups:
+        item = QTreeWidgetItem([str(g.get(c, "")) for c in cols])
+        item.setData(0, Qt.ItemDataRole.UserRole, g.get("group_id"))
+        tree.addTopLevelItem(item)
+    splitter.addWidget(tree)
+
+    detail_box = QWidget()
+    detail_layout = QVBoxLayout(detail_box)
+    detail_layout.setContentsMargins(0, 0, 0, 0)
+    detail_lbl = QLabel("Select a group to see its experiments.")
+    detail_lbl.setStyleSheet("color: grey;")
+    detail_layout.addWidget(detail_lbl)
+    detail_txt = QPlainTextEdit()
+    detail_txt.setReadOnly(True)
+    detail_layout.addWidget(detail_txt)
+    splitter.addWidget(detail_box)
+
+    def _on_select():
+        sel = tree.selectedItems()
+        if not sel:
+            return
+        gid = sel[0].data(0, Qt.ItemDataRole.UserRole)
+        exps = gid_to_exps.get(gid, [])
+        detail_lbl.setText(f"Group {gid} — {len(exps)} experiment(s):")
+        detail_lbl.setStyleSheet("")
+        detail_txt.setPlainText("\n".join(exps))
+
+    tree.itemSelectionChanged.connect(_on_select)
+
+    v.addWidget(splitter)
+    dlg.show()
 
 
 def _row(*widgets) -> QWidget:
@@ -62,7 +150,28 @@ def build(step_list, settings) -> QWidget:
     """
     page = QWidget()
     layout = QVBoxLayout(page)
-    state: dict = {"problem": None}
+    # "source" records where the map came from: a selection rebuild, or a file the
+    # user loaded. A loaded map must survive the next plot click rather than being
+    # silently rebuilt from a selection it has nothing to do with.
+    state: dict = {"problem": None, "map": None, "groups": None, "source": None}
+    # One scratch directory per session, so a rebuild never writes into the
+    # user's data tree. Save map is the only thing that puts a map where they chose.
+    _scratch = Path(tempfile.mkdtemp(prefix="pybo_campaign_"))
+
+    # ---- Experiment map ------------------------------------------------------
+    # First, as in the original tab: it defines the rebuild every other action calls.
+    map_box = QGroupBox("Experiment map")
+    map_layout = QVBoxLayout(map_box)
+    btn_rebuild = QPushButton("Rebuild map now")
+    btn_view_exp = QPushButton("View experiment map")
+    btn_view_grp = QPushButton("View group map")
+    btn_save_map = QPushButton("Save map")
+    btn_load_map = QPushButton("Load map")
+    map_status = QLabel("")
+    map_status.setStyleSheet("color: grey;")
+    map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map, btn_load_map))
+    map_layout.addWidget(map_status)
+    layout.addWidget(map_box)
 
     # ---- Objective -----------------------------------------------------------
     obj_box = QGroupBox("Objective")
@@ -128,12 +237,30 @@ def build(step_list, settings) -> QWidget:
     btn_hv = QPushButton("Plot hypervolume")
     btn_hvi = QPushButton("Plot HV improvement")
     btn_refresh = QPushButton("Refresh keys")
-    cb_per_run = QCheckBox("One series per run")
+    # Grouped aggregates replicate runs at the same observation index; the error-bar mode
+    # only means anything once it is on.
+    cb_grouped = QCheckBox("Grouped")
+    rb_std = QRadioButton("Std")
+    rb_std.setChecked(True)
+    rb_minmax = QRadioButton("Min/max")
+    cb_numbers = QCheckBox("Show numbers")
+    for widget in (rb_std, rb_minmax):
+        widget.setEnabled(False)
+    cb_grouped.stateChanged.connect(
+        lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in (rb_std, rb_minmax)])
     status = QLabel("")
     status.setStyleSheet("color: grey;")
-    plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh, cb_per_run))
+    plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
+    plot_layout.addWidget(_row(cb_grouped, rb_std, rb_minmax, cb_numbers))
     plot_layout.addWidget(status)
     layout.addWidget(plot_box)
+
+    # ---- Diagnostics ---------------------------------------------------------
+    # The campaign-wide plots that take no axis selection: one row each, as in the
+    # original tab's diagnostic frame.
+    diag_box = QGroupBox("Diagnostic tools")
+    diag_layout = QVBoxLayout(diag_box)
+    layout.addWidget(diag_box)
     layout.addStretch()
 
     # ---- Key discovery -------------------------------------------------------
@@ -152,10 +279,10 @@ def build(step_list, settings) -> QWidget:
                          + [t["label"] for t in problem["trackers"]]
             senses = problem["minimized"]
         else:
-            groups = group_labels(find_steps(step_list.checked_paths or [step_list.root])) \
-                if (step_list.checked_paths or step_list.root) else {}
-            objectives = groups.get("objectives", [])
-            everything = [label for labels in groups.values() for label in labels]
+            # No objective loaded: fall back to whatever the last built map recorded,
+            # the way the original tab discovered its result keys.
+            everything = _result_keys(state["map"])
+            objectives = everything
             senses = {}
 
         repopulate(x_combo, objectives)
@@ -211,102 +338,232 @@ def build(step_list, settings) -> QWidget:
         z_sense.setEnabled(is_3d)
         z_lead.setText("z:" if is_3d else "z (colour):")
         btn_pareto.setEnabled(not is_nd)
-        cb_per_run.setEnabled(dim == "2D")
+        # Grouping and point labels belong to the Pareto scatter, which N-D has none of.
+        for widget in (cb_grouped, cb_numbers):
+            widget.setEnabled(not is_nd)
+        for widget in (rb_std, rb_minmax):
+            widget.setEnabled(cb_grouped.isChecked() and not is_nd)
 
     dim_group.buttonToggled.connect(lambda _b, checked: checked and _on_dimension_change())
 
     # ---- Launching -----------------------------------------------------------
 
-    def _shared_args() -> list | None:
+    def _rebuild_map() -> bool:
+        """Rebuild experiment_map.json + group_map.json from the current selection.
+
+        Synchronous and cheap - it only re-reads the selected step records - so a plot
+        launched right after always sees the selection as it is now. The scripts read the
+        map through configs.settings.data_path, so that is repointed here too.
+        """
         steps = step_list.checked_paths
         if not steps:
             status.setText("Select at least one step in the Steps window.")
-            return None
-        if state["problem"] is None:
-            status.setText("Load an objective first: the senses and reference point come "
-                           "from it.")
-            return None
-        args = ["--objective", obj_edit.text()]
-        for step in steps:
-            args += ["--step", step]
-        for spec in con_collect():
-            args += ["--constraint", spec]
-        # Read at launch, not at build: the Settings tab may have changed it since.
-        args += settings.plot_args()
-        return args
+            return False
+        try:
+            exp_map = build_map(steps)
+            groups = build_groups(exp_map)
+        except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
+            status.setText(f"Map build failed: {exc}")
+            map_status.setText(f"Map build failed: {exc}")
+            return False
+
+        state["map"], state["groups"] = exp_map, groups
+        state["source"] = "selection"
+        # A plot is a separate process reading configs.settings.data_path, so the map has
+        # to exist somewhere on disk for it. That somewhere is a scratch directory for the
+        # session, not the user's data tree - Save map is how a copy gets kept.
+        _write_map(_scratch)
+        configs_settings.set_data_path(_scratch)
+        map_status.setText(f"{len(exp_map['experiments'])} observations from "
+                           f"{len(steps)} selected director"
+                           f"{'y' if len(steps) == 1 else 'ies'}, held in memory")
+        return True
+
+    def _write_map(out_dir) -> Path:
+        """Write the map held in memory into `out_dir`."""
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "experiment_map.json").write_text(
+            json.dumps(state["map"], indent=2), encoding="utf-8")
+        (out_dir / "group_map.json").write_text(
+            json.dumps(state["groups"], indent=2), encoding="utf-8")
+        return out_dir
+
+    def _ensure_map() -> bool:
+        """The map to work from: a loaded one as it is, else rebuilt from the selection.
+
+        A loaded map is left alone so that plotting it does not quietly replace it with
+        whatever happens to be ticked in the tree; Rebuild map now is how you go back to
+        the selection.
+        """
+        if state["source"] == "loaded" and state["map"]:
+            return True
+        return _rebuild_map()
+
+    def _load_map() -> None:
+        """Read a saved map back in, and work from it until the next rebuild."""
+        chosen = QFileDialog.getExistingDirectory(page, "Load a map from",
+                                                  step_list.root or "")
+        if not chosen:
+            return
+        source = Path(chosen)
+        try:
+            exp_map = json.loads(
+                (source / "experiment_map.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            map_status.setText(f"Could not read experiment_map.json there: {exc}")
+            return
+        if not isinstance(exp_map, dict) or "experiments" not in exp_map:
+            map_status.setText(f"{source / 'experiment_map.json'} is not an experiment map.")
+            return
+        try:
+            groups = json.loads((source / "group_map.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            # A map saved without its groups is still usable: they are derivable from it.
+            groups = build_groups(exp_map)
+
+        state["map"], state["groups"] = exp_map, groups
+        state["source"] = "loaded"
+        _write_map(_scratch)
+        configs_settings.set_data_path(_scratch)
+        _refresh_keys()
+        map_status.setText(f"Loaded {len(exp_map['experiments'])} observations from "
+                           f"{source} — plots use this until you rebuild")
+
+    def _save_map() -> None:
+        """Ask where to keep a copy of the map, and write it there."""
+        if not state["map"]:
+            map_status.setText("Nothing to save — click “Rebuild map now” first.")
+            return
+        chosen = QFileDialog.getExistingDirectory(page, "Save the map to",
+                                                  step_list.root or "")
+        if not chosen:
+            return
+        try:
+            _write_map(chosen)
+        except OSError as exc:
+            map_status.setText(f"Could not save: {exc}")
+            return
+        map_status.setText(f"Saved experiment_map.json and group_map.json to {chosen}")
 
     def _sense_args(*pairs) -> list:
-        """--maximize/--minimize for each (key, toggle), stated explicitly.
+        """--maximize for each axis whose toggle is on.
 
-        The scripts default to the objective, but the tab lets a sense be flipped, so it
-        always says which it means rather than relying on the default.
+        The scripts minimise by default and take only --maximize, so a minimised axis
+        contributes no flag at all.
         """
         args = []
         for key, toggle in pairs:
-            if key:
-                args += ["--maximize" if toggle.isChecked() else "--minimize", key]
+            if key and toggle.isChecked():
+                args += ["--maximize", key]
         return args
 
-    def _launch(module: str, *extra) -> None:
-        args = _shared_args()
-        if args is None:
+    def _constraint_args() -> list:
+        args = []
+        for spec in con_collect():
+            args += ["--constraint", spec]
+        return args
+
+    def _launch(script: str, *extra) -> None:
+        """Make sure a map exists, then run one of the analysis modules against it."""
+        if not _ensure_map():
             return
-        proc = launch_analysis(module, *args, *extra)
+        module = f"{MODULES}.{script}"
+        proc = launch_analysis(module, *extra)
         watch([proc],
-              on_start=lambda: set_text_async(status, f"Running {module}..."),
+              on_start=lambda: set_text_async(status, f"Running {script}..."),
               on_done=lambda: set_text_async(status, "Done."))
+
+    def _grouped_args() -> list:
+        if not cb_grouped.isChecked():
+            return []
+        return ["--grouped", "--errorbar", "std" if rb_std.isChecked() else "minmax"]
 
     def _plot_pareto() -> None:
         x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()
         if not x or not y:
             status.setText("Choose an x and a y objective.")
             return
+        extra = _constraint_args()
         if _dimension() == "3D":
             if not z:
                 status.setText("3D needs a z objective.")
                 return
-            extra = ["--x", x, "--y", y, "--z", z,
-                     "--xlabel", x_entry.text(), "--ylabel", y_entry.text(),
-                     "--zlabel", z_entry.text()]
+            extra += _grouped_args()
+            if cb_numbers.isChecked():
+                extra.append("--show-numbers")
+            extra += ["--x", x, "--y", y, "--z", z,
+                      "--xlabel", x_entry.text(), "--ylabel", y_entry.text(),
+                      "--zlabel", z_entry.text()]
             extra += _sense_args((x, x_sense), (y, y_sense), (z, z_sense))
-            _launch("pybo_gui.modules.bayesian_campaign_analysis.campaign_pareto_3d", *extra)
+            _launch("plot_pareto_3d", *extra)
             return
-        extra = ["--x", x, "--y", y, "--xlabel", x_entry.text(), "--ylabel", y_entry.text()]
+        extra += _grouped_args()
+        if cb_numbers.isChecked():
+            extra.append("--show-numbers")
+        extra += ["--x", x, "--y", y,
+                  "--xlabel", x_entry.text(), "--ylabel", y_entry.text()]
         if z:
             extra += ["--z", z, "--zlabel", z_entry.text()]
         extra += _sense_args((x, x_sense), (y, y_sense))
-        if cb_per_run.isChecked():
-            extra.append("--per-run")
-        _launch("pybo_gui.modules.bayesian_campaign_analysis.campaign_pareto", *extra)
+        _launch("plot_pareto_2d", *extra)
 
     def _plot_hypervolume(improvement: bool) -> None:
-        extra = ["--improvement"] if improvement else []
+        extra = _constraint_args() + (["--improvement"] if improvement else [])
+        if cb_grouped.isChecked():
+            extra.append("--grouped")
         if _dimension() == "N-D":
             chosen = nd_collect()
             if len(chosen) < 2:
                 status.setText("Tick at least two objectives for an N-D hypervolume.")
                 return
             for key, _is_max in chosen:
-                extra += ["--objective-label", key]
-            for key, is_max in chosen:
-                extra += ["--maximize" if is_max else "--minimize", key]
+                extra += ["--objective", key]
+            extra += [flag for key, is_max in chosen if is_max
+                      for flag in ("--maximize", key)]
         else:
             x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()
             if not x or not y:
                 status.setText("Choose an x and a y objective.")
                 return
             pairs = [(x, x_sense), (y, y_sense)]
-            extra += ["--objective-label", x, "--objective-label", y]
+            extra += ["--x", x, "--y", y]
             # The 2D colour axis is not an objective, so it joins only in 3D.
             if _dimension() == "3D" and z:
-                extra += ["--objective-label", z]
+                extra += ["--z", z]
                 pairs.append((z, z_sense))
             extra += _sense_args(*pairs)
-        _launch("pybo_gui.modules.bayesian_campaign_analysis.campaign_hypervolume", *extra)
+        _launch("plot_hypervolume", *extra)
+
+    # The viewers rebuild first, so what they show is the current selection rather than
+    # whatever was last written.
+    btn_rebuild.clicked.connect(lambda: _rebuild_map() and _refresh_keys())
+    btn_view_exp.clicked.connect(
+        lambda: _ensure_map() and _view_json_dialog(page, state["map"], "Experiment map"))
+    btn_view_grp.clicked.connect(
+        lambda: _ensure_map() and _view_group_map_dialog(page, state["groups"],
+                                                         state["map"]))
+    btn_save_map.clicked.connect(_save_map)
+    btn_load_map.clicked.connect(_load_map)
 
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
     btn_hvi.clicked.connect(lambda: _plot_hypervolume(True))
+
+    # Diagnostic rows: label, script, and whether it understands --grouped.
+    for text, script, grouped in (
+            ("Evolution", "plot_evolution", True),
+            ("Correlation matrix", "plot_correlation_matrix", False),
+            ("Results boxplot", "plot_results_boxplot", False),
+            ("Results vs datetime", "plot_results_vs_datetime", False),
+    ):
+        label = QLabel(f"{text}:")
+        label.setFixedWidth(160)
+        button = QPushButton("Plot")
+        button.clicked.connect(
+            lambda _checked=False, s=script, g=grouped:
+            _launch(s, *(["--grouped"] if g and cb_grouped.isChecked() else [])))
+        diag_layout.addWidget(_row(label, button))
 
     # An objective usually sits with the tutorial that produced the data, so offer the
     # first one found under the selected root rather than leaving the field blank.

@@ -1,9 +1,13 @@
-"""The step-selector window.
+"""The selection window.
 
-Lists every step of every run under a chosen root, as a run -> steps tree with a
-checkbox on each. Steps are the selectable unit because a campaign plot is built from
-observations, and a step is the batch of observations one optimization iteration
-produced - so ticking a subset asks "what did the campaign look like using only these".
+Shows the directory tree under a chosen root and lets any node be ticked. A ticked node
+means "everything under this", so one click takes a whole study, and ticking nodes in
+different places takes steps from different studies - the tree decides nothing on your
+behalf, it just shows what is there.
+
+Nothing here knows what a step record looks like: the map builder's find_steps() globs
+experiment.json under whatever directories it is given, so this window's only job is to
+say which directories those are.
 
 Other parts of the GUI read `checked_paths` and subscribe to `on_selection`.
 """
@@ -15,17 +19,20 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-_STEP_ROLE = Qt.ItemDataRole.UserRole
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import find_steps
+
+_PATH_ROLE = Qt.ItemDataRole.UserRole
+_FILLED_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 class StepListWindow(QWidget):
-    """A non-closable side window listing the steps available under a root."""
+    """A non-closable side window for choosing what a plot covers."""
 
     def __init__(self, parent: QWidget = None, *, initial_root: str = "",
                  on_selection=None):
         super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle("Steps")
-        self.resize(420, 640)
+        self.setWindowTitle("Selection")
+        self.resize(460, 640)
         # Don't hold the application open on our own once the main window closes.
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self._force_close = False
@@ -35,7 +42,7 @@ class StepListWindow(QWidget):
 
         row = QHBoxLayout()
         self._root_edit = QLineEdit(initial_root)
-        self._root_edit.setPlaceholderText("Study, run or data directory")
+        self._root_edit.setPlaceholderText("Directory to browse")
         browse = QPushButton("Browse")
         browse.clicked.connect(self._browse)
         rescan = QPushButton("Rescan")
@@ -46,20 +53,23 @@ class StepListWindow(QWidget):
         layout.addLayout(row)
 
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["Run / step", "Observations"])
+        self._tree.setHeaderLabels(["Directory"])
         self._tree.itemChanged.connect(self._on_item_changed)
+        # Children are built the first time a node is opened, so pointing at a deep tree
+        # costs one directory listing rather than a full walk.
+        self._tree.itemExpanded.connect(self._fill)
         layout.addWidget(self._tree)
 
         buttons = QHBoxLayout()
-        for text, value in (("Select all", True), ("Select none", False)):
-            btn = QPushButton(text)
-            btn.clicked.connect(lambda _=False, v=value: self._set_all(v))
-            buttons.addWidget(btn)
+        clear = QPushButton("Clear selection")
+        clear.clicked.connect(self._clear)
+        buttons.addWidget(clear)
         buttons.addStretch()
         layout.addLayout(buttons)
 
         self._status = QLabel("")
         self._status.setStyleSheet("color: grey;")
+        self._status.setWordWrap(True)
         layout.addWidget(self._status)
 
     # ---------- selection ----------
@@ -70,83 +80,126 @@ class StepListWindow(QWidget):
 
     @property
     def checked_paths(self) -> list:
-        """Directories of every ticked step, in tree order."""
-        paths = []
-        for i in range(self._tree.topLevelItemCount()):
-            run = self._tree.topLevelItem(i)
-            for j in range(run.childCount()):
-                step = run.child(j)
-                if step.checkState(0) == Qt.CheckState.Checked:
-                    paths.append(step.data(0, _STEP_ROLE))
-        return paths
+        """The ticked directories, with any nested under another ticked one dropped.
 
-    def _set_all(self, checked: bool) -> None:
-        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        for i in range(self._tree.topLevelItemCount()):
-            self._tree.topLevelItem(i).setCheckState(0, state)
+        Without that pruning a study and one of its own steps could both be ticked, and
+        the builder would read that step twice - the same observation twice over in the
+        map.
+        """
+        ticked = []
+        for item in self._walk():
+            if item.checkState(0) == Qt.CheckState.Checked:
+                ticked.append(Path(item.data(0, _PATH_ROLE)))
+        pruned = []
+        for path in ticked:
+            if not any(other != path and other in path.parents for other in ticked):
+                pruned.append(str(path))
+        return pruned
+
+    def _walk(self, parent: QTreeWidgetItem = None):
+        """Every item currently in the tree, depth first."""
+        if parent is None:
+            for i in range(self._tree.topLevelItemCount()):
+                yield from self._walk(self._tree.topLevelItem(i))
+            return
+        yield parent
+        for i in range(parent.childCount()):
+            yield from self._walk(parent.child(i))
+
+    def _clear(self) -> None:
+        self._tree.blockSignals(True)
+        for item in self._walk():
+            item.setCheckState(0, Qt.CheckState.Unchecked)
+        self._tree.blockSignals(False)
+        self._update_status()
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if column != 0:
             return
-        # A run's checkbox drives its steps; a step only reports upward.
-        if item.data(0, _STEP_ROLE) is None:
-            state = item.checkState(0)
-            if state != Qt.CheckState.PartiallyChecked:
-                self._tree.blockSignals(True)
-                for j in range(item.childCount()):
-                    item.child(j).setCheckState(0, state)
-                self._tree.blockSignals(False)
         self._update_status()
         if self._on_selection is not None:
             self._on_selection(self.checked_paths)
 
     def _update_status(self) -> None:
-        n = len(self.checked_paths)
-        self._status.setText(f"{n} step{'' if n == 1 else 's'} selected")
+        selected = self.checked_paths
+        if not selected:
+            self._status.setText("Nothing selected — tick any directory to include "
+                                 "everything under it.")
+            return
+        # What the selection actually expands to, since a directory says nothing about
+        # how many records are beneath it.
+        n_steps = len(find_steps(selected))
+        self._status.setText(
+            f"{len(selected)} director{'y' if len(selected) == 1 else 'ies'} selected "
+            f"— {n_steps} step record{'' if n_steps == 1 else 's'}")
 
     # ---------- scanning ----------
 
     def _browse(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose a data directory", self.root)
+        chosen = QFileDialog.getExistingDirectory(self, "Choose a directory", self.root)
         if chosen:
             self._root_edit.setText(chosen)
             self.scan()
 
-    def scan(self) -> None:
-        """Rebuild the tree from the current root.
+    def _add(self, parent, path: Path) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([path.name or str(path)])
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(0, Qt.CheckState.Unchecked)
+        item.setData(0, _PATH_ROLE, str(path))
+        item.setData(0, _FILLED_ROLE, False)
+        if parent is None:
+            self._tree.addTopLevelItem(item)
+        else:
+            parent.addChild(item)
+        # A placeholder child is what gives the node an expand arrow before we have
+        # listed it; _fill replaces it on first open.
+        if self._has_subdirs(path):
+            item.addChild(QTreeWidgetItem(["..."]))
+        return item
 
-        Steps are found by their experiment.json rather than by folder name, so a
-        directory that holds no record simply does not appear.
-        """
+    @staticmethod
+    def _has_subdirs(path: Path) -> bool:
+        try:
+            return any(child.is_dir() for child in path.iterdir())
+        except OSError:
+            return False
+
+    def _fill(self, item: QTreeWidgetItem) -> None:
+        """Replace a node's placeholder with its real subdirectories, once."""
+        if item.data(0, _FILLED_ROLE):
+            return
+        item.setData(0, _FILLED_ROLE, True)
+        path = Path(item.data(0, _PATH_ROLE))
+        self._tree.blockSignals(True)
+        item.takeChildren()
+        try:
+            children = sorted(c for c in path.iterdir() if c.is_dir())
+        except OSError:
+            children = []
+        for child in children:
+            self._add(item, child)
+        # A node ticked before it was opened must pass that down, or its new children
+        # would look unselected while the selection still covers them.
+        if item.checkState(0) == Qt.CheckState.Checked:
+            for i in range(item.childCount()):
+                item.child(i).setCheckState(0, Qt.CheckState.Checked)
+        self._tree.blockSignals(False)
+
+    def scan(self) -> None:
+        """Rebuild the tree from the current root."""
         self._tree.blockSignals(True)
         self._tree.clear()
         root = Path(self.root) if self.root else None
-        records = sorted(root.glob("**/experiment.json")) if root and root.is_dir() else []
-
-        by_run: dict = {}
-        for record in records:
-            by_run.setdefault(record.parent.parent, []).append(record.parent)
-
-        for run_dir, steps in by_run.items():
-            run_item = QTreeWidgetItem([run_dir.name, str(len(steps))])
-            run_item.setFlags(run_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            run_item.setCheckState(0, Qt.CheckState.Unchecked)
-            for step_dir in steps:
-                step_item = QTreeWidgetItem([step_dir.name, ""])
-                step_item.setFlags(step_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                step_item.setCheckState(0, Qt.CheckState.Unchecked)
-                step_item.setData(0, _STEP_ROLE, str(step_dir))
-                run_item.addChild(step_item)
-            self._tree.addTopLevelItem(run_item)
-
-        self._tree.expandAll()
-        self._tree.resizeColumnToContents(0)
-        self._tree.blockSignals(False)
-
-        if not records:
-            self._status.setText("No experiment.json found under that directory.")
+        if root is not None and root.is_dir():
+            top = self._add(None, root)
+            self._tree.blockSignals(False)
+            top.setExpanded(True)  # fills the first level
         else:
-            self._status.setText(f"{len(records)} steps in {len(by_run)} run(s) — none selected")
+            self._tree.blockSignals(False)
+            self._status.setText("Not a directory." if self.root else
+                                 "Choose a directory to browse.")
+            return
+        self._update_status()
 
     # ---------- lifecycle ----------
 

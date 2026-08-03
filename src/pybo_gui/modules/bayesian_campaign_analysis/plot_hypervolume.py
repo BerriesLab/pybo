@@ -1,0 +1,258 @@
+import argparse
+import os
+import sys
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.ticker as ticker
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from pybo_gui.configs.figure_settings.config import fig_cfg
+from pybo_gui.configs.settings import data_path
+from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
+from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--x", default="down_time_minutes", help="Result key for first objective")
+parser.add_argument("--y", default="wear_microns",      help="Result key for second objective")
+parser.add_argument("--z", default="",                  help="Result key for third objective (empty = 2D hypervolume)")
+parser.add_argument("--objective", action="append", default=[],
+                    help="Result key for an objective (repeatable). When given, "
+                         "overrides --x/--y/--z and enables N-D hypervolume.")
+parser.add_argument("--maximize", action="append", default=[],
+                    help="Result key of an objective to maximize (repeatable). "
+                         "Its values are negated so the front/hypervolume is "
+                         "always computed as a minimization. Default: minimize.")
+parser.add_argument("--constraint", action="append", default=[],
+                    help="Feasibility constraint as key:op:value (repeatable). "
+                         "Infeasible experiments are excluded from the hypervolume.")
+parser.add_argument("--grouped", action="store_true", default=False,
+                    help="Average replicate experiments per group_id into one point.")
+parser.add_argument("--improvement", action="store_true", default=False,
+                    help="Plot per-step hypervolume improvement (ΔHV) instead of the "
+                         "cumulative hypervolume.")
+args = parser.parse_args()
+try:
+    constraints = parse_constraints(args.constraint)
+except ConstraintError as exc:
+    print(exc)
+    sys.exit(2)
+
+# Objective keys: explicit --objective list (N-D) or the --x/--y[/--z] trio.
+if args.objective:
+    objective_keys = list(args.objective)
+else:
+    objective_keys = [args.x, args.y] + ([args.z] if args.z else [])
+if len(objective_keys) < 2:
+    print("Hypervolume needs at least 2 objectives.")
+    sys.exit(1)
+
+# Per-objective optimisation sense: +1 minimize, -1 maximize. Maximized axes are
+# negated so the whole pipeline (front + hypervolume) stays a pure minimization.
+maximize = set(args.maximize)
+signs = [-1.0 if k in maximize else 1.0 for k in objective_keys]
+
+# ---- CONFIG ----
+MAP_PATH   = os.path.join(data_path, "experiment_map.json")
+OUTPUT_DIR = data_path
+REF_MARGIN = 0.10  # reference point sits this fraction of the data range beyond the worst
+# Baseline groups (by `technology`) excluded from the hypervolume improvement
+# curve: they are reference points, not part of the optimisation campaign.
+EXCLUDED_TECHNOLOGIES = {"standard", "reference"}
+
+MARKERS      = fig_cfg["markers"]["label"]
+LABEL_COLORS = fig_cfg["colors"]["label"]
+SCATTER      = fig_cfg["scatter"]
+
+FONT_LABEL  = fig_cfg["font"]["label"]
+FONT_LEGEND = fig_cfg["font"]["legend"]
+DPI         = fig_cfg["dpi"]
+
+# Axis-label overrides by result key. The problem definition already names its
+# objectives, so this is empty until a key needs a unit or LaTeX in the label.
+PRETTY_NAMES = {}
+
+def _label(exp):
+    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+
+
+def pareto_front_nd(pts):
+    """Non-dominated points (minimisation) for any dimensionality. O(n^2 d)."""
+    front = []
+    for i, pi in enumerate(pts):
+        dominated = False
+        for j, pj in enumerate(pts):
+            if i == j:
+                continue
+            if all(a <= b for a, b in zip(pj, pi)) and any(a < b for a, b in zip(pj, pi)):
+                dominated = True
+                break
+        if not dominated:
+            front.append(pi)
+    return front
+
+
+def hypervolume_nd(points, ref):
+    """Hypervolume dominated by `points` w.r.t. reference `ref` (minimisation),
+    computed by recursive Hypervolume by Slicing Objectives (HSO). `points` and
+    `ref` are equal-length tuples. The recursion slices along the last axis and
+    drops to a 1-D length (ref - min) at the base; dominated points are handled
+    naturally, so the input need not be pre-filtered to the front."""
+    if not points:
+        return 0.0
+    if len(ref) == 1:
+        return max(0.0, ref[0] - min(p[0] for p in points))
+    by_last = sorted(points, key=lambda p: p[-1])
+    hv = 0.0
+    for k, p in enumerate(by_last):
+        lo = p[-1]
+        hi = by_last[k + 1][-1] if k + 1 < len(by_last) else ref[-1]
+        thickness = hi - lo
+        if thickness <= 0:
+            continue
+        active = [q[:-1] for q in by_last[: k + 1]]
+        hv += hypervolume_nd(active, ref[:-1]) * thickness
+    return hv
+
+
+# ---- LOAD ----
+rows = []
+for exp in load_experiments_from_map(MAP_PATH):
+    # Skip baseline/reference groups — they are not part of the optimisation
+    # campaign and must not contribute to the hypervolume improvement curve.
+    if str(exp.get("technology", "")).lower() in EXCLUDED_TECHNOLOGIES:
+        continue
+    r = exp.get("results", {})
+    raw = tuple(r.get(k) for k in objective_keys)
+    if any(v is None for v in raw):
+        continue
+    if not is_feasible(r, constraints):
+        continue
+    # Negate maximized objectives so the point lives in minimization space.
+    point = tuple(s * v for s, v in zip(signs, raw))
+    rows.append({
+        "label":    _label(exp),
+        "group_id": exp["group_id"],
+        "point":    point,
+    })
+
+if not rows:
+    print("No data with the requested keys.")
+    sys.exit(1)
+
+# In grouped mode, collapse replicate experiments (same group_id) — already
+# filtered to feasible, complete, non-baseline — into one point per group whose
+# coordinates are the elementwise mean. Label comes from the group's first row.
+if args.grouped:
+    grouped, order = {}, []
+    for r in rows:
+        gid = r["group_id"]
+        if gid not in grouped:
+            grouped[gid] = []
+            order.append(gid)
+        grouped[gid].append(r)
+    rows = [{
+        "label": grouped[gid][0]["label"],
+        "point": tuple(sum(it["point"][d] for it in grouped[gid]) / len(grouped[gid])
+                       for d in range(len(objective_keys))),
+    } for gid in order]
+
+# ---- FIXED REFERENCE POINT ----
+# Range-based margin so the reference stays "worse" than every point in
+# minimization space, valid for both positive and negated (maximized) axes.
+ref = []
+for d in range(len(objective_keys)):
+    lo = min(row["point"][d] for row in rows)
+    hi = max(row["point"][d] for row in rows)
+    span = hi - lo
+    pad = REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)
+    ref.append(hi + pad)
+ref = tuple(ref)
+
+# ---- INCREMENTAL HYPERVOLUME ----
+steps, hvs, labels = [], [], []
+seen = []
+for r in rows:
+    seen.append(r["point"])
+    front = pareto_front_nd(seen)
+    hv    = hypervolume_nd(front, ref)
+    steps.append(len(seen))
+    hvs.append(hv)
+    labels.append(r["label"])
+
+# ---- PLOT ----
+fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
+
+prev_lbl     = labels[0]
+region_start = steps[0]
+for i in range(1, len(steps) + 1):
+    lbl = labels[i] if i < len(labels) else None
+    if lbl != prev_lbl or i == len(steps):
+        ax.axvspan(
+            region_start - 0.5, steps[i - 1] + 0.5,
+            color=LABEL_COLORS.get(prev_lbl, "#888888"), alpha=0.08,
+        )
+        if i < len(steps):
+            region_start = steps[i]
+            prev_lbl     = lbl
+
+all_labels     = sorted({l for l in labels if l is not None})
+legend_handles = [
+    mlines.Line2D([], [], linestyle="None", marker=MARKERS.get(lbl, "o"),
+                  markerfacecolor=LABEL_COLORS.get(lbl, "#888888"),
+                  markeredgecolor=SCATTER["edge_color"], markeredgewidth=0.8,
+                  markersize=SCATTER["marker_size"] ** 0.5, label=lbl.capitalize())
+    for lbl in all_labels
+]
+
+if args.improvement:
+    # Per-step marginal gain HV(k) - HV(k-1), with HV(0) = 0. Drawn as a log-scale
+    # scatter + connecting line; zero-improvement steps are floored to one decade
+    # below the smallest positive gain so they pin to a row at the bottom (a dotted
+    # line marks that floor). The line stays continuous through the floored points.
+    deltas = [hvs[0]] + [hvs[i] - hvs[i - 1] for i in range(1, len(hvs))]
+    pos    = [d for d in deltas if d > 0]
+    floor  = (min(pos) * 0.1) if pos else 1e-9
+    ydraw  = [d if d > 0 else floor for d in deltas]
+    ax.set_yscale("log")
+    ax.axhline(floor, color="#888888", linestyle=":", linewidth=0.8, alpha=0.7, zorder=1)
+    ax.plot(steps, ydraw, color="black", linewidth=0.8, zorder=2)
+    for lbl in all_labels:
+        marker     = MARKERS.get(lbl, "o")
+        face_color = LABEL_COLORS.get(lbl, "#888888")
+        idx = [i for i, l in enumerate(labels) if l == lbl]
+        ax.scatter(
+            [steps[i] for i in idx],
+            [ydraw[i] for i in idx],
+            s=SCATTER["marker_size"] * 0.7, marker=marker,
+            facecolors=face_color, edgecolors=SCATTER["edge_color"],
+            linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
+        )
+    ax.set_ylabel(r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
+else:
+    ax.plot(steps, hvs, color="black", linewidth=1.2, zorder=3)
+    for lbl in all_labels:
+        marker     = MARKERS.get(lbl, "o")
+        face_color = LABEL_COLORS.get(lbl, "#888888")
+        idx = [i for i, l in enumerate(labels) if l == lbl]
+        ax.scatter(
+            [steps[i] for i in idx],
+            [hvs[i]   for i in idx],
+            s=SCATTER["marker_size"] * 0.7, marker=marker,
+            facecolors=face_color, edgecolors=SCATTER["edge_color"],
+            linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
+        )
+    ax.set_ylabel("Hypervolume", fontsize=FONT_LABEL)
+
+ax.set_xlabel("Number of observations", fontsize=FONT_LABEL)
+
+ax.tick_params(labelsize=FONT_LABEL - 1)
+ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+ax.grid(True, **fig_cfg["grid"])
+leg_cfg = fig_cfg["legend"]
+# loc="best": let matplotlib place the legend where it overlaps the data least
+# (the hypervolume curve typically fills the lower-left, freeing other corners).
+ax.legend(handles=legend_handles, fontsize=FONT_LEGEND,
+          loc="best", frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
+
+fig.tight_layout(pad=fig_cfg["layout_pad"])
+plt.show(block=__name__ == "__main__")

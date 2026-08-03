@@ -1,0 +1,49 @@
+# Application figure settings — this project's domain-specific defaults.
+#
+# Merged on top of the reusable package defaults (configs/figure_settings/defaults.yaml):
+#   package defaults -> THIS file -> publisher style -> user style
+# Everything here is named after this application's plots and observation labels, so it
+# does not belong in the shared package.
+
+# --- Figure aspect ratios (width / height) ---
+# Shape only, never size: the physical width comes from column_width_in (package /
+# publisher), and the height is derived as width / aspect. fig_cfg["figsize"][name]
+# (the [w, h] in inches every plotter reads) is built from these in config.py.
+# Each key is read by exactly one plotter, except "pareto" (2D + 3D), which
+# intentionally share a shape.
+aspect:
+  pareto: 1.25                                 # 5/4   2D & 3D Pareto frontiers (shared)
+  hypervolume: 1.5                             # 3/2   hypervolume vs step
+  evolution: 1.5                               # 3/2   one figure per parameter/result (plot_evolution)
+  results_vs_datetime: 1.5                     # 3/2   results vs date
+  results_vs_timeofday: 1.5                    # 3/2   results vs time of day
+  correlation_matrix: 1.0                      # 1/1   square matrix of Pearson coefficients
+  results_boxplot: 1.5                         # 3/2   per-group distribution of a result
+
+# --- Per-label colours (edge colour; label = experiment_type or technology) ---
+# An observation's label is its provenance: "initial" for the design a run starts from,
+# "proposed" for everything the optimizer picked. The arm that did the picking is carried
+# separately as `technology`, so a campaign comparing arms can key on that instead.
+colors:
+  label:
+    initial: "#0077BB"
+    proposed: "#EE7733"
+    # The arms, for a campaign labelled by technology rather than provenance.
+    bayesian: "#EE7733"
+    sobol: "#0077BB"
+    lhs: "#0077BB"          # same colour as sobol; distinguished by marker
+
+# --- Per-label markers ---
+markers:
+  label:
+    initial: "^"
+    proposed: "o"
+    bayesian: "o"
+    sobol: "^"
+    lhs: "v"
+
+# --- Reference / threshold lines ---
+refline:
+  # plot_evolution draws the end of the initial design with this key. Named "delay" from
+  # the rig it was written for, kept so the script needs no edit.
+  delay: {color: gray, linestyle: "--", linewidth: 1.0, alpha: 0.8}
