@@ -100,19 +100,32 @@ sy = -1.0 if args.y in maximize else 1.0
 # ---- LOAD ----
 use_z = bool(args.z)
 
+def column(exp, key):
+    """A column by name, from the results or from the parameters it was measured at.
+
+    The axis pickers offer both, and a parameter is never in results - looking only
+    there left a parameter-coloured plot with no colour at all.
+    """
+    results = exp.get("results", {})
+    if key in results:
+        return results[key]
+    return (exp.get("parameters") or {}).get(key)
+
+
 raw_rows = []
 for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
         "group_id": exp["group_id"],
-        "x":        r.get(args.x),
-        "y":        r.get(args.y),
+        "x":        column(exp, args.x),
+        "y":        column(exp, args.y),
         # What the measurement said about its own uncertainty. to_json writes a
         # <label>_var next to every value, left null when the run measured none.
+        # A parameter is a setting rather than a measurement, so it has none.
         "x_var":    r.get(f"{args.x}_var"),
         "y_var":    r.get(f"{args.y}_var"),
-        "z_val":    r.get(args.z) if use_z else None,
+        "z_val":    column(exp, args.z) if use_z else None,
         "feasible": is_feasible(r, constraints),
     })
 

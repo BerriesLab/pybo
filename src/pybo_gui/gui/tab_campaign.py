@@ -36,14 +36,17 @@ MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
 
 
 def _result_keys(exp_map: dict) -> list:
-    """Every result key in the experiment map, or [] when nothing is built yet.
+    """Every column in the experiment map, or [] when nothing is built yet.
+
+    Parameters count as columns too: with no objective loaded this is the only source
+    of keys, and leaving them out is what kept a parameter off the colour axis.
 
     The <label>_var partners are left out: they are the uncertainty of a column, read by
     the error bars, not a quantity to put on an axis of its own.
     """
     keys = []
     for entry in (exp_map or {}).get("experiments", []):
-        for key in entry.get("results", {}):
+        for key in list(entry.get("results", {})) + list(entry.get("parameters", {})):
             if key not in keys and not key.endswith("_var"):
                 keys.append(key)
     return sorted(keys)
