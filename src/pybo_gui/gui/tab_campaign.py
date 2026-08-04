@@ -21,7 +21,9 @@ from PySide6.QtWidgets import (
 )
 
 from pybo_gui.configs import settings as configs_settings
-from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
+    DEFAULT_LABEL_BY, LABEL_BY, build_map,
+)
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import launch_analysis, watch
@@ -167,9 +169,18 @@ def build(step_list, settings) -> QWidget:
     btn_view_grp = QPushButton("View group map")
     btn_save_map = QPushButton("Save map")
     btn_load_map = QPushButton("Load map")
+    # What gets its own series and Pareto front. It is baked into the map, so changing it
+    # rebuilds rather than only affecting the next plot.
+    front_label = QLabel("Front per:")
+    front_combo = QComboBox()
+    front_combo.setFixedWidth(140)
+    front_combo.addItems(LABEL_BY)
+    front_combo.setCurrentText(DEFAULT_LABEL_BY)
     map_status = QLabel("")
     map_status.setStyleSheet("color: grey;")
-    map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map, btn_load_map))
+    map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map,
+                              btn_load_map))
+    map_layout.addWidget(_row(front_label, front_combo))
     map_layout.addWidget(map_status)
     layout.addWidget(map_box)
 
@@ -360,7 +371,7 @@ def build(step_list, settings) -> QWidget:
             status.setText("Select at least one step in the Steps window.")
             return False
         try:
-            exp_map = build_map(steps)
+            exp_map = build_map(steps, front_combo.currentText())
             groups = build_groups(exp_map)
         except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
             status.setText(f"Map build failed: {exc}")
@@ -374,9 +385,11 @@ def build(step_list, settings) -> QWidget:
         # session, not the user's data tree - Save map is how a copy gets kept.
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
+        series = len({e["experiment_type"] for e in exp_map["experiments"]})
         map_status.setText(f"{len(exp_map['experiments'])} observations from "
                            f"{len(steps)} selected director"
-                           f"{'y' if len(steps) == 1 else 'ies'}, held in memory")
+                           f"{'y' if len(steps) == 1 else 'ies'}, {series} series "
+                           f"by {front_combo.currentText()}, held in memory")
         return True
 
     def _write_map(out_dir) -> Path:
@@ -419,7 +432,11 @@ def build(step_list, settings) -> QWidget:
         try:
             groups = json.loads((source / "group_map.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            # A map saved without its groups is still usable: they are derivable from it.
+            groups = None
+        # A map saved without its groups, or saved before grouping wrote a group_id into
+        # each entry, is still usable: the grouping is derivable from the map itself.
+        if groups is None or any("group_id" not in e
+                                 for e in exp_map.get("experiments", [])):
             groups = build_groups(exp_map)
 
         state["map"], state["groups"] = exp_map, groups
@@ -545,6 +562,8 @@ def build(step_list, settings) -> QWidget:
                                                          state["map"]))
     btn_save_map.clicked.connect(_save_map)
     btn_load_map.clicked.connect(_load_map)
+    # The label lives in the map, so a change only takes effect once it is rebuilt.
+    front_combo.currentTextChanged.connect(lambda _t: _rebuild_map() and _refresh_keys())
 
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))

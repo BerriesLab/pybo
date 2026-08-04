@@ -88,8 +88,9 @@ class StepListWindow(QWidget):
         """
         ticked = []
         for item in self._walk():
-            if item.checkState(0) == Qt.CheckState.Checked:
-                ticked.append(Path(item.data(0, _PATH_ROLE)))
+            path = item.data(0, _PATH_ROLE)
+            if path and item.checkState(0) == Qt.CheckState.Checked:
+                ticked.append(Path(path))
         pruned = []
         for path in ticked:
             if not any(other != path and other in path.parents for other in ticked):
@@ -113,9 +114,52 @@ class StepListWindow(QWidget):
         self._tree.blockSignals(False)
         self._update_status()
 
+    def _cascade(self, item: QTreeWidgetItem, state) -> None:
+        """Give every already-listed descendant the same state.
+
+        Nodes not opened yet have no children to set; _fill passes the state down when
+        it lists them, so an unopened subtree ends up matching too.
+        """
+        for i in range(item.childCount()):
+            child = item.child(i)
+            if child.data(0, _PATH_ROLE) is None:  # the "..." placeholder
+                continue
+            child.setCheckState(0, state)
+            self._cascade(child, state)
+
+    def _update_ancestors(self, item: QTreeWidgetItem) -> None:
+        """Bring each ancestor into line with its children.
+
+        Without this a ticked parent would keep covering a child the user has just
+        unticked - the parent is what gets sent, so the untick would do nothing. A
+        parent whose children disagree goes partially checked, which is not a selection
+        of its own: its ticked children are then sent individually.
+        """
+        parent = item.parent()
+        while parent is not None:
+            states = [parent.child(i).checkState(0) for i in range(parent.childCount())
+                      if parent.child(i).data(0, _PATH_ROLE) is not None]
+            if states and all(s == Qt.CheckState.Checked for s in states):
+                state = Qt.CheckState.Checked
+            elif not states or all(s == Qt.CheckState.Unchecked for s in states):
+                state = Qt.CheckState.Unchecked
+            else:
+                state = Qt.CheckState.PartiallyChecked
+            if parent.checkState(0) == state:
+                break
+            parent.setCheckState(0, state)
+            parent = parent.parent()
+
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if column != 0:
             return
+        # Ticking a directory means everything under it, so the tree says so: the
+        # children follow, and the ancestors are re-derived from what is now ticked.
+        self._tree.blockSignals(True)
+        if item.checkState(0) != Qt.CheckState.PartiallyChecked:
+            self._cascade(item, item.checkState(0))
+        self._update_ancestors(item)
+        self._tree.blockSignals(False)
         self._update_status()
         if self._on_selection is not None:
             self._on_selection(self.checked_paths)

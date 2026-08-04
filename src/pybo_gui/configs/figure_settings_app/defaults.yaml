@@ -32,6 +32,18 @@ colors:
     bayesian: "#EE7733"
     sobol: "#0077BB"
     lhs: "#0077BB"          # same colour as sobol; distinguished by marker
+  # Labels the table above does not name - run directories, say, which cannot be listed
+  # in advance - take a colour from here by position, so each series is distinct and
+  # keeps the same colour between plots of one campaign.
+  cycle:
+    - "#EE7733"
+    - "#0077BB"
+    - "#009988"
+    - "#CC3311"
+    - "#AA3377"
+    - "#EE3377"
+    - "#BBBBBB"
+    - "#332288"
 
 # --- Per-label markers ---
 markers:

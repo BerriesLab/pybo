@@ -178,10 +178,60 @@ if use_z:
         use_z = False
 
 # ---- PARETO FRONTS ----
-EXPLORATION_LABELS     = ["initial", "sobol", "lhs", "manual"]
-EXPLORATION_LINESTYLES = {"initial": ":", "sobol": "-.", "lhs": "-.", "manual": "-."}
-EXPLORATION_COLOR      = "#888888"  # shared colour for all exploration fronts
-final_front = pareto_front([(r["x"], r["y"]) for r in valid if r["feasible"]], sx, sy)
+# One front per series present, so what a front is drawn per is decided upstream by the
+# map's --label-by (run, strategy, strategy+run, provenance) rather than fixed here.
+FRONT_LABELS     = sorted({r["label"] for r in valid})
+FRONT_LINESTYLES = {"initial": ":", "sobol": "-.", "lhs": "-.", "manual": "-."}
+FRONT_COLOR      = "#888888"  # fallback for a label the style gives no colour
+
+
+# Labels the style names explicitly keep their colour; anything else - a run directory,
+# say - takes one from the cycle by position, so every series is distinct and keeps the
+# same colour across the plots of one campaign.
+_COLOR_CYCLE = fig_cfg["colors"].get("cycle") or [FRONT_COLOR]
+INITIAL_SUFFIX = " (initial)"
+
+
+def _is_initial(lbl):
+    return lbl == "initial" or lbl.endswith(INITIAL_SUFFIX)
+
+
+def _base_label(lbl):
+    """A design series and the proposals it belongs to share a base, so they share a
+    colour and sit together in the legend; the linestyle and marker tell them apart."""
+    return lbl[:-len(INITIAL_SUFFIX)] if lbl.endswith(INITIAL_SUFFIX) else lbl
+
+
+def _label_color(lbl):
+    base = _base_label(lbl)
+    if base in LABEL_COLORS:
+        return LABEL_COLORS[base]
+    order = sorted({_base_label(r["label"]) for r in valid} - set(LABEL_COLORS))
+    return _COLOR_CYCLE[order.index(base) % len(_COLOR_CYCLE)] if base in order else FRONT_COLOR
+
+
+def _label_marker(lbl):
+    """The design keeps its own marker whatever it qualifies, so it reads as exploration."""
+    if _is_initial(lbl):
+        return MARKERS.get("initial", "^")
+    return MARKERS.get(_base_label(lbl), "o")
+
+
+# Dash patterns for the two kinds of front. A phase offset per series is what keeps
+# coincident fronts visible: two arms started from one seed share an initial design
+# exactly, so their design fronts sit on the same points, and without the offset the one
+# drawn last simply hides the other.
+_DASHES = {"initial": (1, 3), "proposed": (6, 2)}
+
+
+def _front_style(lbl):
+    pattern = _DASHES["initial"] if _is_initial(lbl) else _DASHES["proposed"]
+    # Spread the phases of the series sharing a pattern evenly over its period, so no two
+    # of them land on the same offset and cancel the whole point of offsetting.
+    peers = [l for l in FRONT_LABELS if _is_initial(l) == _is_initial(lbl)]
+    period = sum(pattern)
+    phase = period * peers.index(lbl) / len(peers) if lbl in peers else 0.0
+    return phase, pattern
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
@@ -191,7 +241,7 @@ legend_handles = []
 _last_sc       = None
 
 for lbl in all_labels:
-    marker = MARKERS.get(lbl, "o")
+    marker = _label_marker(lbl)
     subset = [r for r in valid if r["label"] == lbl and r["feasible"]]
     if use_z:
         subset = [r for r in subset if r["z_val"] is not None]
@@ -202,7 +252,7 @@ for lbl in all_labels:
         if use_z:
             colors_pts = [z_cmap(z_norm(r["z_val"])) for r in subset]
         else:
-            face_color = LABEL_COLORS.get(lbl, "#888888")
+            face_color = _label_color(lbl)
             colors_pts = [face_color] * len(subset)
         for r, fc in zip(subset, colors_pts):
             xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["n"] > 1 else None
@@ -238,7 +288,7 @@ for lbl in all_labels:
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3,
             )
         else:
-            face_color = LABEL_COLORS.get(lbl, "#888888")
+            face_color = _label_color(lbl)
             ax.scatter(
                 [r["x"] for r in subset], [r["y"] for r in subset],
                 s=SCATTER["marker_size"], marker=marker,
@@ -246,7 +296,7 @@ for lbl in all_labels:
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3,
             )
 
-    legend_face = "gray" if use_z else LABEL_COLORS.get(lbl, "#888888")
+    legend_face = "gray" if use_z else _label_color(lbl)
     legend_handles.append(
         mlines.Line2D([], [], linestyle="None", marker=marker,
                       markerfacecolor=legend_face, markeredgecolor=SCATTER["edge_color"],
@@ -296,14 +346,14 @@ if args.show_numbers:
                     fontsize=FONT_LEGEND - 2, color="dimgray")
 
 # Exploration Pareto fronts (sobol, lhs, manual) — shared colour and style.
-for expl_lbl in EXPLORATION_LABELS:
+for expl_lbl in FRONT_LABELS:
     pts   = [(r["x"], r["y"]) for r in valid if r["label"] == expl_lbl and r["feasible"]]
     front = pareto_front(pts, sx, sy)
     if not front:
         continue
-    color  = EXPLORATION_COLOR
-    marker = MARKERS.get(expl_lbl, "o")
-    ls     = EXPLORATION_LINESTYLES[expl_lbl]
+    color  = _label_color(expl_lbl)
+    marker = _label_marker(expl_lbl)
+    ls     = _front_style(expl_lbl)
     xs, ys = [p[0] for p in front], [p[1] for p in front]
     ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=ls, zorder=2)
     ax.scatter(xs, ys, s=SCATTER["marker_size"], marker=marker, facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
@@ -311,20 +361,6 @@ for expl_lbl in EXPLORATION_LABELS:
         mlines.Line2D([], [], color=color, linewidth=1.0, linestyle=ls,
                       label=f"Pareto front ({expl_lbl})")
     )
-
-# Final Pareto front: dashed connector + a hollow black ring around each
-# front point (matching the 3D highlight) so the point's own colour shows
-# through, instead of covering it with a solid black dot.
-fx = [p[0] for p in final_front]
-fy = [p[1] for p in final_front]
-ax.plot(fx, fy, color="black", linewidth=1.2, linestyle="--", zorder=2)
-ax.scatter(fx, fy, s=SCATTER["marker_size"] * 1.6, marker="o",
-           facecolors="none", edgecolors="black", linewidths=1.6, zorder=5)
-legend_handles.append(
-    mlines.Line2D([], [], color="black", linewidth=1.2, linestyle="--",
-                  marker="o", markerfacecolor="none", markeredgecolor="black",
-                  markeredgewidth=1.6, markersize=SCATTER["marker_size"] ** 0.5, label="Pareto front (final)")
-)
 
 xlabel = args.xlabel if args.xlabel else PRETTY_NAMES.get(args.x, args.x)
 ylabel = args.ylabel if args.ylabel else PRETTY_NAMES.get(args.y, args.y)

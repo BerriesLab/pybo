@@ -4,19 +4,51 @@ The plot scripts were written for a rig where one experiment is one measured poi
 flat dict of results. A pybo observation is exactly that, so this walks the selected steps
 and emits one record per observation.
 
-`group_id` is the observation index, so a group holds the same evaluation count across
-replicate runs - which is what makes --grouped mean "mean +- std over seeds at that
-point in the campaign", the same shape of statement the original made about repeated
-settings.
+Each record carries where it sits in its run and which arm produced it; build_group_map
+turns that pair into the group_id the plots aggregate by, so a group holds the same
+evaluation count of the same arm across replicate runs. That is what makes --grouped mean
+"mean +- std over seeds at that point in the campaign", the same shape of statement the
+original made about a repeated setting.
 
-`experiment_type` carries the observation's provenance ("initial" / "proposed") because
-that is what the scripts label, colour and draw separate exploration fronts by;
-`technology` carries the arm that produced it ("bayesian" / "sobol").
+`experiment_type` is what the scripts label, colour and draw a separate Pareto front by,
+so what goes into it decides what a front is drawn per - see LABEL_BY. `technology`
+carries the arm ("bayesian" / "sobol") whatever the labelling, so nothing else loses it.
 """
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+
+
+# What an observation is labelled by, and so what gets its own series and Pareto front.
+LABEL_BY = ("run", "strategy", "strategy+run", "provenance")
+DEFAULT_LABEL_BY = "run"
+
+# Marks a label as the initial design of whatever it is qualifying. The plots read it to
+# style those series as exploration - dotted front, the design's marker - and to pair them
+# with the proposals they belong to.
+INITIAL_SUFFIX = " (initial)"
+
+
+def _label_for(observation: dict, technology, run: str, label_by: str) -> str:
+    """The label an observation carries, under the chosen dimension.
+
+    The initial design is a series of its own *within* the dimension, not across it: a
+    run's design is labelled separately from that run's proposals, but two runs never
+    share one design series. That is what lets a plot show, per run, what its design
+    alone reached against what the arm found afterwards.
+    """
+    source = observation.get("source")
+    if label_by == "provenance":
+        # The dimension already is the provenance, so there is nothing to qualify.
+        return source
+    if label_by == "strategy":
+        base = technology
+    elif label_by == "strategy+run":
+        base = f"{technology}/{run}"
+    else:
+        base = run
+    return f"{base}{INITIAL_SUFFIX}" if source == "initial" else base
 
 
 def _epoch(stamp):
@@ -49,12 +81,18 @@ def find_steps(roots) -> list:
     return found
 
 
-def build_map(roots) -> dict:
-    """One record per observation, in chronological order."""
+def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
+    """One record per observation, in chronological order.
+
+    `label_by` decides what each observation is labelled by, and so what gets its
+    own series and Pareto front downstream.
+    """
     records = []
     for path in find_steps(roots):
         step_dir = path.parent
         record = json.loads(path.read_text(encoding="utf-8"))
+        run = step_dir.parent.name
+        technology = record.get("experiment_type")
         for observation in record.get("data", []):
             # Values only. A record always carries a <label>_var partner and leaves it
             # null when the run measured no noise, and an unmeasured column is not
@@ -66,29 +104,32 @@ def build_map(roots) -> dict:
                                 if value is not None})
             records.append({
                 "iteration":       step_dir.name,
-                "group_id":        observation.get("observation_n"),
+                # Where this sits in its run. build_group_map turns it, together with the
+                # arm, into the group_id the plots aggregate by.
+                "observation":     observation.get("observation_n"),
                 "experiment_id":   f"{step_dir.parent.name}/{step_dir.name}"
                                    f"#{observation.get('observation_n')}",
-                "experiment_type": observation.get("source"),
-                "technology":      record.get("experiment_type"),
+                "experiment_type": _label_for(observation, technology, run, label_by),
+                "source":          observation.get("source"),
+                "technology":      technology,
                 "start_time":      _epoch(record.get("datetime")),
-                "run":             step_dir.parent.name,
+                "run":             run,
                 "path":            str(step_dir),
                 "parameters":      observation.get("parameters") or {},
                 "results":         results,
             })
 
-    records.sort(key=lambda r: (r["start_time"] or 0.0, r["group_id"] or 0))
+    records.sort(key=lambda r: (r["start_time"] or 0.0, r["observation"] or 0))
     for i, record in enumerate(records, start=1):
         record["index"] = i
     return {"experiments": records}
 
 
-def build_and_save(out_dir, roots=None) -> Path:
+def build_and_save(out_dir, roots=None, label_by: str = DEFAULT_LABEL_BY) -> Path:
     """Write experiment_map.json under `out_dir`, over `roots` (default: out_dir)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    result = build_map(roots or [out_dir])
+    result = build_map(roots or [out_dir], label_by)
     out_path = out_dir / "experiment_map.json"
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"Wrote {len(result['experiments'])} observations -> {out_path}")
@@ -102,8 +143,12 @@ def main():
     parser.add_argument("--step", action="append", default=[],
                         help="A step, run or study directory (repeatable). "
                              "Defaults to out_dir.")
+    parser.add_argument("--label-by", choices=LABEL_BY, default=DEFAULT_LABEL_BY,
+                        dest="label_by",
+                        help="What an observation is labelled by, and so what gets its "
+                             "own series and Pareto front (default: %(default)s).")
     args = parser.parse_args()
-    build_and_save(args.out_dir, args.step or None)
+    build_and_save(args.out_dir, args.step or None, args.label_by)
 
 
 if __name__ == "__main__":
