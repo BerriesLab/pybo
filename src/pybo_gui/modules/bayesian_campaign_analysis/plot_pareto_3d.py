@@ -10,6 +10,7 @@ import matplotlib.colors as mcolors
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
+from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 
@@ -191,11 +192,12 @@ for r, m in zip(feasible_rows, nd_mask):
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
 
 all_labels     = sorted({r["label"] for r in valid})
+_color, _marker, _front_style = styler(fig_cfg, all_labels)
 legend_handles = []
 _last_sc       = None
 
 for lbl in all_labels:
-    marker = MARKERS.get(lbl, "o")
+    marker = _marker(lbl)
     subset = [r for r in valid if r["label"] == lbl and r["feasible"]]
     if not subset:
         continue

@@ -32,6 +32,9 @@ colors:
     bayesian: "#EE7733"
     sobol: "#0077BB"
     lhs: "#0077BB"          # same colour as sobol; distinguished by marker
+  # The true objective drawn under a campaign. Neutral and light, so it reads as the
+  # backdrop the observations sit on rather than as another series.
+  ground_truth: "#8A8F98"
   # Labels the table above does not name - run directories, say, which cannot be listed
   # in advance - take a colour from here by position, so each series is distinct and
   # keeps the same colour between plots of one campaign.

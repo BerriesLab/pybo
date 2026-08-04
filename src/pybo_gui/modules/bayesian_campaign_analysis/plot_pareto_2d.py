@@ -12,6 +12,7 @@ from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
+from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
@@ -29,6 +30,17 @@ parser.add_argument("--maximize", action="append", default=[],
                     help="Result key of an objective to maximize (repeatable). "
                          "Its axis is negated for the Pareto-front computation "
                          "only; plotted values stay real. Default: minimize.")
+parser.add_argument("--ground-truth", default="", dest="ground_truth",
+                    help="Path to the run's objective.py. When given, the true "
+                         "objective is drawn under the observations.")
+parser.add_argument("--gt-method", choices=["random", "grid"], default="random",
+                    dest="gt_method",
+                    help="How the ground truth covers the space: random samples, or a "
+                         "uniform grid.")
+parser.add_argument("--gt-samples", type=int, default=4096, dest="gt_samples",
+                    help="Samples drawn when --gt-method is random.")
+parser.add_argument("--gt-spacing", type=float, default=0.05, dest="gt_spacing",
+                    help="Step on every axis when --gt-method is grid.")
 parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
@@ -181,63 +193,37 @@ if use_z:
 # One front per series present, so what a front is drawn per is decided upstream by the
 # map's --label-by (run, strategy, strategy+run, provenance) rather than fixed here.
 FRONT_LABELS     = sorted({r["label"] for r in valid})
-FRONT_LINESTYLES = {"initial": ":", "sobol": "-.", "lhs": "-.", "manual": "-."}
-FRONT_COLOR      = "#888888"  # fallback for a label the style gives no colour
 
 
-# Labels the style names explicitly keep their colour; anything else - a run directory,
-# say - takes one from the cycle by position, so every series is distinct and keeps the
-# same colour across the plots of one campaign.
-_COLOR_CYCLE = fig_cfg["colors"].get("cycle") or [FRONT_COLOR]
-INITIAL_SUFFIX = " (initial)"
-
-
-def _is_initial(lbl):
-    return lbl == "initial" or lbl.endswith(INITIAL_SUFFIX)
-
-
-def _base_label(lbl):
-    """A design series and the proposals it belongs to share a base, so they share a
-    colour and sit together in the legend; the linestyle and marker tell them apart."""
-    return lbl[:-len(INITIAL_SUFFIX)] if lbl.endswith(INITIAL_SUFFIX) else lbl
-
-
-def _label_color(lbl):
-    base = _base_label(lbl)
-    if base in LABEL_COLORS:
-        return LABEL_COLORS[base]
-    order = sorted({_base_label(r["label"]) for r in valid} - set(LABEL_COLORS))
-    return _COLOR_CYCLE[order.index(base) % len(_COLOR_CYCLE)] if base in order else FRONT_COLOR
-
-
-def _label_marker(lbl):
-    """The design keeps its own marker whatever it qualifies, so it reads as exploration."""
-    if _is_initial(lbl):
-        return MARKERS.get("initial", "^")
-    return MARKERS.get(_base_label(lbl), "o")
-
-
-# Dash patterns for the two kinds of front. A phase offset per series is what keeps
-# coincident fronts visible: two arms started from one seed share an initial design
-# exactly, so their design fronts sit on the same points, and without the offset the one
-# drawn last simply hides the other.
-_DASHES = {"initial": (1, 3), "proposed": (6, 2)}
-
-
-def _front_style(lbl):
-    pattern = _DASHES["initial"] if _is_initial(lbl) else _DASHES["proposed"]
-    # Spread the phases of the series sharing a pattern evenly over its period, so no two
-    # of them land on the same offset and cancel the whole point of offsetting.
-    peers = [l for l in FRONT_LABELS if _is_initial(l) == _is_initial(lbl)]
-    period = sum(pattern)
-    phase = period * peers.index(lbl) / len(peers) if lbl in peers else 0.0
-    return phase, pattern
+_label_color, _label_marker, _front_style = styler(fig_cfg, FRONT_LABELS)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
 
+if args.ground_truth:
+    # Under everything: it is the backdrop the campaign is read against, not a series.
+    from pybo_gui.modules.bayesian_campaign_analysis._ground_truth import ground_truth
+    gt_points, gt_front = ground_truth(args.ground_truth, args.x, args.y,
+                                       args.gt_method, args.gt_samples, args.gt_spacing)
+    if gt_points:
+        gt_color = fig_cfg["colors"].get("ground_truth", "#8A8F98")
+        ax.scatter([p[0] for p in gt_points], [p[1] for p in gt_points],
+                   s=SCATTER["marker_size"] * 0.25, marker=".", facecolors=gt_color,
+                   edgecolors="none", alpha=0.25, zorder=0)
+        if gt_front:
+            ax.plot([p[0] for p in gt_front], [p[1] for p in gt_front],
+                    color=gt_color, linewidth=1.2, zorder=1)
+            legend_handles_gt = mlines.Line2D([], [], color=gt_color, linewidth=1.2,
+                                              label="Ground truth")
+        else:
+            legend_handles_gt = None
+    else:
+        legend_handles_gt = None
+else:
+    legend_handles_gt = None
+
 all_labels     = sorted({r["label"] for r in valid})
-legend_handles = []
+legend_handles = [legend_handles_gt] if legend_handles_gt is not None else []
 _last_sc       = None
 
 for lbl in all_labels:
@@ -298,9 +284,11 @@ for lbl in all_labels:
 
     legend_face = "gray" if use_z else _label_color(lbl)
     legend_handles.append(
-        mlines.Line2D([], [], linestyle="None", marker=marker,
+        mlines.Line2D([], [], color=_label_color(lbl), linewidth=1.0,
+                      linestyle=_front_style(lbl), marker=marker,
                       markerfacecolor=legend_face, markeredgecolor=SCATTER["edge_color"],
-                      markeredgewidth=0.8, markersize=SCATTER["marker_size"] ** 0.5, label=lbl.capitalize())
+                      markeredgewidth=0.8, markersize=SCATTER["marker_size"] ** 0.5,
+                      label=lbl.capitalize())
     )
 
 # Infeasible points (violating a constraint): drawn as individual filled "X"
@@ -357,10 +345,8 @@ for expl_lbl in FRONT_LABELS:
     xs, ys = [p[0] for p in front], [p[1] for p in front]
     ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=ls, zorder=2)
     ax.scatter(xs, ys, s=SCATTER["marker_size"], marker=marker, facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
-    legend_handles.append(
-        mlines.Line2D([], [], color=color, linewidth=1.0, linestyle=ls,
-                      label=f"Pareto front ({expl_lbl})")
-    )
+    # No handle here: the series' own entry already carries this front's colour and dash,
+    # and repeating the run's name once per front is what made the legend swallow the plot.
 
 xlabel = args.xlabel if args.xlabel else PRETTY_NAMES.get(args.x, args.x)
 ylabel = args.ylabel if args.ylabel else PRETTY_NAMES.get(args.y, args.y)
@@ -370,8 +356,18 @@ ax.set_ylabel(ylabel, fontsize=FONT_LABEL)
 ax.tick_params(labelsize=FONT_LABEL - 1)
 ax.grid(True, **fig_cfg["grid"])
 leg_cfg = fig_cfg["legend"]
-ax.legend(handles=legend_handles, fontsize=FONT_LEGEND,
-          loc="best", frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
+# Long run names in quantity outgrow any corner, so past a handful the legend moves under
+# the axes and splits into columns instead of covering the data.
+legend_below = len(legend_handles) > 4
+if legend_below:
+    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND - 1,
+              loc="upper center", bbox_to_anchor=(0.5, -0.16),
+              ncol=1 if len(legend_handles) <= 6 else 2,
+              frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
+else:
+    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND,
+                       loc="best", frameon=leg_cfg["frameon"],
+                       framealpha=leg_cfg["framealpha"])
 
 if use_z and _last_sc is not None:
     zlabel = args.zlabel if args.zlabel else PRETTY_NAMES.get(args.z, args.z)
@@ -380,4 +376,10 @@ if use_z and _last_sc is not None:
     cbar.ax.tick_params(labelsize=FONT_LABEL - 1)
 
 fig.tight_layout(pad=fig_cfg["layout_pad"])
+if legend_below:
+    # tight_layout reserves nothing for a legend anchored outside the axes, so measure
+    # what it actually took and give it that much of the figure.
+    fig.canvas.draw()
+    height = legend.get_window_extent().transformed(fig.transFigure.inverted()).height
+    fig.subplots_adjust(bottom=min(0.6, height + 0.14))
 plt.show(block=__name__ == "__main__")

@@ -25,6 +25,55 @@ _PATH_ROLE = Qt.ItemDataRole.UserRole
 _FILLED_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
+class _DragSelectTree(QTreeWidget):
+    """A tree whose checkboxes can be swept with a left-drag.
+
+    Qt handles the press, so clicking a box still toggles it and the expand arrows still
+    work; the drag then applies whatever state that first row ended up in to every row
+    the cursor passes. Sweeping down a list of runs is one gesture rather than one click
+    each, and sweeping from a ticked row clears a range just as easily.
+
+    `on_drag` is called with True when a sweep starts and False when it ends, so the
+    window can hold off recounting the selection until the gesture is over - the count
+    walks the filesystem, which is not something to do once per row.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._state = None
+        self._applied = set()
+        self.on_drag = None
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        item = self.itemAt(event.position().toPoint())
+        if item is None or item.data(0, _PATH_ROLE) is None:
+            return
+        self._state = item.checkState(0)
+        self._applied = {id(item)}
+
+    def mouseMoveEvent(self, event):
+        if self._state is None or not (event.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(event)
+            return
+        item = self.itemAt(event.position().toPoint())
+        if item is None or item.data(0, _PATH_ROLE) is None or id(item) in self._applied:
+            return
+        if len(self._applied) == 1 and self.on_drag is not None:
+            self.on_drag(True)  # the press alone was a click; this is now a sweep
+        self._applied.add(id(item))
+        item.setCheckState(0, self._state)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        swept = self._state is not None and len(self._applied) > 1
+        self._state, self._applied = None, set()
+        if swept and self.on_drag is not None:
+            self.on_drag(False)
+
+
 class StepListWindow(QWidget):
     """A non-closable side window for choosing what a plot covers."""
 
@@ -37,6 +86,8 @@ class StepListWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self._force_close = False
         self._on_selection = on_selection
+        # Recounting walks the filesystem, so it waits until a sweep is finished.
+        self._sweeping = False
 
         layout = QVBoxLayout(self)
 
@@ -52,8 +103,11 @@ class StepListWindow(QWidget):
         row.addWidget(rescan)
         layout.addLayout(row)
 
-        self._tree = QTreeWidget()
+        self._tree = _DragSelectTree()
+        self._tree.on_drag = self._on_drag
         self._tree.setHeaderLabels(["Directory"])
+        # Drag across rows to sweep their checkboxes; the press still toggles one.
+        self._tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
         self._tree.itemChanged.connect(self._on_item_changed)
         # Children are built the first time a node is opened, so pointing at a deep tree
         # costs one directory listing rather than a full walk.
@@ -161,10 +215,19 @@ class StepListWindow(QWidget):
         self._update_ancestors(item)
         self._tree.blockSignals(False)
         self._update_status()
-        if self._on_selection is not None:
+        if self._on_selection is not None and not self._sweeping:
             self._on_selection(self.checked_paths)
 
+    def _on_drag(self, sweeping: bool) -> None:
+        self._sweeping = sweeping
+        if not sweeping:
+            self._update_status()
+            if self._on_selection is not None:
+                self._on_selection(self.checked_paths)
+
     def _update_status(self) -> None:
+        if self._sweeping:
+            return
         selected = self.checked_paths
         if not selected:
             self._status.setText("Nothing selected — tick any directory to include "

@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
+from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial, styler
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 
 parser = argparse.ArgumentParser(description="Per-parameter/result evolution plot.")
@@ -19,7 +20,8 @@ args = parser.parse_args()
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
 OUTPUT_DIR = data_path
 
-EXPLORATION_LABELS = {"initial", "sobol", "lhs", "manual"}  # mirror plot_pareto_2d.py
+# The design is recognised by its label rather than by a fixed list, since the label
+# is qualified by whatever the map was built by ("bayesian_run3 (initial)").
 ITERATION_KEY      = "iteration"                 # metadata field; init = 0
 
 MARKERS      = fig_cfg["markers"]["label"]
@@ -104,6 +106,7 @@ if args.grouped:
     } for gid in order]
 
 all_labels = sorted({r["label"] for r in rows})
+_color, _marker, _ = styler(fig_cfg, all_labels)
 
 # ---- EVOLUTION GEOMETRY ----
 # x is "number of observations": the initial-design block sits on one vertical
@@ -112,8 +115,8 @@ all_labels = sorted({r["label"] for r in rows})
 # sequence [init, step_1, step_2, ...] drives the interconnection lines.
 rows.sort(key=lambda r: r["index"])  # chronological (already sorted by start_time)
 
-init_block    = [r for r in rows if r["label"] in EXPLORATION_LABELS]
-bayesian_rows = [r for r in rows if r["label"] not in EXPLORATION_LABELS]
+init_block    = [r for r in rows if is_initial(r["label"])]
+bayesian_rows = [r for r in rows if not is_initial(r["label"])]
 n_init        = len(init_block)
 
 # Group Bayesian rows into steps by their shared iteration number; rows missing a
@@ -144,9 +147,9 @@ CONNECT = {"color": "#888888", "linewidth": fig_cfg["grid"]["linewidth"],
 # Build legend handles once — same set of labels appears in every figure.
 legend_handles = {}
 for lbl in all_labels:
-    style_key  = "initial" if lbl in EXPLORATION_LABELS else lbl
-    marker     = MARKERS.get(style_key, "o")
-    face_color = LABEL_COLORS.get(style_key, "#888888")
+    style_key  = "initial" if is_initial(lbl) else lbl
+    marker     = _marker(lbl)
+    face_color = _color(lbl)
     if style_key not in legend_handles:
         legend_handles[style_key] = mlines.Line2D(
             [], [], linestyle="None", marker=marker,
@@ -177,9 +180,9 @@ for col in all_cols:
                 ax.plot([a["x"], b["x"]], [ya, yb], **CONNECT)
 
     for lbl in all_labels:
-        style_key  = "initial" if lbl in EXPLORATION_LABELS else lbl
-        marker     = MARKERS.get(style_key, "o")
-        face_color = LABEL_COLORS.get(style_key, "#888888")
+        style_key  = "initial" if is_initial(lbl) else lbl
+        marker     = _marker(lbl)
+        face_color = _color(lbl)
         subset = [r for r in rows if r["label"] == lbl and r[source].get(col) is not None]
         xs = [r["x"] for r in subset]
         ys = [r[source].get(col) for r in subset]

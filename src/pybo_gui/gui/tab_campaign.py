@@ -17,13 +17,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
-    QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from pybo_gui.configs import settings as configs_settings
-from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
-    DEFAULT_LABEL_BY, LABEL_BY, build_map,
-)
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import launch_analysis, watch
@@ -169,18 +168,10 @@ def build(step_list, settings) -> QWidget:
     btn_view_grp = QPushButton("View group map")
     btn_save_map = QPushButton("Save map")
     btn_load_map = QPushButton("Load map")
-    # What gets its own series and Pareto front. It is baked into the map, so changing it
-    # rebuilds rather than only affecting the next plot.
-    front_label = QLabel("Front per:")
-    front_combo = QComboBox()
-    front_combo.setFixedWidth(140)
-    front_combo.addItems(LABEL_BY)
-    front_combo.setCurrentText(DEFAULT_LABEL_BY)
     map_status = QLabel("")
     map_status.setStyleSheet("color: grey;")
     map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map,
                               btn_load_map))
-    map_layout.addWidget(_row(front_label, front_combo))
     map_layout.addWidget(map_status)
     layout.addWidget(map_box)
 
@@ -255,6 +246,25 @@ def build(step_list, settings) -> QWidget:
     rb_std.setChecked(True)
     rb_minmax = QRadioButton("Min/max")
     cb_numbers = QCheckBox("Show numbers")
+    # The true objective behind the campaign. Only the objective knows it, so this stays
+    # disabled until one is loaded.
+    cb_ground = QCheckBox("Ground truth")
+    cb_ground.setEnabled(False)
+    cb_ground.setToolTip("Load an objective to draw the true front under the observations")
+    gt_method = QComboBox()
+    gt_method.addItems(["random", "grid"])
+    gt_method.setFixedWidth(90)
+    gt_samples = QSpinBox()
+    gt_samples.setRange(16, 1_000_000)
+    gt_samples.setValue(4096)
+    gt_samples.setSingleStep(512)
+    gt_samples.setPrefix("N = ")
+    gt_spacing = QDoubleSpinBox()
+    gt_spacing.setDecimals(4)
+    gt_spacing.setRange(0.0001, 1.0)
+    gt_spacing.setValue(0.05)
+    gt_spacing.setSingleStep(0.01)
+    gt_spacing.setPrefix("Δ = ")
     for widget in (rb_std, rb_minmax):
         widget.setEnabled(False)
     cb_grouped.stateChanged.connect(
@@ -263,6 +273,7 @@ def build(step_list, settings) -> QWidget:
     status.setStyleSheet("color: grey;")
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     plot_layout.addWidget(_row(cb_grouped, rb_std, rb_minmax, cb_numbers))
+    plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing))
     plot_layout.addWidget(status)
     layout.addWidget(plot_box)
 
@@ -275,6 +286,28 @@ def build(step_list, settings) -> QWidget:
     layout.addStretch()
 
     # ---- Key discovery -------------------------------------------------------
+
+    def _sync_ground_truth() -> None:
+        """Only offer the ground truth when the objective that defines it is loaded."""
+        loaded = state["problem"] is not None
+        cb_ground.setEnabled(loaded)
+        if not loaded:
+            cb_ground.setChecked(False)
+        on = loaded and cb_ground.isChecked()
+        gt_method.setEnabled(on)
+        gt_samples.setEnabled(on and gt_method.currentText() == "random")
+        gt_spacing.setEnabled(on and gt_method.currentText() == "grid")
+
+    cb_ground.stateChanged.connect(lambda _s: _sync_ground_truth())
+    gt_method.currentTextChanged.connect(lambda _t: _sync_ground_truth())
+
+    def _ground_truth_args() -> list:
+        if not (cb_ground.isEnabled() and cb_ground.isChecked()):
+            return []
+        args = ["--ground-truth", obj_edit.text(), "--gt-method", gt_method.currentText()]
+        if gt_method.currentText() == "grid":
+            return args + ["--gt-spacing", str(gt_spacing.value())]
+        return args + ["--gt-samples", str(gt_samples.value())]
 
     def _refresh_keys() -> None:
         """Repopulate every key list.
@@ -314,9 +347,11 @@ def build(step_list, settings) -> QWidget:
         except Exception as exc:  # noqa: BLE001 - a bad path must not kill the tab
             state["problem"] = None
             obj_status.setText(f"Could not load: {exc}")
+            _sync_ground_truth()
             return
         state["problem"] = problem
         _refresh_keys()
+        _sync_ground_truth()
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
                            for o in problem["objectives"])
         obj_status.setText(f"{len(problem['objectives'])} objectives: {senses}. "
@@ -371,7 +406,7 @@ def build(step_list, settings) -> QWidget:
             status.setText("Select at least one step in the Steps window.")
             return False
         try:
-            exp_map = build_map(steps, front_combo.currentText())
+            exp_map = build_map(steps)
             groups = build_groups(exp_map)
         except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
             status.setText(f"Map build failed: {exc}")
@@ -388,8 +423,8 @@ def build(step_list, settings) -> QWidget:
         series = len({e["experiment_type"] for e in exp_map["experiments"]})
         map_status.setText(f"{len(exp_map['experiments'])} observations from "
                            f"{len(steps)} selected director"
-                           f"{'y' if len(steps) == 1 else 'ies'}, {series} series "
-                           f"by {front_combo.currentText()}, held in memory")
+                           f"{'y' if len(steps) == 1 else 'ies'}, {series} series, "
+                           f"held in memory")
         return True
 
     def _write_map(out_dir) -> Path:
@@ -522,7 +557,7 @@ def build(step_list, settings) -> QWidget:
                   "--xlabel", x_entry.text(), "--ylabel", y_entry.text()]
         if z:
             extra += ["--z", z, "--zlabel", z_entry.text()]
-        extra += _sense_args((x, x_sense), (y, y_sense))
+        extra += _sense_args((x, x_sense), (y, y_sense)) + _ground_truth_args()
         _launch("plot_pareto_2d", *extra)
 
     def _plot_hypervolume(improvement: bool) -> None:
@@ -562,8 +597,6 @@ def build(step_list, settings) -> QWidget:
                                                          state["map"]))
     btn_save_map.clicked.connect(_save_map)
     btn_load_map.clicked.connect(_load_map)
-    # The label lives in the map, so a change only takes effect once it is rebuilt.
-    front_combo.currentTextChanged.connect(lambda _t: _rebuild_map() and _refresh_keys())
 
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
@@ -592,4 +625,5 @@ def build(step_list, settings) -> QWidget:
             obj_edit.setText(str(guess))
 
     _on_dimension_change()
+    _sync_ground_truth()
     return page

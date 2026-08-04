@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
+from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 
@@ -168,37 +169,50 @@ for d in range(len(objective_keys)):
     ref.append(hi + pad)
 ref = tuple(ref)
 
-# ---- INCREMENTAL HYPERVOLUME ----
-steps, hvs, labels = [], [], []
-seen = []
+# ---- INCREMENTAL HYPERVOLUME, ONE TRACE PER SERIES ----
+# Each run is its own campaign, so its hypervolume starts from its own first observation
+# rather than continuing wherever the previous run left off. A run's initial design and
+# its proposals share a trace - they are one campaign - which is what base_label groups.
+# The reference point stays global, so the traces are on one scale and comparable.
+series = {}
 for r in rows:
-    seen.append(r["point"])
-    front = pareto_front_nd(seen)
-    hv    = hypervolume_nd(front, ref)
-    steps.append(len(seen))
-    hvs.append(hv)
-    labels.append(r["label"])
+    series.setdefault(base_label(r["label"]), []).append(r)
+
+traces = {}
+for name, items in series.items():
+    s_steps, s_hvs, s_labels, seen = [], [], [], []
+    for r in items:
+        seen.append(r["point"])
+        s_hvs.append(hypervolume_nd(pareto_front_nd(seen), ref))
+        s_steps.append(len(seen))
+        s_labels.append(r["label"])
+    traces[name] = (s_steps, s_hvs, s_labels)
+
+all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
+_color, _marker, _front_style = styler(fig_cfg, all_labels)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
 
-prev_lbl     = labels[0]
-region_start = steps[0]
-for i in range(1, len(steps) + 1):
-    lbl = labels[i] if i < len(labels) else None
-    if lbl != prev_lbl or i == len(steps):
-        ax.axvspan(
-            region_start - 0.5, steps[i - 1] + 0.5,
-            color=LABEL_COLORS.get(prev_lbl, "#888888"), alpha=0.08,
-        )
-        if i < len(steps):
-            region_start = steps[i]
-            prev_lbl     = lbl
+if len(traces) == 1:
+    # One campaign: shade where each phase of it ran, as the single-sequence view did.
+    steps, _hvs, labels = next(iter(traces.values()))
+    prev_lbl     = labels[0]
+    region_start = steps[0]
+    for i in range(1, len(steps) + 1):
+        lbl = labels[i] if i < len(labels) else None
+        if lbl != prev_lbl or i == len(steps):
+            ax.axvspan(
+                region_start - 0.5, steps[i - 1] + 0.5,
+                color=_color(prev_lbl), alpha=0.08,
+            )
+            if i < len(steps):
+                region_start = steps[i]
+                prev_lbl     = lbl
 
-all_labels     = sorted({l for l in labels if l is not None})
 legend_handles = [
-    mlines.Line2D([], [], linestyle="None", marker=MARKERS.get(lbl, "o"),
-                  markerfacecolor=LABEL_COLORS.get(lbl, "#888888"),
+    mlines.Line2D([], [], linestyle="None", marker=_marker(lbl),
+                  markerfacecolor=_color(lbl),
                   markeredgecolor=SCATTER["edge_color"], markeredgewidth=0.8,
                   markersize=SCATTER["marker_size"] ** 0.5, label=lbl.capitalize())
     for lbl in all_labels
@@ -209,38 +223,40 @@ if args.improvement:
     # scatter + connecting line; zero-improvement steps are floored to one decade
     # below the smallest positive gain so they pin to a row at the bottom (a dotted
     # line marks that floor). The line stays continuous through the floored points.
-    deltas = [hvs[0]] + [hvs[i] - hvs[i - 1] for i in range(1, len(hvs))]
-    pos    = [d for d in deltas if d > 0]
-    floor  = (min(pos) * 0.1) if pos else 1e-9
-    ydraw  = [d if d > 0 else floor for d in deltas]
+    # Per-step marginal gain per trace, on one shared floor so the decades line up.
+    per_trace = {}
+    for name, (s_steps, s_hvs, s_labels) in traces.items():
+        deltas = [s_hvs[0]] + [s_hvs[i] - s_hvs[i - 1] for i in range(1, len(s_hvs))]
+        per_trace[name] = deltas
+    pos   = [d for deltas in per_trace.values() for d in deltas if d > 0]
+    floor = (min(pos) * 0.1) if pos else 1e-9
     ax.set_yscale("log")
     ax.axhline(floor, color="#888888", linestyle=":", linewidth=0.8, alpha=0.7, zorder=1)
-    ax.plot(steps, ydraw, color="black", linewidth=0.8, zorder=2)
-    for lbl in all_labels:
-        marker     = MARKERS.get(lbl, "o")
-        face_color = LABEL_COLORS.get(lbl, "#888888")
-        idx = [i for i, l in enumerate(labels) if l == lbl]
-        ax.scatter(
-            [steps[i] for i in idx],
-            [ydraw[i] for i in idx],
-            s=SCATTER["marker_size"] * 0.7, marker=marker,
-            facecolors=face_color, edgecolors=SCATTER["edge_color"],
-            linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
-        )
+    for name, (s_steps, _s_hvs, s_labels) in traces.items():
+        ydraw = [d if d > 0 else floor for d in per_trace[name]]
+        ax.plot(s_steps, ydraw, color=_color(name), linewidth=0.8, zorder=2)
+        for lbl in sorted(set(s_labels)):
+            idx = [i for i, l in enumerate(s_labels) if l == lbl]
+            ax.scatter(
+                [s_steps[i] for i in idx],
+                [ydraw[i] for i in idx],
+                s=SCATTER["marker_size"] * 0.7, marker=_marker(lbl),
+                facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
+                linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
+            )
     ax.set_ylabel(r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
 else:
-    ax.plot(steps, hvs, color="black", linewidth=1.2, zorder=3)
-    for lbl in all_labels:
-        marker     = MARKERS.get(lbl, "o")
-        face_color = LABEL_COLORS.get(lbl, "#888888")
-        idx = [i for i, l in enumerate(labels) if l == lbl]
-        ax.scatter(
-            [steps[i] for i in idx],
-            [hvs[i]   for i in idx],
-            s=SCATTER["marker_size"] * 0.7, marker=marker,
-            facecolors=face_color, edgecolors=SCATTER["edge_color"],
-            linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
-        )
+    for name, (s_steps, s_hvs, s_labels) in traces.items():
+        ax.plot(s_steps, s_hvs, color=_color(name), linewidth=1.2, zorder=3)
+        for lbl in sorted(set(s_labels)):
+            idx = [i for i, l in enumerate(s_labels) if l == lbl]
+            ax.scatter(
+                [s_steps[i] for i in idx],
+                [s_hvs[i]   for i in idx],
+                s=SCATTER["marker_size"] * 0.7, marker=_marker(lbl),
+                facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
+                linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
+            )
     ax.set_ylabel("Hypervolume", fontsize=FONT_LABEL)
 
 ax.set_xlabel("Number of observations", fontsize=FONT_LABEL)
