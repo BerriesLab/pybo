@@ -25,6 +25,7 @@ class BinhAndKorn(MCMultiObjectiveBase):
                 NonLinIneqXConCfg(f=self._input_c2, intra=True),
             ],
             ineq_Y_con_cfg=None,
+            gt_noise_std=[1.4, 0.5]
         )
 
     @staticmethod

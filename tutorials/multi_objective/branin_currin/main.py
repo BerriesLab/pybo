@@ -9,10 +9,7 @@ from gpytorch.kernels import ScaleKernel, RBFKernel
 from gpytorch.constraints import Interval
 from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
-from pybo.plotters.experiment import ParetoFront2DPlotter
 from pybo.samplers.sobol import SobolSampler
-from pybo.plotters.metrics import plot_and_save_metrics
-from pybo.plotters.evolution import plot_and_save_evolutions
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from tutorials.multi_objective.branin_currin.objective import BraninCurrin
 
@@ -20,9 +17,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = False,
          verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
-         repeats: int = 1, noise: bool = True):
+         repeats: int = 1, noise: bool = False):
+    """ Make directory """""
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -31,7 +29,10 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     torch.manual_seed(seed)
 
     """ Instantiate true objective """
-    objective = BraninCurrin(device=device, dtype=DTYPE)
+    objective = BraninCurrin(
+        device=device,
+        dtype=DTYPE
+    )
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -74,12 +75,14 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
-    """ How a measurement is taken """
-    # An objective that declares a noise std is measured through the noisy evaluator, so
-    # repeating a point gives a different number each time; one that does not stays exact,
-    # and repeating it would only duplicate rows. --noise false measures a noisy objective
-    # exactly, so the same tutorial can be run either way without editing it.
-    noisy = noise and objective.gt_noise_std is not None
+    """ Choose between deterministic and noisy objective """
+    # Asking for noise the objective cannot produce is a mistake, not a preference
+    if noise and objective.gt_noise_std is None:
+        raise ValueError(
+            f"--noise true needs an objective that declares gt_noise_std, and "
+            f"{type(objective).__name__} declares none. Declare one in its "
+            f"__init__, or pass --noise false to measure it exactly.")
+    noisy = noise
     evaluate = (objective.evaluate_true_objective_with_noise if noisy
                 else objective.evaluate_true_objective)
     if repeats > 1 and not noisy:
@@ -92,25 +95,11 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    # Measurements, not proposals: with repeats > 1 a step costs q * repeats of them, and a
-    # bar counting proposals would advance at a fraction of the real rate.
+    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
     n_measurements = (n_initial + n_evals) * repeats
     pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
 
     for i in range(n_steps):
-        # One folder per measurement: a repetition is an experiment of its own, so it gets
-        # its own record. They stay siblings of the step folders rather than nested inside
-        # one, because the campaign map reads a run as the parent of the folder holding
-        # experiment.json - nesting would make every repetition look like its own run.
-        rep_dirs = [run_dir / (f"step_{i:03d}" if repeats == 1
-                               else f"step_{i:03d}_rep{rep:02d}")
-                    for rep in range(repeats)]
-        for rep_dir in rep_dirs:
-            rep_dir.mkdir(parents=True, exist_ok=True)
-        # This step's plots belong to the step, not to one measurement; they go with the
-        # first, drawn from the state that produced the proposal.
-        os.chdir(rep_dirs[0])
-
         modelling = i >= n_initial_steps
         source = "proposed" if modelling else "initial"
         description = "Optimizing" if modelling else "Initial design"
@@ -126,28 +115,14 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             new_X = bo.new_X
             bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
             bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
-
-            """ Plot """
-            if plot:
-                ParetoFront2DPlotter(
-                    bo=bo,
-                    x=("obj", "Branin"),
-                    y=("obj", "Currin"),
-                    z=("par", 1),
-                    seed=254,
-                ).plot().save_figure().close_figure()
-                plot_and_save_metrics(bo=bo)
-                plot_and_save_evolutions(bo=bo)
-
         else:
             """ Take the next batch of the initial design """
             new_X = X_initial[i * q:(i + 1) * q]
 
         """ Simulate the experiment at new X, once per repetition """
-        # The same X measured again: with a noisy objective each pass draws its own noise,
-        # so the optimizer sees the replication and the records keep every measurement -
-        # which is what the campaign analysis turns into error bars.
-        for step_dir in rep_dirs:
+        for rep in range(repeats):
+            step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
+            step_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(step_dir)
             new_Y_obj = evaluate(new_X)
             if verbose:
