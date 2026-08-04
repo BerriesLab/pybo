@@ -1,5 +1,6 @@
 import os
 import math
+import time
 import warnings
 import torch
 from pathlib import Path
@@ -137,6 +138,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
 
             if pbar is not None:
+                time.sleep(0.1)
                 pbar.update(q)
 
     if pbar is not None:
