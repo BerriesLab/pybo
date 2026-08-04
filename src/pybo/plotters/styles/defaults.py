@@ -144,10 +144,6 @@ SETTINGS = {
         "hypervolume": 5 / 4,  # HypervolumePlotter
         "hypervolume_improvement": 5 / 4,  # HypervolumeImprovementPlotter
         "elapsed_time": 5 / 4,  # ElapsedTimePlotter
-        # studies/analysis figures
-        "convergence": 3 / 2,  # studies.analysis.convergence
-        "pareto_analysis": 3 / 2,  # studies.analysis.pareto_2d
-        "correlation": 1 / 1,  # studies.analysis.correlation (square matrix)
     },
 
     # --- Colormaps ---
@@ -158,8 +154,7 @@ SETTINGS = {
     # magnitude (perceptually uniform and colourblind-safe), so it is now the default for
     # all of them. Set this to coolwarm to restore the old look.
     # "diverging" is here for data with a meaningful midpoint and is not currently used.
-    # Categorical series colours, in assignment order. Read by the
-    # studies/analysis scripts; never cycled past the end.
+    # Categorical series colours, in assignment order; never cycled past the end.
     "series": SERIES,
 
     "cmap": {

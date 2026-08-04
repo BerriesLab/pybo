@@ -13,8 +13,8 @@ def save_figure(fig, filename: str | Path):
     """Write `fig` next to the cwd under the resolved file type.
 
     Each caller picks the stem; the extension comes from the settings, so the file type
-    is decided in one place. Free-standing because the studies/analysis scripts need it
-    too and they have no optimizer to hang a PlotterBase off.
+    is decided in one place. Free-standing so anything without an optimizer to hang a
+    PlotterBase off can still save a figure the same way.
     """
     ensure_resolved()
     path = Path(filename).with_suffix("." + fig_cfg["format"])

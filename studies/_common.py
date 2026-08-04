@@ -56,7 +56,7 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--strategy", default=None, choices=["bo", "sobol"],
                         help="Search strategy for every trial: bo, or sobol for the random "
                              "baseline. Run the sweep twice, once each, with the same "
-                             "--base-seed, and studies.analysis compares the two roots.")
+                             "--base-seed, and the campaign analysis compares the two.")
     parser.add_argument("--device", default=None,
                         help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
                              "A sweep is where GPU memory runs out, since the trials that "

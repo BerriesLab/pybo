@@ -49,6 +49,9 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             "experiment_id":          entry["experiment_id"],
             "experiment_type":        entry["experiment_type"],
             "technology":             entry.get("technology"),
+            # Which run produced it. The rig had no equivalent - one machine, one
+            # sequence - but a campaign here spans several independent runs.
+            "run":                    entry.get("run"),
             "start_time":             entry["start_time"],
             "parameters":             entry.get("parameters")
                                       or group_params.get(entry["group_id"], {}),
