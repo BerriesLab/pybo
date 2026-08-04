@@ -82,7 +82,11 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         warnings.filterwarnings("ignore")
     # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
     n_measurements = (n_initial + n_evals) * repeats
-    pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
+    # mininterval=0 with miniters=1 repaints on every measurement. Left at the tqdm
+    # defaults the bar is throttled by wall clock, so a cheap objective's repetitions
+    # all land in one frame and it jumps by repeats instead of moving per measurement.
+    pbar = (tqdm(total=n_measurements, unit="eval", desc="Optimizing", mininterval=0, miniters=1)
+            if not verbose else None)
 
     for i in range(n_steps):
         modelling = i >= n_initial_steps
