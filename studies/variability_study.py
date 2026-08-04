@@ -50,7 +50,6 @@ def main():
                     "--repeats": args.repeats,
                     "--device": args.device,
                     "--verbose": args.verbose,
-                    "--plot-style": args.plot_style,
                 },
                 run_name=run_name,
                 output_dir=output_dir / run_name,

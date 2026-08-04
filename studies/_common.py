@@ -72,10 +72,6 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Whether each trial prints per-step progress. Off by default (unlike the trial CLI, "
                              "which defaults to on) so a sweep shows one tqdm bar per trial instead of interleaving "
                              "every optimizer step.")
-    parser.add_argument("--plot-style", default=None,
-                        help="Publisher figure style forwarded to every trial. The tutorials "
-                             "themselves no longer plot, so this only reaches pybo.plotters "
-                             "if something else in the trial builds a figure.")
     return parser
 
 

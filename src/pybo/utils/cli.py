@@ -11,7 +11,6 @@ from pathlib import Path
 
 import torch
 
-from pybo.plotters.style import DEFAULT_STYLE, list_styles, resolve
 from pybo.utils.helpers import str2bool
 
 
@@ -128,20 +127,13 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "the same way for both, so with the same --seed the two arms "
                              "start from an identical dataset.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
-    parser.add_argument("--plot-style", default=DEFAULT_STYLE, choices=list_styles(),
-                        help="Publisher figure style for this run (default: %(default)s).")
-    parser.add_argument("--format", default=None, choices=["png", "pdf", "svg", "eps"],
-                        help="File type for saved figures, overriding the style's own "
-                             "(styles default to png).")
     return parser
 
 
 def parse_trial_args(description: str = ""):
-    """Parse the trial flags and resolve the figure settings from --plot-style / --format.
+    """Parse the trial flags.
 
-    This is the only resolve a CLI run performs: style.py deliberately does not resolve
-    on import, so the chosen style is in place before the first figure is built.
+    A trial builds no figures, so nothing here touches pybo.plotters. Code that does
+    plot resolves its own style through pybo.plotters.style.
     """
-    args = build_trial_args_parser(description=description).parse_args()
-    resolve(args.plot_style, fmt=args.format)
-    return args
+    return build_trial_args_parser(description=description).parse_args()
