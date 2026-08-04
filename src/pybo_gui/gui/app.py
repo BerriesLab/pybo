@@ -16,8 +16,11 @@ from pybo_gui.gui.settings import Settings
 from pybo_gui.gui.step_list import StepListWindow
 
 # Relative to where the GUI was started, not to where pybo is installed: the data being
-# analysed belongs to the user's working directory, not to the package.
-DEFAULT_ROOT = Path.cwd() / "studies" / "data"
+# analysed belongs to the user's working directory, not to the package. The first of these
+# that exists wins; falling back to the working directory itself means the selector always
+# opens on something real, and the tree is browsable from there anyway.
+DEFAULT_ROOTS = (Path.cwd() / "data", Path.cwd() / "studies" / "data")
+DEFAULT_ROOT = next((p for p in DEFAULT_ROOTS if p.is_dir()), Path.cwd())
 
 
 class MainWindow(QMainWindow):
