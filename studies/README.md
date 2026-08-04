@@ -2,8 +2,9 @@
 
 Sweep harness for benchmarking the Bayesian optimizer. Each study repeatedly
 launches a tutorial's single-trial CLI as an isolated subprocess, varying one
-thing (seed, initial-dataset size, ...), each trial writing its own
-`summary.json`. See `studies/analysis` for turning those into figures.
+thing (seed, initial-dataset size, ...), each trial writing its own `summary.bin`
+and a `step_NNN/experiment.json` per step. Point the campaign GUI
+(`python -m pybo_gui.main`) at the output to turn those into figures.
 
 Each study is generic over its target: pass the tutorial CLI to launch via
 `--target` (a dotted module path), so the same study script works across
@@ -38,19 +39,27 @@ memory, which trades speed for finishing at all.
 
 `--strategy sobol` runs a sweep that spends the same budget drawing constrained
 random points instead of optimizing an acquisition function
-(`pybo.optimizer.baseline.SobolBaseline`). Both arms are scored by the same
-code, so the difference between their traces is what the optimizer bought.
+(`pybo.optimizer.sobol.SobolOptimizer`). Both arms are scored by the same code,
+so the difference between their traces is what the optimizer bought.
 
 ```
 python -m studies.variability_study --target tutorials.multi_objective.branin_currin.main \
-    --strategy bo    --n-replicates 10 --output-dir data/branin_currin/bo
+    --strategy bo    --n-replicates 10 --output-dir data/branin_currin
 python -m studies.variability_study --target tutorials.multi_objective.branin_currin.main \
-    --strategy sobol --n-replicates 10 --output-dir data/branin_currin/sobol
+    --strategy sobol --n-replicates 10 --output-dir data/branin_currin
+```
 
-python -m studies.analysis.gain --study data/branin_currin/bo --study data/branin_currin/sobol \
-    --label BO --label Sobol
-python -m studies.analysis.convergence --study data/branin_currin/bo --study data/branin_currin/sobol \
-    --label BO --label Sobol
+Both arms land side by side, told apart by their folder names. Open the result
+in the GUI (`python -m pybo_gui.main data/branin_currin`), tick what you want to
+compare and plot; or from a terminal, build the map once and point the plots at
+it:
+
+```
+python -m pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map data/branin_currin
+python -m pybo_gui.modules.bayesian_campaign_analysis.build_group_map data/branin_currin
+
+PYBO_CAMPAIGN_DIR=data/branin_currin \
+    python -m pybo_gui.modules.bayesian_campaign_analysis.plot_pareto_2d --x Branin --y Currin
 ```
 
 Use the same `--base-seed`, `--n-initial` and `--n-evals` for both. Replicate k
@@ -68,10 +77,16 @@ where it started.
 
 A valid `--target` is a tutorial CLI `main.py` that accepts the
 `pybo.utils.cli.build_trial_args_parser` flags (`--n-evals --q-batch
---n-initial --seed --output-dir --plot --device --strategy`) and writes a `summary.json` into the
-`--output-dir` it is given by calling `BayesianOptimizer.to_json` each
-iteration. See `tutorials/multi_objective/branin_currin/main.py` for the
-reference implementation. Every tutorial under `tutorials/` is a valid target.
+--n-initial --seed --output-dir --plot --device --strategy`) and writes into the
+`--output-dir` it is given: `summary.bin` at the root each iteration
+(`OptimizerBase.to_file`), and one `step_NNN/experiment.json` per step
+(`OptimizerBase.to_json`). See `tutorials/multi_objective/branin_currin/main.py`
+for the reference implementation. Every tutorial under `tutorials/` is a valid
+target.
+
+A run's directory is named `<strategy>_ninit<n>_replicate<k>_seed<s>`, so the
+arm is readable from the folder and matches the `experiment_type` recorded in
+the steps inside it.
 
 `_common.py` (and any other `_`-prefixed file) is an internal helper, not a
 runnable study.

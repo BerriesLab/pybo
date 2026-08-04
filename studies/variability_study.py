@@ -25,13 +25,19 @@ def main():
     output_dir = unique_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # The arm the trials run, named as the records name it rather than as the flag spells
+    # it, so a folder and the experiment_type inside it agree. Falling back to the trial
+    # CLI's own default (pybo/utils/cli.py) means every run says which arm it was, not
+    # only the ones that passed --strategy.
+    strategy = {"bo": "bayesian", "sobol": "sobol"}[args.strategy or "bo"]
+
     n_initials = args.n_initial if args.n_initial is not None else [None]
     trials = []
     for n_initial in n_initials:
         for replicate in range(args.n_replicates):
             seed = args.base_seed + replicate
             prefix = f"ninit{n_initial}_" if n_initial is not None else ""
-            run_name = f"{prefix}replicate{replicate}_seed{seed}"
+            run_name = f"{strategy}_{prefix}replicate{replicate}_seed{seed}"
             summary_path, completed = run_trial(
                 target=args.target,
                 cli_args={
@@ -52,10 +58,10 @@ def main():
 
     n_missing = sum(1 for path, _ in trials if path is None)
     n_partial = sum(1 for path, completed in trials if path is not None and not completed)
-    print(f"\n{len(trials) - n_missing} of {len(trials)} runs left a summary.json under {output_dir}")
+    print(f"\n{len(trials) - n_missing} of {len(trials)} runs left a summary.bin under {output_dir}")
     if n_partial:
         print(f"{n_partial} of those stopped early; the iterations they did finish are "
-              f"still in their summary.json (see the FAILED lines above).")
+              f"still on disk (see the FAILED lines above).")
     if n_missing:
         print(f"{n_missing} of {len(trials)} trials left no output at all and were excluded.")
 

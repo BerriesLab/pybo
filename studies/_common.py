@@ -5,11 +5,12 @@ Each trial runs as an isolated subprocess - a crashed trial (e.g. GP fitting
 diverging) is logged and skipped rather than aborting the whole sweep. Every
 target CLI is expected to accept --output-dir, --plot and --verbose (the latter
 two forwarded from the sweep's own flags of the same name, both defaulting to
-False for a sweep), and to write a summary.json into the exact --output-dir it
-was given (BayesianOptimizer.to_json does this; see
+False for a sweep), and to write into the exact --output-dir it was given:
+summary.bin at the root (OptimizerBase.to_file) and a step_NNN/experiment.json
+per step (OptimizerBase.to_json). See
 tutorials/multi_objective/branin_currin/main.py for the reference
-implementation of this contract). studies/analysis reads those summary.json
-files directly, so a sweep has nothing further to aggregate.
+implementation of this contract. The campaign analysis reads the step records
+directly, so a sweep has nothing further to aggregate.
 """
 import argparse
 import os
@@ -78,9 +79,10 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> t
     subprocess. Returns (summary_path, completed).
 
     A trial that dies partway (e.g. GP fitting diverging at step 7 of 32) still
-    has every iteration up to that point in its summary.json, because the target
-    CLI rewrites the running summary after each step. Those iterations are valid,
-    so the path is returned with completed=False rather than discarded.
+    has every step it finished on disk: the target CLI rewrites summary.bin after
+    each one, and each step's own experiment.json is written as it goes. Those
+    steps are valid, so the path is returned with completed=False rather than
+    discarded.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [PYTHON, "-m", target, "--output-dir", str(output_dir)]
@@ -94,10 +96,10 @@ def run_trial(target: str, cli_args: dict, run_name: str, output_dir: Path) -> t
     env = os.environ | {"PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"}
     result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
     completed = result.returncode == 0
-    summary_path = output_dir / "summary.json"
+    summary_path = output_dir / "summary.bin"
 
     if not summary_path.exists():
-        print(f"!!! Trial {run_name} produced no summary.json (exit {result.returncode}) "
+        print(f"!!! Trial {run_name} produced no summary.bin (exit {result.returncode}) "
               f"- nothing to salvage", flush=True)
         return None, completed
     if not completed:
