@@ -18,7 +18,8 @@ DTYPE = torch.float64
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
-         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo"):
+         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
+         repeats: int = 1, noise: bool = False):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -59,23 +60,36 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
+    """ Choose between deterministic and noisy objective """
+    # Asking for noise the objective cannot produce is a mistake, not a preference
+    if noise and objective.gt_noise_std is None:
+        raise ValueError(
+            f"--noise true needs an objective that declares gt_noise_std, and "
+            f"{type(objective).__name__} declares none. Declare one in its "
+            f"__init__, or pass --noise false to measure it exactly.")
+    noisy = noise
+    evaluate = (objective.evaluate_true_objective_with_noise if noisy
+                else objective.evaluate_true_objective)
+    if repeats > 1 and not noisy:
+        print(f"! --repeats {repeats} on a deterministic objective: every repetition "
+              f"returns the same values, so the extra rows carry no information.")
+
     """ Main optimization loop """
     n_initial_steps = n_initial // q
     n_steps = n_initial_steps + int(n_evals / q)
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    pbar = tqdm(total=n_initial + n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
+    n_measurements = (n_initial + n_evals) * repeats
+    pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
 
     for i in range(n_steps):
-        # One folder per evaluation step
-        step_dir = run_dir / f"step_{i:03d}"
-        step_dir.mkdir(parents=True, exist_ok=True)
-        os.chdir(step_dir)
-
         modelling = i >= n_initial_steps
+        source = "proposed" if modelling else "initial"
+        description = "Optimizing" if modelling else "Initial design"
         if pbar is not None:
-            pbar.set_description("Optimizing" if modelling else "Initial design")
+            pbar.set_description(description)
         if verbose:
             phase = "propose" if modelling else "initial design"
             print(f"\n*** Step {i + 1}/{n_steps} ({phase}) | eval {(i + 1) * q}/{n_initial + n_evals} ***")
@@ -83,28 +97,33 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         if modelling:
             """ Optimize and get new X """
             bo.optimize(verbose=verbose)
-
-            """ Evaluate posterior and acquisition function at new X """
             new_X = bo.new_X
             bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
             bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
-
         else:
             """ Take the next batch of the initial design """
             new_X = X_initial[i * q:(i + 1) * q]
 
-        """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true_objective(new_X)
-        if verbose:
-            print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(new_X=new_X, new_Y_obj=new_Y_obj, source="proposed" if modelling else "initial")
+        """ Simulate the experiment at new X, once per repetition """
+        for rep in range(repeats):
+            step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
+            step_dir.mkdir(parents=True, exist_ok=True)
+            os.chdir(step_dir)
+            new_Y_obj = evaluate(new_X)
+            if verbose:
+                print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+            bo.update_XY(
+                new_X=new_X,
+                new_Y_obj=new_Y_obj,
+                source=source
+            )
 
-        """ Save the running summary (run root) and this step's experiment record """
-        bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
-        bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
+            """ Save the running summary (run root) and this measurement's record """
+            bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
 
-        if pbar is not None:
-            pbar.update(q)
+            if pbar is not None:
+                pbar.update(q)
 
     if pbar is not None:
         pbar.close()
@@ -128,4 +147,6 @@ if __name__ == "__main__":
         verbose=args.verbose,
         device=device,
         strategy=args.strategy,
+        repeats=args.repeats,
+        noise=args.noise,
     )
