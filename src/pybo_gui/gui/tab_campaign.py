@@ -36,11 +36,15 @@ MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
 
 
 def _result_keys(exp_map: dict) -> list:
-    """Every result key in the experiment map, or [] when nothing is built yet."""
+    """Every result key in the experiment map, or [] when nothing is built yet.
+
+    The <label>_var partners are left out: they are the uncertainty of a column, read by
+    the error bars, not a quantity to put on an axis of its own.
+    """
     keys = []
     for entry in (exp_map or {}).get("experiments", []):
         for key in entry.get("results", {}):
-            if key not in keys:
+            if key not in keys and not key.endswith("_var"):
                 keys.append(key)
     return sorted(keys)
 
@@ -242,9 +246,20 @@ def build(step_list, settings) -> QWidget:
     # Grouped aggregates replicate runs at the same observation index; the error-bar mode
     # only means anything once it is on.
     cb_grouped = QCheckBox("Grouped")
-    rb_std = QRadioButton("Std")
-    rb_std.setChecked(True)
+    rb_sem = QRadioButton("Std. error")
+    rb_sem.setChecked(True)
+    rb_std = QRadioButton("Std. dev.")
     rb_minmax = QRadioButton("Min/max")
+    # What the three bars mean, since they answer different questions and the difference
+    # decides how a figure is read.
+    ERRORBAR_TEXT = {
+        rb_sem: "Std. error — how well the point's position is known. Repeats shrink it by √n.",
+        rb_std: "Std. dev. — how much a single measurement scatters. Repeats do not shrink it.",
+        rb_minmax: "Min/max — the plain range of the group's measurements.",
+    }
+    errorbar_help = QLabel("")
+    errorbar_help.setWordWrap(True)
+    errorbar_help.setStyleSheet("color: grey;")
     cb_numbers = QCheckBox("Show numbers")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
@@ -265,14 +280,18 @@ def build(step_list, settings) -> QWidget:
     gt_spacing.setValue(0.05)
     gt_spacing.setSingleStep(0.01)
     gt_spacing.setPrefix("Δ = ")
-    for widget in (rb_std, rb_minmax):
+    for widget in ERRORBAR_TEXT:
         widget.setEnabled(False)
+        widget.toggled.connect(
+            lambda checked, w=widget: checked and errorbar_help.setText(ERRORBAR_TEXT[w]))
     cb_grouped.stateChanged.connect(
-        lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in (rb_std, rb_minmax)])
+        lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in ERRORBAR_TEXT])
+    errorbar_help.setText(ERRORBAR_TEXT[rb_sem])
     status = QLabel("")
     status.setStyleSheet("color: grey;")
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
-    plot_layout.addWidget(_row(cb_grouped, rb_std, rb_minmax, cb_numbers))
+    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers))
+    plot_layout.addWidget(errorbar_help)
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing))
     plot_layout.addWidget(status)
     layout.addWidget(plot_box)
@@ -387,7 +406,7 @@ def build(step_list, settings) -> QWidget:
         # Grouping and point labels belong to the Pareto scatter, which N-D has none of.
         for widget in (cb_grouped, cb_numbers):
             widget.setEnabled(not is_nd)
-        for widget in (rb_std, rb_minmax):
+        for widget in ERRORBAR_TEXT:
             widget.setEnabled(cb_grouped.isChecked() and not is_nd)
 
     dim_group.buttonToggled.connect(lambda _b, checked: checked and _on_dimension_change())
@@ -529,7 +548,8 @@ def build(step_list, settings) -> QWidget:
     def _grouped_args() -> list:
         if not cb_grouped.isChecked():
             return []
-        return ["--grouped", "--errorbar", "std" if rb_std.isChecked() else "minmax"]
+        mode = "sem" if rb_sem.isChecked() else "std" if rb_std.isChecked() else "minmax"
+        return ["--grouped", "--errorbar", mode]
 
     def _plot_pareto() -> None:
         x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()

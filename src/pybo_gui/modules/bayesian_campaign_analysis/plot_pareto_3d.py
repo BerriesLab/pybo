@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
+from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 
@@ -23,8 +24,11 @@ parser.add_argument("--ylabel", default="", help="Override y-axis label (LaTeX a
 parser.add_argument("--zlabel", default="", help="Override colorbar label (LaTeX accepted via $...$)")
 parser.add_argument("--grouped",      action="store_true", default=False,
                     help="Aggregate per group_id")
-parser.add_argument("--errorbar", choices=["std", "minmax"], default="std",
-                    help="Error-bar mode in grouped view (std = mean ± std, minmax = mean to min/max)")
+parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem",
+                    help="Error-bar mode in grouped view. sem = uncertainty of the "
+                         "group's mean, std = spread of one measurement, minmax = mean "
+                         "to the group's min and max. sem and std both fold in the "
+                         "measurement variance the run recorded, when it recorded one.")
 parser.add_argument("--show-numbers", action="store_true", default=False)
 parser.add_argument("--maximize", action="append", default=[],
                     help="Result key of an objective to maximize (repeatable). "
@@ -91,6 +95,10 @@ for exp in load_experiments_from_map(MAP_PATH):
         "group_id": exp["group_id"],
         "x":        r.get(args.x),
         "y":        r.get(args.y),
+        # What the measurement said about its own uncertainty. to_json writes a
+        # <label>_var next to every value, left null when the run measured none.
+        "x_var":    r.get(f"{args.x}_var"),
+        "y_var":    r.get(f"{args.y}_var"),
         "z_val":    r.get(args.z),
         "feasible": is_feasible(r, constraints),
     })
@@ -126,8 +134,11 @@ if args.grouped:
             y_err_lo = y_mean - float(np.min(ys))
             y_err_hi = float(np.max(ys)) - y_mean
         else:
-            sd_x = float(np.std(xs, ddof=1)) if len(xs) > 1 else 0.0
-            sd_y = float(np.std(ys, ddof=1)) if len(ys) > 1 else 0.0
+            # Both modes reconcile the repeats' scatter with the recorded measurement
+            # variance rather than adding them - see _uncertainty.
+            estimate = mean_sd if args.errorbar == "sem" else total_sd
+            sd_x = estimate(xs, [it["x_var"] for it in items])
+            sd_y = estimate(ys, [it["y_var"] for it in items])
             x_err_lo = x_err_hi = sd_x
             y_err_lo = y_err_hi = sd_y
         rows.append({
@@ -205,8 +216,10 @@ for lbl in all_labels:
     if args.grouped:
         for r in subset:
             fc = z_cmap(z_norm(r["z_val"]))
-            xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["n"] > 1 else None
-            yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["n"] > 1 else None
+            # Drawn whenever there is something to draw, not only when the group has
+            # repeats: a single measurement with a recorded variance has a real bar.
+            xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["x_err_hi"] else None
+            yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["y_err_hi"] else None
             ax.errorbar(
                 [r["x"]], [r["y"]],
                 xerr=xerr, yerr=yerr,
