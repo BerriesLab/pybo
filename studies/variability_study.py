@@ -46,6 +46,8 @@ def main():
                     "--n-initial": n_initial,
                     "--seed": seed,
                     "--strategy": args.strategy,
+                    "--noise": args.noise,
+                    "--repeats": args.repeats,
                     "--device": args.device,
                     "--plot": args.plot,
                     "--verbose": args.verbose,

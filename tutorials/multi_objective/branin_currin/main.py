@@ -21,7 +21,8 @@ DTYPE = torch.float64
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
-         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo"):
+         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
+         repeats: int = 1, noise: bool = True):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -73,19 +74,42 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
+    """ How a measurement is taken """
+    # An objective that declares a noise std is measured through the noisy evaluator, so
+    # repeating a point gives a different number each time; one that does not stays exact,
+    # and repeating it would only duplicate rows. --noise false measures a noisy objective
+    # exactly, so the same tutorial can be run either way without editing it.
+    noisy = noise and objective.gt_noise_std is not None
+    evaluate = (objective.evaluate_true_objective_with_noise if noisy
+                else objective.evaluate_true_objective)
+    if repeats > 1 and not noisy:
+        print(f"! --repeats {repeats} on a deterministic objective: every repetition "
+              f"returns the same values, so the extra rows carry no information.")
+
     """ Main optimization loop """
     n_initial_steps = n_initial // q
     n_steps = n_initial_steps + int(n_evals / q)
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    pbar = tqdm(total=n_initial + n_evals, unit="eval", desc="Optimizing") if not verbose else None
+    # Measurements, not proposals: with repeats > 1 a step costs q * repeats of them, and a
+    # bar counting proposals would advance at a fraction of the real rate.
+    n_measurements = (n_initial + n_evals) * repeats
+    pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
 
     for i in range(n_steps):
-        # One folder per evaluation step
-        step_dir = run_dir / f"step_{i:03d}"
-        step_dir.mkdir(parents=True, exist_ok=True)
-        os.chdir(step_dir)
+        # One folder per measurement: a repetition is an experiment of its own, so it gets
+        # its own record. They stay siblings of the step folders rather than nested inside
+        # one, because the campaign map reads a run as the parent of the folder holding
+        # experiment.json - nesting would make every repetition look like its own run.
+        rep_dirs = [run_dir / (f"step_{i:03d}" if repeats == 1
+                               else f"step_{i:03d}_rep{rep:02d}")
+                    for rep in range(repeats)]
+        for rep_dir in rep_dirs:
+            rep_dir.mkdir(parents=True, exist_ok=True)
+        # This step's plots belong to the step, not to one measurement; they go with the
+        # first, drawn from the state that produced the proposal.
+        os.chdir(rep_dirs[0])
 
         modelling = i >= n_initial_steps
         source = "proposed" if modelling else "initial"
@@ -119,22 +143,27 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             """ Take the next batch of the initial design """
             new_X = X_initial[i * q:(i + 1) * q]
 
-        """ Simulate experiment at new X """
-        new_Y_obj = objective.evaluate_true_objective(new_X)
-        if verbose:
-            print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-        bo.update_XY(
-            new_X=new_X,
-            new_Y_obj=new_Y_obj,
-            source=source
-        )
+        """ Simulate the experiment at new X, once per repetition """
+        # The same X measured again: with a noisy objective each pass draws its own noise,
+        # so the optimizer sees the replication and the records keep every measurement -
+        # which is what the campaign analysis turns into error bars.
+        for step_dir in rep_dirs:
+            os.chdir(step_dir)
+            new_Y_obj = evaluate(new_X)
+            if verbose:
+                print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+            bo.update_XY(
+                new_X=new_X,
+                new_Y_obj=new_Y_obj,
+                source=source
+            )
 
-        """ Save the running summary (run root) and this step's experiment record """
-        bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
-        bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
+            """ Save the running summary (run root) and this measurement's record """
+            bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
 
-        if pbar is not None:
-            pbar.update(q)
+            if pbar is not None:
+                pbar.update(q)
 
     if pbar is not None:
         pbar.close()
@@ -159,4 +188,6 @@ if __name__ == "__main__":
         verbose=args.verbose,
         device=device,
         strategy=args.strategy,
+        repeats=args.repeats,
+        noise=args.noise,
     )

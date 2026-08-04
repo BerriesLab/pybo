@@ -33,6 +33,7 @@ class BraninCurrin(MCMultiObjectiveBase):
                 ObjCfg(label="Currin", bounds=(0, 14), to_minimize=True, ref_point=6.0),
             ],
             max_hv=59.36011874867746,  # this is approximated using NSGA-II
+            gt_noise_std=[9.0, 0.42],  # 3% of objective range
         )
 
     @staticmethod

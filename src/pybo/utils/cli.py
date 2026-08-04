@@ -98,6 +98,18 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "(the loop runs n_evals // q optimization steps, so a trial costs "
                              "n_initial + n_evals evaluations).")
     parser.add_argument("--q-batch", type=int, default=1, help="q-batch size.")
+    parser.add_argument("--noise", type=str2bool, default=True,
+                        help="Whether to measure through the objective's declared noise. "
+                             "On by default, so an objective that declares a std is noisy "
+                             "unless you ask otherwise; pass false to measure it exactly. "
+                             "Meaningless for an objective that declares no std - there is "
+                             "nothing to switch off.")
+    parser.add_argument("--repeats", type=int, default=1,
+                        help="How many times each proposed point is measured. Only meaningful "
+                             "against an objective that declares a noise std - repeating a "
+                             "deterministic one returns the same number. --n-evals still counts "
+                             "proposals, so a trial costs n_evals * repeats measurements. "
+                             "Acted on by the tutorials wired for it; the rest ignore it.")
     parser.add_argument("--n-initial", type=int, default=None,
                         help="Number of initial samples, measured inside the loop before the first "
                              "proposal (defaults to 5*(dim+1), rounded up to a multiple of q).")

@@ -57,6 +57,13 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Search strategy for every trial: bo, or sobol for the random "
                              "baseline. Run the sweep twice, once each, with the same "
                              "--base-seed, and the campaign analysis compares the two.")
+    parser.add_argument("--noise", type=str2bool, default=None,
+                        help="Whether each trial measures through its objective's declared "
+                             "noise. Left to the trial CLI's own default when not given.")
+    parser.add_argument("--repeats", type=int, default=None,
+                        help="Measurements per proposed point in every trial. A sweep is "
+                             "where this costs most: the budget is n_evals * repeats per "
+                             "trial, times the replicates.")
     parser.add_argument("--device", default=None,
                         help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
                              "A sweep is where GPU memory runs out, since the trials that "
