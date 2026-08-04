@@ -49,7 +49,6 @@ def main():
                     "--noise": args.noise,
                     "--repeats": args.repeats,
                     "--device": args.device,
-                    "--plot": args.plot,
                     "--verbose": args.verbose,
                     "--plot-style": args.plot_style,
                 },

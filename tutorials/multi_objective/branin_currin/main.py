@@ -17,7 +17,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = False,
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
          repeats: int = 1, noise: bool = False):
     """ Make directory """""
@@ -56,7 +56,6 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     X_initial = sampler.draw_samples(n=n_initial)
 
     """ Instantiate Bayesian optimizer """
-    # No data yet, so the initial-design size is declared rather than inferred form the first X.
     optimizer_class = SobolOptimizer if strategy == "sobol" else BayesianOptimizer
     bo = optimizer_class(
         device=device,
@@ -159,7 +158,6 @@ if __name__ == "__main__":
         n_initial=args.n_initial,
         seed=args.seed,
         output_dir=output_dir,
-        plot=args.plot,
         verbose=args.verbose,
         device=device,
         strategy=args.strategy,

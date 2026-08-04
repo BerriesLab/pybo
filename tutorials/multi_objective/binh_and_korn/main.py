@@ -11,15 +11,12 @@ from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from tutorials.multi_objective.binh_and_korn.objective import BinhAndKorn
-from pybo.plotters.evolution import plot_and_save_evolutions
-from pybo.plotters.experiment import ParetoFront2DPlotter
-from pybo.plotters.metrics import plot_and_save_metrics
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063, plot: bool = True,
+def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo"):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -84,18 +81,6 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             """ Optimize and get new X """
             bo.optimize(verbose=verbose)
 
-            """ Plot """
-            if plot:
-                ParetoFront2DPlotter(
-                    bo=bo,
-                    x=("obj", "Korn"),
-                    y=("obj", "Binh"),
-                    z=("par", 0),
-                    seed=254,
-                ).plot().save_figure().close_figure()
-                plot_and_save_metrics(bo=bo)
-                plot_and_save_evolutions(bo=bo)
-
             """ Evaluate posterior and acquisition function at new X """
             new_X = bo.new_X
             bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
@@ -137,7 +122,6 @@ if __name__ == "__main__":
         n_initial=args.n_initial,
         seed=args.seed,
         output_dir=output_dir,
-        plot=args.plot,
         verbose=args.verbose,
         device=device,
         strategy=args.strategy,

@@ -127,7 +127,6 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "the optimizer is measured against. The initial design is drawn "
                              "the same way for both, so with the same --seed the two arms "
                              "start from an identical dataset.")
-    parser.add_argument("--plot", type=str2bool, default=False, help="Whether to generate plots.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     parser.add_argument("--plot-style", default=DEFAULT_STYLE, choices=list_styles(),
                         help="Publisher figure style for this run (default: %(default)s).")

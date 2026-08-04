@@ -3,9 +3,9 @@ Shared helpers for study scripts that repeatedly launch a tutorial's CLI.
 
 Each trial runs as an isolated subprocess - a crashed trial (e.g. GP fitting
 diverging) is logged and skipped rather than aborting the whole sweep. Every
-target CLI is expected to accept --output-dir, --plot and --verbose (the latter
-two forwarded from the sweep's own flags of the same name, both defaulting to
-False for a sweep), and to write into the exact --output-dir it was given:
+target CLI is expected to accept --output-dir and --verbose (the latter forwarded
+from the sweep's own flag of the same name, defaulting to False for a sweep), and
+to write into the exact --output-dir it was given:
 summary.bin at the root (OptimizerBase.to_file) and a step_NNN/experiment.json
 per step (OptimizerBase.to_json). See
 tutorials/multi_objective/branin_currin/main.py for the reference
@@ -68,15 +68,14 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
                              "A sweep is where GPU memory runs out, since the trials that "
                              "exhaust it are the long ones near the end.")
-    parser.add_argument("--plot", type=str2bool, default=False,
-                        help="Whether each trial generates plots. Off by default: a sweep plots every step of "
-                             "every trial, which dominates the runtime.")
     parser.add_argument("--verbose", type=str2bool, default=False,
                         help="Whether each trial prints per-step progress. Off by default (unlike the trial CLI, "
                              "which defaults to on) so a sweep shows one tqdm bar per trial instead of interleaving "
                              "every optimizer step.")
     parser.add_argument("--plot-style", default=None,
-                        help="Publisher figure style forwarded to every trial. Only matters with --plot true.")
+                        help="Publisher figure style forwarded to every trial. The tutorials "
+                             "themselves no longer plot, so this only reaches pybo.plotters "
+                             "if something else in the trial builds a figure.")
     return parser
 
 
