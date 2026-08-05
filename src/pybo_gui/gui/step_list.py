@@ -28,10 +28,18 @@ _FILLED_ROLE = Qt.ItemDataRole.UserRole + 1
 class _DragSelectTree(QTreeWidget):
     """A tree whose checkboxes can be swept with a left-drag.
 
-    Qt handles the press, so clicking a box still toggles it and the expand arrows still
-    work; the drag then applies whatever state that first row ended up in to every row
-    the cursor passes. Sweeping down a list of runs is one gesture rather than one click
-    each, and sweeping from a ticked row clears a range just as easily.
+    Pressing anywhere on a row toggles it - the box is a small target and the whole row
+    means that row - and the drag then inverts every further row the cursor passes.
+    Inverting rather than stamping the first row's state is what lets one gesture both
+    add and remove: a sweep across a mixed list ticks what was clear and clears what was
+    ticked, instead of flattening the range to whatever the first row happened to be.
+
+    The expand arrows keep their own press: it opens a node, it does not choose one.
+
+    Qt itself ticks a box on the *release*, not the press, which is no use to a gesture
+    that has to know the state from the first row onwards. So a press on a row takes the
+    gesture over: this class sets every row it touches, and the release is not forwarded,
+    or the delegate would toggle the pressed row a second time and cancel it out.
 
     `on_drag` is called with True when a sweep starts and False when it ends, so the
     window can hold off recounting the selection until the gesture is over - the count
@@ -40,22 +48,34 @@ class _DragSelectTree(QTreeWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._state = None
+        self._sweeping = False
         self._applied = set()
         self.on_drag = None
 
+    @staticmethod
+    def _invert(item) -> None:
+        item.setCheckState(0, Qt.CheckState.Unchecked
+                           if item.checkState(0) == Qt.CheckState.Checked
+                           else Qt.CheckState.Checked)
+
     def mousePressEvent(self, event):
+        pos = event.position().toPoint()
+        item = self.itemAt(pos)
         super().mousePressEvent(event)
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        item = self.itemAt(event.position().toPoint())
         if item is None or item.data(0, _PATH_ROLE) is None:
             return
-        self._state = item.checkState(0)
+        # visualItemRect starts at the row proper; anything left of it is the branch
+        # indicator, whose press belongs to expanding the node.
+        if pos.x() < self.visualItemRect(item).left():
+            return
+        self._sweeping = True
         self._applied = {id(item)}
+        self._invert(item)
 
     def mouseMoveEvent(self, event):
-        if self._state is None or not (event.buttons() & Qt.MouseButton.LeftButton):
+        if not self._sweeping or not (event.buttons() & Qt.MouseButton.LeftButton):
             super().mouseMoveEvent(event)
             return
         item = self.itemAt(event.position().toPoint())
@@ -64,12 +84,15 @@ class _DragSelectTree(QTreeWidget):
         if len(self._applied) == 1 and self.on_drag is not None:
             self.on_drag(True)  # the press alone was a click; this is now a sweep
         self._applied.add(id(item))
-        item.setCheckState(0, self._state)
+        self._invert(item)
 
     def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        swept = self._state is not None and len(self._applied) > 1
-        self._state, self._applied = None, set()
+        if not self._sweeping:
+            super().mouseReleaseEvent(event)
+            return
+        swept = len(self._applied) > 1
+        self._sweeping, self._applied = False, set()
+        event.accept()  # withhold the release: see the note on Qt's toggle above
         if swept and self.on_drag is not None:
             self.on_drag(False)
 

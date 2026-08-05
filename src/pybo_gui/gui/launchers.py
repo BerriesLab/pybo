@@ -11,30 +11,29 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QTimer
 
-# Keyed by (module, *args) so clicking Plot twice with the same options raises the
-# window that is already open instead of stacking duplicates.
-_procs: dict = {}
+# Every plot still running, so stop_all can reach it. Identical options are launched
+# again rather than deduplicated: the data behind a plot changes as a campaign grows,
+# so a second window of the "same" plot is a comparison, not a duplicate.
+_procs: list = []
 
 
 def launch_analysis(module: str, *args) -> subprocess.Popen:
-    """Run `python -m <module> <args...>`, deduplicated.
+    """Run `python -m <module> <args...>` in its own window.
 
     No cwd is forced: pybo_gui.modules.bayesian_campaign_analysis is importable wherever pybo is installed, and
     inheriting the GUI's directory is what makes a relative path the user typed resolve
     the way they meant it.
     """
-    key = (module, *args)
-    running = _procs.get(key)
-    if running is not None and running.poll() is None:
-        return running
-    _procs[key] = subprocess.Popen(
+    _procs[:] = [p for p in _procs if p.poll() is None]
+    proc = subprocess.Popen(
         [sys.executable, "-m", module, *[str(a) for a in args]])
-    return _procs[key]
+    _procs.append(proc)
+    return proc
 
 
 def stop_all() -> None:
     """Terminate every plot still running."""
-    for proc in list(_procs.values()):
+    for proc in list(_procs):
         if proc.poll() is None:
             try:
                 proc.terminate()

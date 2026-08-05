@@ -6,8 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
 from gpytorch.constraints import Interval
-from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel
-from gpytorch.priors import GammaPrior
+from gpytorch.kernels import ScaleKernel, RBFKernel
 from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
@@ -35,7 +34,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.num_par,
-            lengthscale_constraint=Interval(1e-4, 1),
+            lengthscale_constraint=Interval(1e-2, 1),
         ),
         outputscale_constraint=Interval(1e-4, 1e2),
     )
@@ -122,6 +121,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             new_Y_con = evaluate_constraint(new_X)
             if verbose:
                 print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+                print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")
             bo.update_XY(
                 new_X=new_X,
                 new_Y_obj=new_Y_obj,

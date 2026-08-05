@@ -94,7 +94,7 @@ class C2DTLZ2(MCMultiObjectiveBase):
         # BoTorch convention:
         # > 0 -> Infeasible
         # <= 0 -> Feasible
-        return combined_violation.unsqueeze(-1) * 100
+        return combined_violation.unsqueeze(-1)
 
     def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
         return torch.stack([self._f1(X), self._f2(X)], dim=-1)
