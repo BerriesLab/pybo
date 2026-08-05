@@ -32,21 +32,12 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     objective = C2DTLZ2(device=device, dtype=DTYPE)
 
     """ Instantiate kernel """
-    # The priors matter here, and bounds alone do not replace them. This problem's
-    # constraint is flat almost everywhere and positive only inside three small disks,
-    # so with 25 initial points barely two of them violate anything. Left to bounds
-    # alone the fit takes the cheaper explanation - a constant function plus noise -
-    # driving the outputscale onto its floor and the noise up to swallow the rest. That
-    # model never predicts a violation anywhere, so the acquisition function is handed a
-    # feasibility penalty of exactly zero and walks straight into the disks.
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.num_par,
             lengthscale_constraint=Interval(1e-4, 1),
-            lengthscale_prior=GammaPrior(3.0, 6.0),
         ),
         outputscale_constraint=Interval(1e-4, 1e2),
-        outputscale_prior=GammaPrior(2.0, 0.15),
     )
 
     """ Draw the initial parameter set """
