@@ -18,6 +18,8 @@ class PolynomialConstrained(MCSingleObjectiveBase):
             ineq_Y_con_cfg=[
                 IneqYConCfg(f=Identity(index=-1))
             ],
+            gt_obj_noise_std=[0.02],
+            gt_con_noise_std=[0.01]
         )
 
     def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:

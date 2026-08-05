@@ -129,3 +129,77 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
 
     edge = sorted((float(a), float(b)) for a, b in zip(front[:, ix], front[:, iy]))
     return points, edge, False
+
+
+def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DEFAULT_METHOD,
+                        samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING):
+    """The true objective over one or two parameters, for drawing under a 1D campaign.
+
+    Where `ground_truth` answers "what trade-offs were there to find", this answers "what
+    did the landscape look like" - the question a single-objective campaign asks instead.
+    The Pareto front is what collapses to nothing on one objective; the landscape does not,
+    so it is what a 1D plot is drawn against.
+
+    Returns (columns, values, shape):
+
+    * `columns` is one list per parameter in `par_keys`, and `values` the true objective
+      there. Infeasible samples are already dropped, so a constrained problem shows its
+      landscape only where the problem allows - which is the same thing the masked
+      contour in pybo's own Experiment2DPlotter says.
+    * `shape` is the grid's (n_x, n_y) when two parameters were covered by ``grid``, and
+      None otherwise. It is what lets a caller reshape the columns into a contour; a
+      random cloud has no such shape, so it can only be scattered.
+
+    Only one or two parameters can be drawn: beyond that a landscape is a projection,
+    which would show a fold in the surface as scatter in the data. `plot_objective`
+    refuses that case rather than drawing it.
+    """
+    if not 1 <= len(par_keys) <= 2:
+        raise SystemExit(f"A landscape needs one or two parameters, not {len(par_keys)}.")
+
+    objective = load_objective(objective_path)
+    obj_labels = [cfg.label for cfg in objective.obj_cfg or []]
+    par_labels = [cfg.label for cfg in objective.par_cfg or []]
+    if obj_key not in obj_labels:
+        raise SystemExit(f"{obj_key!r} is not an objective of {objective_path}. "
+                         f"Available: {', '.join(obj_labels)}")
+    for key in par_keys:
+        if key not in par_labels:
+            raise SystemExit(f"{key!r} is not a parameter of {objective_path}. "
+                             f"Available: {', '.join(par_labels)}")
+    i_obj = obj_labels.index(obj_key)
+    i_par = [par_labels.index(key) for key in par_keys]
+
+    if method == "grid":
+        X = _grid_X(objective, spacing)
+        # _grid_X walks itertools.product over the axes in parameter order, so the last
+        # axis varies fastest and the points reshape into a grid - but only over the
+        # problem's own axes. A landscape asked for two parameters of a problem that has
+        # more would be a slice through the rest, which this does not claim to draw.
+        counts = [len(torch.arange(float(objective.bounds[0, d]),
+                                   float(objective.bounds[1, d]) + spacing / 2, spacing))
+                  for d in range(objective.dim)]
+        # The grid's own shape, in the problem's parameter order - not in the order the
+        # axes were asked for. Every column is reshaped by it alike, so the three arrays
+        # stay one mesh; which of them runs along the rows is not something a contour
+        # cares about, but disagreeing about it would shuffle the surface.
+        shape = tuple(counts) if objective.dim == len(par_keys) else None
+    else:
+        X = _random_X(objective, samples)
+        shape = None
+
+    Y_obj = objective.evaluate_true_objective(X)
+    try:
+        Y_con = objective.evaluate_true_constraint(X)
+    except Exception:  # noqa: BLE001 - unconstrained problems do not define one
+        Y_con = None
+
+    mask = _feasible_mask(objective, X, Y_obj, Y_con)
+    # A contour needs its grid intact, so an infeasible point is blanked rather than
+    # dropped; a scatter has no such structure and simply loses them.
+    if shape is not None:
+        values = torch.where(mask, Y_obj[:, i_obj], torch.nan)
+    else:
+        X, values = X[mask], Y_obj[mask][:, i_obj]
+    columns = [[float(v) for v in X[:, d]] for d in i_par]
+    return columns, [float(v) for v in values], shape

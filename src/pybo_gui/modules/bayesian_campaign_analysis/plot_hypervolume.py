@@ -21,7 +21,9 @@ parser.add_argument("--y", default="wear_microns",      help="Result key for sec
 parser.add_argument("--z", default="",                  help="Result key for third objective (empty = 2D hypervolume)")
 parser.add_argument("--objective", action="append", default=[],
                     help="Result key for an objective (repeatable). When given, "
-                         "overrides --x/--y/--z and enables N-D hypervolume.")
+                         "overrides --x/--y/--z and enables N-D hypervolume. Give "
+                         "exactly one and the metric becomes the best value so far, "
+                         "which is what a single-objective campaign converges on.")
 parser.add_argument("--maximize", action="append", default=[],
                     help="Result key of an objective to maximize (repeatable). "
                          "Its values are negated so the front/hypervolume is "
@@ -42,13 +44,15 @@ except ConstraintError as exc:
     sys.exit(2)
 
 # Objective keys: explicit --objective list (N-D) or the --x/--y[/--z] trio.
-if args.objective:
-    objective_keys = list(args.objective)
-else:
-    objective_keys = [args.x, args.y] + ([args.z] if args.z else [])
-if len(objective_keys) < 2:
-    print("Hypervolume needs at least 2 objectives.")
+objective_keys = list(args.objective) or [k for k in (args.x, args.y, args.z) if k]
+if not objective_keys:
+    print("Give at least one objective, with --x/--y or --objective.")
     sys.exit(1)
+# One objective has no volume to measure, so the campaign's metric is the best value it
+# has reached - the same substitution campaign_gain makes, so the two agree on what a
+# single-objective run is scored by. Everything below (per-run traces, phase shading,
+# grouping, constraints) is about the campaign rather than the metric, so it is unchanged.
+single = len(objective_keys) == 1
 
 # Per-objective optimisation sense: +1 minimize, -1 maximize. Maximized axes are
 # negated so the whole pipeline (front + hypervolume) stays a pure minimization.
@@ -147,7 +151,11 @@ for name, items in series.items():
     s_steps, s_hvs, s_labels, seen = [], [], [], []
     for r in items:
         seen.append(r["point"])
-        s_hvs.append(hypervolume_nd(pareto_front_nd(seen), ref))
+        # Back out of minimization space for the single-objective trace, so the curve is
+        # in the objective's own units and reads against the problem rather than against
+        # a reference point that exists only to make a volume finite.
+        s_hvs.append(signs[0] * min(p[0] for p in seen) if single
+                     else hypervolume_nd(pareto_front_nd(seen), ref))
         s_steps.append(len(seen))
         s_labels.append(r["label"])
     traces[name] = (s_steps, s_hvs, s_labels)
@@ -190,7 +198,15 @@ if args.improvement:
     # Per-step marginal gain per trace, on one shared floor so the decades line up.
     per_trace = {}
     for name, (s_steps, s_hvs, s_labels) in traces.items():
-        deltas = [s_hvs[0]] + [s_hvs[i] - s_hvs[i - 1] for i in range(1, len(s_hvs))]
+        if single:
+            # A value, not a volume: a step's gain is how far it moved the best value,
+            # measured back in minimization space so an improvement is a decrease
+            # whichever way the objective runs. The first observation improves on
+            # nothing, so it has no gain and floors like any other flat step.
+            best = [signs[0] * v for v in s_hvs]
+            deltas = [0.0] + [best[i - 1] - best[i] for i in range(1, len(best))]
+        else:
+            deltas = [s_hvs[0]] + [s_hvs[i] - s_hvs[i - 1] for i in range(1, len(s_hvs))]
         per_trace[name] = deltas
     pos   = [d for deltas in per_trace.values() for d in deltas if d > 0]
     floor = (min(pos) * 0.1) if pos else 1e-9
@@ -208,7 +224,8 @@ if args.improvement:
                 facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
             )
-    ax.set_ylabel(r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
+    ax.set_ylabel(f"Improvement in best {objective_keys[0]}" if single else
+                  r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
 else:
     for name, (s_steps, s_hvs, s_labels) in traces.items():
         ax.plot(s_steps, s_hvs, color=_color(name), linewidth=1.2, zorder=3)
@@ -221,7 +238,8 @@ else:
                 facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
             )
-    ax.set_ylabel("Hypervolume", fontsize=FONT_LABEL)
+    ax.set_ylabel(f"Best {objective_keys[0]}" if single else "Hypervolume",
+                  fontsize=FONT_LABEL)
 
 ax.set_xlabel("Number of observations", fontsize=FONT_LABEL)
 

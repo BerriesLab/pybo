@@ -120,6 +120,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             new_X = X_initial[i * q:(i + 1) * q]
 
         """ Simulate the experiment at new X, once per repetition """
+        # TODO: Pass main and variance for each group of repeated experiments. BO scales as O(n^3)!
         for rep in range(repeats):
             step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
             step_dir.mkdir(parents=True, exist_ok=True)

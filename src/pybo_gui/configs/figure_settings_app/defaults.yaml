@@ -13,7 +13,8 @@
 # intentionally share a shape.
 aspect:
   pareto: 1.25                                 # 5/4   2D & 3D Pareto frontiers (shared)
-  hypervolume: 1.5                             # 3/2   hypervolume vs step
+  objective: 1.25                              # 5/4   single objective over 1-2 parameters
+  hypervolume: 1.5                             # 3/2   hypervolume (or best value) vs step
   evolution: 1.5                               # 3/2   one figure per parameter/result (plot_evolution)
   results_vs_datetime: 1.5                     # 3/2   results vs date
   results_vs_timeofday: 1.5                    # 3/2   results vs time of day

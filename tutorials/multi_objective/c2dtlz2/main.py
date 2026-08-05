@@ -28,15 +28,24 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     torch.manual_seed(seed)
 
     """ Instantiate true objective """
-    objective = C2DTLZ2(device=device, dtype=DTYPE)
+    objective = C2DTLZ2(
+        device=device,
+        dtype=DTYPE
+    )
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.num_par,
-            lengthscale_constraint=Interval(1e-2, 10),
+            lengthscale_constraint=Interval(
+                lower_bound=1e-2,
+                upper_bound=10
+            ),
         ),
-        outputscale_constraint=Interval(1e-4, 1e2),
+        outputscale_constraint=Interval(
+            lower_bound=1e-4,
+            upper_bound=1e2
+        ),
     )
 
     """ Draw the initial parameter set """
