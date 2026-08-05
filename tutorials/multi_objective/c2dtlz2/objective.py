@@ -74,17 +74,22 @@ class C2DTLZ2(MCMultiObjectiveBase):
         a = 1 / math.sqrt(2)
 
         # Disk 1: center in (1, 0)
-        c1 = self._r ** 2 - ((f1 - 1).pow(2) + f2.pow(2))
+        # c1 = self._r ** 2 - ((f1 - 1).pow(2) + f2.pow(2))
+        d1_sq = (f1 - 1).pow(2) + f2.pow(2)
 
         # Disk 2: center in (0, 1)
-        c2 = self._r ** 2 - (f1.pow(2) + (f2 - 1).pow(2))
+        # c2 = self._r ** 2 - (f1.pow(2) + (f2 - 1).pow(2))
+        d2_sq = f1.pow(2) + (f2 - 1).pow(2)
 
         # Disk 3: center in (1/sqrt(2), 1/sqrt(2))
-        c3 = self._r ** 2 - ((f1 - a).pow(2) + (f2 - a).pow(2))
+        # c3 = self._r ** 2 - ((f1 - a).pow(2) + (f2 - a).pow(2))
+        d3_sq = (f1 - a).pow(2) + (f2 - a).pow(2)
 
         # The constraint is violated if (f_1(X), f_2(X)) is inside any
         # of the three disks
-        combined_violation = torch.max(torch.stack([c1, c2, c3], dim=-1), dim=-1)[0]
+        # combined_violation = torch.min(torch.stack([c1, c2, c3], dim=-1), dim=-1)[0]
+        min_dist_sq = torch.min(torch.stack([d1_sq, d2_sq, d3_sq], dim=-1), dim=-1)[0]
+        combined_violation = self._r ** 2 - min_dist_sq
 
         # BoTorch convention:
         # > 0 -> Infeasible

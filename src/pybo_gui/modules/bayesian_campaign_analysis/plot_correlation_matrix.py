@@ -20,9 +20,10 @@ MIN_VALID_TEMP = 20  # minimum non-NaN values for temperature columns
 
 # ---- LOAD & FLATTEN ----
 temp_cols = set()
-rows = []
+rows, runs = [], []
 for exp in load_experiments_from_map(MAP_PATH):
     row = {}
+    runs.append(exp.get("run"))
     row.update(exp.get("parameters", {}))
     row.update(exp.get("results", {}))
     mt = exp.get("machine_temperature", {})
@@ -34,52 +35,71 @@ for exp in load_experiments_from_map(MAP_PATH):
         temp_cols.add("external_temperature_c")
     rows.append(row)
 
-df = pd.DataFrame(rows).select_dtypes(include="number")
-valid_counts = df.notna().sum()
-keep = [
-    c for c in df.columns
-    if valid_counts[c] >= (MIN_VALID_TEMP if c in temp_cols else MIN_VALID)
-]
-df = df[keep]
+df_all = pd.DataFrame(rows).select_dtypes(include="number")
 
-if df.empty or df.shape[1] < 2:
-    print("Not enough data to compute a correlation matrix.")
-    sys.exit(0)
-
-corr = df.corr()
-tick_labels = [c.replace("_", " ") for c in df.columns]
+# One matrix over the whole selection, then one per run. Pooling runs mixes campaigns
+# that searched different regions, which can show a correlation neither run has on its
+# own - and hide one they share. A single-run selection needs only the first matrix.
+run_order = list(dict.fromkeys(runs))
+panels = [("All runs", df_all)]
+if len(run_order) > 1:
+    panels += [(name or "unknown",
+                df_all.iloc[[i for i, r in enumerate(runs) if r == name]])
+               for name in run_order]
 
 # ---- PLOT ----
-n = len(df.columns)
-size = max(6, n * 0.7)
-fig, ax = plt.subplots(figsize=scale_figsize(size, size * 0.85))
-im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
-fig.colorbar(im, ax=ax, shrink=0.8)
+drawn = 0
+for title, df in panels:
+    valid_counts = df.notna().sum()
+    keep = [
+        c for c in df.columns
+        if valid_counts[c] >= (MIN_VALID_TEMP if c in temp_cols else MIN_VALID)
+    ]
+    df = df[keep]
 
-# annotate each cell with its correlation value; flip text to white on the
-# dark (strongly correlated) cells so it stays legible
-annot_size = max(6, FONT_LABEL - 2)
-for i in range(n):
-    for j in range(n):
-        val = corr.iat[i, j]
-        ax.text(
-            j, i, f"{val:.2f}",
-            ha="center", va="center",
-            color="white" if abs(val) > 0.5 else "black",
-            fontsize=annot_size,
-        )
+    if df.empty or df.shape[1] < 2:
+        print(f"Not enough data to compute a correlation matrix for {title}.")
+        continue
 
-ax.set_xticks(range(n), labels=tick_labels)
-ax.set_yticks(range(n), labels=tick_labels)
+    corr = df.corr()
+    tick_labels = [c.replace("_", " ") for c in df.columns]
 
-# white grid lines between cells (was linewidths=0.5 in the seaborn call)
-ax.set_xticks([k - 0.5 for k in range(n + 1)], minor=True)
-ax.set_yticks([k - 0.5 for k in range(n + 1)], minor=True)
-ax.grid(which="minor", color="white", linewidth=0.5)
-ax.tick_params(which="minor", length=0)
+    n = len(df.columns)
+    size = max(6, n * 0.7)
+    fig, ax = plt.subplots(figsize=scale_figsize(size, size * 0.85))
+    im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
+    fig.colorbar(im, ax=ax, shrink=0.8)
 
-ax.tick_params(axis="x", labelsize=FONT_LABEL - 1, rotation=90)
-ax.tick_params(axis="y", labelsize=FONT_LABEL - 1, rotation=0)
+    # annotate each cell with its correlation value; flip text to white on the
+    # dark (strongly correlated) cells so it stays legible
+    annot_size = max(6, FONT_LABEL - 2)
+    for i in range(n):
+        for j in range(n):
+            val = corr.iat[i, j]
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                color="white" if abs(val) > 0.5 else "black",
+                fontsize=annot_size,
+            )
 
-fig.tight_layout(pad=fig_cfg["layout_pad"])
+    ax.set_xticks(range(n), labels=tick_labels)
+    ax.set_yticks(range(n), labels=tick_labels)
+
+    # white grid lines between cells (was linewidths=0.5 in the seaborn call)
+    ax.set_xticks([k - 0.5 for k in range(n + 1)], minor=True)
+    ax.set_yticks([k - 0.5 for k in range(n + 1)], minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.5)
+    ax.tick_params(which="minor", length=0)
+
+    ax.tick_params(axis="x", labelsize=FONT_LABEL - 1, rotation=90)
+    ax.tick_params(axis="y", labelsize=FONT_LABEL - 1, rotation=0)
+
+    ax.set_title(title, fontsize=FONT_TITLE)
+    fig.tight_layout(pad=fig_cfg["layout_pad"])
+    drawn += 1
+
+if not drawn:
+    sys.exit(0)
+
 plt.show(block=__name__ == "__main__")

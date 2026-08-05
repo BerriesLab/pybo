@@ -8,7 +8,7 @@ import matplotlib.ticker as ticker
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
-from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_initial, styler
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 
 parser = argparse.ArgumentParser(description="Per-parameter/result evolution plot.")
@@ -71,6 +71,7 @@ for exp in experiments:
         "index":         exp["index"],
         "iteration":     exp.get(ITERATION_KEY),
         "group_id":      exp["group_id"],
+        "run":           exp.get("run"),
         "label":         _label(exp),
         "parameters":    exp.get("parameters", {}),
         "results":       exp.get("results", {}),
@@ -100,6 +101,7 @@ if args.grouped:
         "index":      grouped[gid][0]["index"],
         "iteration":  grouped[gid][0]["iteration"],
         "group_id":   gid,
+        "run":        grouped[gid][0]["run"],
         "label":      grouped[gid][0]["label"],
         "parameters": grouped[gid][0]["parameters"],
         "results":    _mean_results(grouped[gid]),
@@ -113,32 +115,46 @@ _color, _marker, _ = styler(fig_cfg, all_labels)
 # line at x = n_init, and each Bayesian batch sits at the cumulative observation
 # count through that batch (n_init + i*q when every batch has size q). The block
 # sequence [init, step_1, step_2, ...] drives the interconnection lines.
+#
+# Each run is its own campaign and counts its own observations, so the runs of a
+# multi-run selection overlap on the x axis instead of being laid end to end. A map
+# built without a run field (or from a single run) collapses to one campaign, which
+# is the single-sequence view. base_label keeps a run's design with its proposals.
 rows.sort(key=lambda r: r["index"])  # chronological (already sorted by start_time)
 
-init_block    = [r for r in rows if is_initial(r["label"])]
-bayesian_rows = [r for r in rows if not is_initial(r["label"])]
-n_init        = len(init_block)
+campaigns = {}
+for r in rows:
+    campaigns.setdefault(r["run"] or base_label(r["label"]), []).append(r)
 
-# Group Bayesian rows into steps by their shared iteration number; rows missing a
-# (positive) iteration fall back to q=1 — each becomes its own singleton step.
-numbered, unnumbered = {}, []
-for r in bayesian_rows:
-    it = r["iteration"]
-    if isinstance(it, int) and not isinstance(it, bool) and it > 0:
-        numbered.setdefault(it, []).append(r)
-    else:
-        unnumbered.append(r)
-steps = [numbered[k] for k in sorted(numbered)] + [[r] for r in unnumbered]
+# One [init, step_1, ...] sequence per campaign: the lines connect within a run only.
+campaign_blocks = []
+n_inits         = []
+for items in campaigns.values():
+    init_block    = [r for r in items if is_initial(r["label"])]
+    bayesian_rows = [r for r in items if not is_initial(r["label"])]
+    n_init        = len(init_block)
+    n_inits.append(n_init)
 
-for r in init_block:
-    r["x"] = n_init
-cumulative_obs = 0
-for step in steps:
-    cumulative_obs += len(step)
-    for r in step:
-        r["x"] = n_init + cumulative_obs
+    # Group Bayesian rows into steps by their shared iteration number; rows missing a
+    # (positive) iteration fall back to q=1 — each becomes its own singleton step.
+    numbered, unnumbered = {}, []
+    for r in bayesian_rows:
+        it = r["iteration"]
+        if isinstance(it, int) and not isinstance(it, bool) and it > 0:
+            numbered.setdefault(it, []).append(r)
+        else:
+            unnumbered.append(r)
+    steps = [numbered[k] for k in sorted(numbered)] + [[r] for r in unnumbered]
 
-blocks = [init_block, *steps]
+    for r in init_block:
+        r["x"] = n_init
+    cumulative_obs = 0
+    for step in steps:
+        cumulative_obs += len(step)
+        for r in step:
+            r["x"] = n_init + cumulative_obs
+
+    campaign_blocks.append([init_block, *steps])
 
 # ---- PLOT ----
 CONNECT = {"color": "#888888", "linewidth": fig_cfg["grid"]["linewidth"],
@@ -167,17 +183,19 @@ for col in all_cols:
     fig, ax = plt.subplots(1, 1, figsize=fig_cfg["figsize"]["evolution"])
 
     # Fully-connect every point in one block to every point in the next, skipping
-    # points whose value for this column is missing.
-    for prev, nxt in zip(blocks, blocks[1:]):
-        for a in prev:
-            ya = a[source].get(col)
-            if ya is None:
-                continue
-            for b in nxt:
-                yb = b[source].get(col)
-                if yb is None:
+    # points whose value for this column is missing. A campaign at a time, so no line
+    # ever joins two runs.
+    for blocks in campaign_blocks:
+        for prev, nxt in zip(blocks, blocks[1:]):
+            for a in prev:
+                ya = a[source].get(col)
+                if ya is None:
                     continue
-                ax.plot([a["x"], b["x"]], [ya, yb], **CONNECT)
+                for b in nxt:
+                    yb = b[source].get(col)
+                    if yb is None:
+                        continue
+                    ax.plot([a["x"], b["x"]], [ya, yb], **CONNECT)
 
     for lbl in all_labels:
         style_key  = "initial" if is_initial(lbl) else lbl
@@ -191,7 +209,9 @@ for col in all_cols:
                    facecolors=face_color, edgecolors=SCATTER["edge_color"],
                    linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3)
 
-    ax.axvline(x=n_init, **fig_cfg["refline"]["delay"])
+    # One line per distinct design size: runs that share an n_init share the line.
+    for x_init in sorted({n for n in n_inits if n}):
+        ax.axvline(x=x_init, **fig_cfg["refline"]["delay"])
     ax.set_title(pretty, fontsize=FONT_TITLE)
     ax.set_xlabel("Number of observations", fontsize=FONT_LABEL)
     ax.set_ylabel(pretty, fontsize=FONT_LABEL)

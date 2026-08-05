@@ -294,12 +294,17 @@ class BayesianOptimizer(OptimizerBase):
             train_y = torch.cat((train_y, train_y_con), dim=-1)
 
         # Define train_y_var
-        if self._Y_obj_var is not None and self._Y_con_var is not None:
-            train_y_var = self._Y_obj_var.clone()
-            train_y_con_var = self._Y_con_var.clone()
-            train_var = torch.cat((train_y_var, train_y_con_var), dim=-1)
-        else:
+        if self._Y_obj_var is None and self._Y_con_var is None:
             train_var = None
+        else:
+            # Create tensor filled with a tiny base noise instead of uninitialised memory
+            train_var = torch.full(train_y.shape, 1e-6, dtype=train_y.dtype, device=train_y.device)
+            # Map objective variances
+            if self._Y_obj_var is not None:
+                train_var[:, :self._Y_obj.shape[-1]] = self._Y_obj_var.clone()
+            # Map constraint variances
+            if self._Y_con_var is not None:
+                train_var[:, self._Y_obj.shape[-1]:] = self._Y_con_var.clone()
 
         return train_x, train_y, train_var
 

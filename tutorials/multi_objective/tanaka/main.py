@@ -33,7 +33,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     """ Instantiate kernel """
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
-            ard_num_dims=objective.dim,
+            ard_num_dims=objective.num_par,
             lengthscale_constraint=Interval(1e-3, 1),
         ),
         outputscale_constraint=Interval(1e-3, 1e1),
