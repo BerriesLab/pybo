@@ -19,7 +19,9 @@ class MCObjectiveBase(ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_noise_std: float | list[float] | None = None,
+            gt_obj_noise_std: float | list[float] | None = None,
+            gt_con_noise_std: float | list[float] | None = None,
+            gt_trk_noise_std: float | list[float] | None = None,
     ):
         r"""
         Args:
@@ -68,7 +70,17 @@ class MCObjectiveBase(ABC):
         (feasible if non-positive). ATTENTION: the sign convention for Y constraints is
         the opposite of the sign convention for X constraints.
 
-        -gt_noise_std: The noise std. dev. added to the ground truth.
+        -gt_obj_noise_std: The noise std. dev. added to the ground truth objectives.
+        One entry per objective, or a scalar broadcast to all of them.
+
+        -gt_con_noise_std: The noise std. dev. added to the ground truth Y
+        constraints. One entry per constraint, or a scalar broadcast to all of them.
+
+        -gt_trk_noise_std: The noise std. dev. added to the ground truth trackers.
+        One entry per tracker, or a scalar broadcast to all of them.
+
+        Each measured channel declares its own noise because each lives on its own
+        scale: a constraint or a tracker is rarely on the scale of any objective.
         """
         super().__init__()
 
@@ -96,7 +108,9 @@ class MCObjectiveBase(ABC):
         self._to_minimize = self._process_to_minimize()
         self._outcomes = self._process_outcomes()
         self._bounds = self._process_bounds()
-        self._gt_noise_std = self._process_gt_noise(gt_noise_std)
+        self._gt_obj_noise_std = self._process_gt_obj_noise(gt_obj_noise_std)
+        self._gt_con_noise_std = self._process_gt_con_noise(gt_con_noise_std)
+        self._gt_trk_noise_std = self._process_gt_trk_noise(gt_trk_noise_std)
 
         # === Constraints ===
         self._lin_eq_X_con = self._process_lin_eq_X(lin_eq_X_con_cfg)
@@ -161,8 +175,16 @@ class MCObjectiveBase(ABC):
         return self._num_outcomes
 
     @property
-    def gt_noise_std(self) -> torch.Tensor | None:
-        return self._gt_noise_std
+    def gt_obj_noise_std(self) -> torch.Tensor | None:
+        return self._gt_obj_noise_std
+
+    @property
+    def gt_con_noise_std(self) -> torch.Tensor | None:
+        return self._gt_con_noise_std
+
+    @property
+    def gt_trk_noise_std(self) -> torch.Tensor | None:
+        return self._gt_trk_noise_std
 
     @property
     def lin_eq_X_con(self):
@@ -195,7 +217,7 @@ class MCObjectiveBase(ABC):
                 if cfg.index is None:
                     cfg.index = pos
                 if cfg.label is None:
-                    cfg.label = f"par {pos:02d}"
+                    cfg.label = f"par_{pos:02d}"
             return cfgs
         return None
 
@@ -207,7 +229,7 @@ class MCObjectiveBase(ABC):
                 if cfg.index is None:
                     cfg.index = pos
                 if cfg.label is None:
-                    cfg.label = f"obj {pos:02d}"
+                    cfg.label = f"obj_{pos:02d}"
             return cfgs
         return None
 
@@ -219,7 +241,7 @@ class MCObjectiveBase(ABC):
                 if cfg.index is None:
                     cfg.index = pos
                 if cfg.label is None:
-                    cfg.label = f"trk {pos:02d}"
+                    cfg.label = f"trk_{pos:02d}"
             return cfgs
         return None
 
@@ -231,11 +253,23 @@ class MCObjectiveBase(ABC):
         ub = [p.bounds[1] for p in sorted_pars]
         return torch.tensor([lb, ub], device=self.device, dtype=self.dtype)
 
-    def _process_gt_noise(self, val: float | list[float] | None) -> Tensor | None:
+    def _process_gt_noise(self, val: float | list[float] | None, n: int, name: str) -> Tensor | None:
+        """Expands a scalar over the channel and checks the length of a list."""
         if val is None: return None
         if isinstance(val, (float, int)):
-            val = [float(val)] * self.num_objectives
+            val = [float(val)] * n
+        if len(val) != n:
+            raise ValueError(f"{name} must have {n} entries, got {len(val)}.")
         return torch.tensor(val, device=self.device, dtype=self.dtype)
+
+    def _process_gt_obj_noise(self, val: float | list[float] | None) -> Tensor | None:
+        return self._process_gt_noise(val, self.num_objectives, "gt_obj_noise_std")
+
+    def _process_gt_con_noise(self, val: float | list[float] | None) -> Tensor | None:
+        return self._process_gt_noise(val, self.num_con, "gt_con_noise_std")
+
+    def _process_gt_trk_noise(self, val: float | list[float] | None) -> Tensor | None:
+        return self._process_gt_noise(val, self.num_trk, "gt_trk_noise_std")
 
     def _process_to_minimize(self, ):
         return torch.tensor(
@@ -302,7 +336,7 @@ class MCObjectiveBase(ABC):
                 if cfg.index is None:
                     cfg.index = pos
                 if cfg.label is None:
-                    cfg.label = f"con {pos:02d}"
+                    cfg.label = f"con_{pos:02d}"
         return [c.f for c in cfgs]
 
     # ===== Methods =====
@@ -315,7 +349,7 @@ class MCObjectiveBase(ABC):
 
     def evaluate_true_objective_with_noise(self, X: Tensor) -> Tensor:
         Y = self.evaluate_true_objective(X)
-        Y = self.add_noise(Y)
+        Y = self.add_noise(Y, self._gt_obj_noise_std)
         return Y
 
     def evaluate_true_constraint(self, X: Tensor) -> Tensor:
@@ -326,7 +360,7 @@ class MCObjectiveBase(ABC):
 
     def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
         Y = self.evaluate_true_constraint(X)
-        Y = self.add_noise(Y)
+        Y = self.add_noise(Y, self._gt_con_noise_std)
         return Y
 
     def evaluate_tracker(self, X: Tensor) -> Tensor:
@@ -334,6 +368,11 @@ class MCObjectiveBase(ABC):
         Evaluate values to monitor but not to optimize.
         """
         pass
+
+    def evaluate_tracker_with_noise(self, X: Tensor) -> Tensor:
+        Y = self.evaluate_tracker(X)
+        Y = self.add_noise(Y, self._gt_trk_noise_std)
+        return Y
 
     def evaluate_true_slack(self, X: Tensor, slack: float = 0) -> Tensor:
         """
@@ -345,13 +384,19 @@ class MCObjectiveBase(ABC):
             raise ValueError("slack must be positive")
         return self.evaluate_true_constraint(X=X) - slack
 
-    def add_noise(self, Y: Tensor) -> Tensor:
+    @staticmethod
+    def add_noise(Y: Tensor, std: Tensor) -> Tensor:
         """
-        A method to add noise to the observations.
+        A method to add noise to the observations. "std" holds one entry per
+        column of Y: which channel it describes is the caller's to decide.
         """
-        if self._gt_noise_std is None:
-            raise ValueError("noise_std is required to add_noise.")
-        noise = self._gt_noise_std.to(Y.device) * torch.randn_like(Y)
+        if std is None:
+            raise ValueError("std is required to add_noise.")
+        if Y.shape[-1] != std.shape[-1]:
+            raise ValueError(
+                f"std has {std.shape[-1]} entries but Y has "
+                f"{Y.shape[-1]} columns.")
+        noise = std.to(Y.device) * torch.randn_like(Y)
         return Y + noise
 
     def is_X_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
@@ -456,7 +501,9 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_noise_std: float | list[float] | None = None,
+            gt_obj_noise_std: float | list[float] | None = None,
+            gt_con_noise_std: float | list[float] | None = None,
+            gt_trk_noise_std: float | list[float] | None = None,
     ):
         ABC.__init__(self)
         MCAcquisitionObjective.__init__(self)
@@ -471,7 +518,9 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
-            gt_noise_std=gt_noise_std,
+            gt_obj_noise_std=gt_obj_noise_std,
+            gt_con_noise_std=gt_con_noise_std,
+            gt_trk_noise_std=gt_trk_noise_std,
         )
         self.best_value = best_value
 
@@ -503,7 +552,9 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_noise_std: float | list[float] | None = None,
+            gt_obj_noise_std: float | list[float] | None = None,
+            gt_con_noise_std: float | list[float] | None = None,
+            gt_trk_noise_std: float | list[float] | None = None,
     ):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
@@ -518,7 +569,9 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
-            gt_noise_std=gt_noise_std,
+            gt_obj_noise_std=gt_obj_noise_std,
+            gt_con_noise_std=gt_con_noise_std,
+            gt_trk_noise_std=gt_trk_noise_std,
         )
         self.ref_point = [cfg.ref_point for cfg in self.obj_cfg]
         self.max_hv = max_hv

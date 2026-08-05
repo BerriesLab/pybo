@@ -13,6 +13,9 @@ An experiment is *feasible* iff every constraint evaluates truthy against its
 results. A missing key, a None value, or any evaluation error makes the
 experiment infeasible.
 
+A result key has to be a Python name to be referenced at all: pybo labels its
+columns ``obj_00``, ``con_00``, ... so they can be written as they are.
+
 Expressions run in a sandbox: ``minimal`` asteval (arithmetic, comparisons and
 the math helpers — abs, min, max, sqrt, sin, log, …), with statement
 constructs (import, comprehensions, lambda, assignment, loops, with, …) and the

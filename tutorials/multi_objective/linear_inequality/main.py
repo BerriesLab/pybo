@@ -66,9 +66,9 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
     """ Choose between deterministic and noisy objective """
     # Asking for noise the objective cannot produce is a mistake, not a preference
-    if noise and objective.gt_noise_std is None:
+    if noise and objective.gt_obj_noise_std is None:
         raise ValueError(
-            f"--noise true needs an objective that declares gt_noise_std, and "
+            f"--noise true needs an objective that declares gt_obj_noise_std, and "
             f"{type(objective).__name__} declares none. Declare one in its "
             f"__init__, or pass --noise false to measure it exactly.")
     noisy = noise

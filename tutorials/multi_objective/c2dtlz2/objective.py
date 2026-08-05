@@ -47,6 +47,8 @@ class C2DTLZ2(MCMultiObjectiveBase):
             ineq_Y_con_cfg=[
                 IneqYConCfg(f=Identity(index=-1))
             ],
+            gt_obj_noise_std=[0.015, 0.015],
+            gt_con_noise_std=[0.01],
         )
 
         self.k = self.dim - self.num_obj + 1
@@ -85,8 +87,8 @@ class C2DTLZ2(MCMultiObjectiveBase):
         combined_violation = torch.max(torch.stack([c1, c2, c3], dim=-1), dim=-1)[0]
 
         # BoTorch convention:
-        # > 0 -> Infeasible (dentro i cerchi rosa)
-        # <= 0 -> Feasible (tutto il resto)
+        # > 0 -> Infeasible
+        # <= 0 -> Feasible
         return combined_violation.unsqueeze(-1) * 100
 
     def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:

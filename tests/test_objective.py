@@ -8,13 +8,13 @@ DTYPE = torch.float64
 
 
 class SingleMin(MCSingleObjectiveBase):
-    def __init__(self, gt_noise_std=None):
+    def __init__(self, gt_obj_noise_std=None):
         super().__init__(
             device=DEVICE,
             dtype=DTYPE,
             par_cfg=[ParCfg(bounds=(-1.0, 5.0))],
             obj_cfg=[ObjCfg(bounds=(0.0, 9.0), to_minimize=True, ref_point=10.0)],
-            gt_noise_std=gt_noise_std,
+            gt_obj_noise_std=gt_obj_noise_std,
         )
 
     def evaluate_true_objective(self, X):
@@ -80,9 +80,9 @@ def test_num_objectives_matches_num_obj_multi():
 
 
 def test_scalar_gt_noise_expands_over_objectives():
-    obj = SingleMin(gt_noise_std=0.5)
-    assert obj.gt_noise_std.shape == (1,)
-    assert torch.equal(obj.gt_noise_std, torch.tensor([0.5], dtype=DTYPE))
+    obj = SingleMin(gt_obj_noise_std=0.5)
+    assert obj.gt_obj_noise_std.shape == (1,)
+    assert torch.equal(obj.gt_obj_noise_std, torch.tensor([0.5], dtype=DTYPE))
 
 
 def test_ref_point_negation_to_max_space():
