@@ -63,6 +63,10 @@ class CompiledConstraints:
             raise ConstraintError(f"Invalid constraint {expr_text!r}: {err.msg}")
         self._items.append((expr_text, node))
 
+    def __bool__(self) -> bool:
+        """True if anything was actually compiled: blank specs leave nothing to enforce."""
+        return bool(self._items)
+
     def is_feasible(self, results: dict) -> bool:
         if not self._items:
             return True

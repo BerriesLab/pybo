@@ -227,8 +227,9 @@ fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
 if args.ground_truth:
     # Under everything: it is the backdrop the campaign is read against, not a series.
     from pybo_gui.modules.bayesian_campaign_analysis._ground_truth import ground_truth
-    gt_points, gt_front = ground_truth(args.ground_truth, args.x, args.y,
-                                       args.gt_method, args.gt_samples, args.gt_spacing)
+    gt_points, gt_front, gt_constrained = ground_truth(
+        args.ground_truth, args.x, args.y,
+        args.gt_method, args.gt_samples, args.gt_spacing)
     if gt_points:
         gt_color = fig_cfg["colors"].get("ground_truth", "#8A8F98")
         ax.scatter([p[0] for p in gt_points], [p[1] for p in gt_points],
@@ -240,11 +241,21 @@ if args.ground_truth:
             legend_handles_gt = mlines.Line2D([], [], color=gt_color, linewidth=1.2,
                                               label="Ground truth")
         else:
-            legend_handles_gt = None
+            # A constrained problem draws no front line, so the handle shows the cloud.
+            legend_handles_gt = mlines.Line2D([], [], linestyle="None", marker=".",
+                                              color=gt_color,
+                                              markersize=SCATTER["marker_size"] ** 0.5,
+                                              label="Ground truth")
     else:
         legend_handles_gt = None
 else:
+    gt_constrained = False
     legend_handles_gt = None
+
+# Whether this problem is known to be constrained, and so whether joining front points
+# by a line would claim trade-offs a constraint may forbid. Either the ground truth says
+# the problem declares constraints, or the plot was given some to enforce itself.
+constrained = gt_constrained or bool(constraints)
 
 all_labels     = sorted({r["label"] for r in valid})
 legend_handles = [legend_handles_gt] if legend_handles_gt is not None else []
@@ -310,8 +321,10 @@ for lbl in all_labels:
 
     legend_face = "gray" if use_z else _label_color(lbl)
     legend_handles.append(
-        mlines.Line2D([], [], color=_label_color(lbl), linewidth=1.0,
-                      linestyle=_front_style(lbl), marker=marker,
+        # No dash in the handle when no front line is drawn, or it advertises one.
+        mlines.Line2D([], [], color=_label_color(lbl),
+                      linewidth=0.0 if constrained else 1.0,
+                      linestyle="None" if constrained else _front_style(lbl), marker=marker,
                       markerfacecolor=legend_face, markeredgecolor=SCATTER["edge_color"],
                       markeredgewidth=0.8, markersize=SCATTER["marker_size"] ** 0.5,
                       label=lbl.capitalize())
@@ -359,7 +372,9 @@ if args.show_numbers:
                     xytext=(4, 4), textcoords="offset points",
                     fontsize=FONT_LEGEND - 2, color="dimgray")
 
-# Exploration Pareto fronts (sobol, lhs, manual) — shared colour and style.
+# Exploration Pareto fronts (sobol, lhs, manual) — shared colour and style. The
+# non-dominated points are always circled; they are only joined into a front line on an
+# unconstrained problem, where the trade-offs between two of them are all attainable.
 for expl_lbl in FRONT_LABELS:
     pts   = [(r["x"], r["y"]) for r in valid if r["label"] == expl_lbl and r["feasible"]]
     front = pareto_front(pts, sx, sy)
@@ -367,9 +382,9 @@ for expl_lbl in FRONT_LABELS:
         continue
     color  = _label_color(expl_lbl)
     marker = _label_marker(expl_lbl)
-    ls     = _front_style(expl_lbl)
     xs, ys = [p[0] for p in front], [p[1] for p in front]
-    ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=ls, zorder=2)
+    if not constrained:
+        ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=_front_style(expl_lbl), zorder=2)
     ax.scatter(xs, ys, s=SCATTER["marker_size"], marker=marker, facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
     # No handle here: the series' own entry already carries this front's colour and dash,
     # and repeating the run's name once per front is what made the legend swallow the plot.

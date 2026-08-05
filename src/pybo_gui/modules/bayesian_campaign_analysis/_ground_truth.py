@@ -74,12 +74,26 @@ def _feasible_mask(objective, X, Y_obj, Y_con):
     return mask
 
 
+def _is_constrained(objective) -> bool:
+    """True if the problem declares any constraint, on its inputs or on its outputs."""
+    return any(getattr(objective, name, None) for name in
+               ("ineq_Y_con", "lin_eq_X_con", "lin_ineq_X_con", "nonlin_ineq_X_con"))
+
+
 def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_METHOD,
                  samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING):
-    """(points, front) for the two named objectives, both as (x, y) lists.
+    """(points, front, constrained) for the two named objectives.
 
-    `points` is every feasible sample of the true objective, `front` its non-dominated
-    subset sorted on x, so a line through it reads as a front.
+    `points` is every feasible sample of the true objective and `front` its non-dominated
+    subset sorted on x, both as (x, y) lists, so a line through `front` reads as a front.
+
+    A constrained problem returns an empty `front`: its feasible front can be disconnected
+    - C2-DTLZ2's three exclusion disks are centred on its quarter circle and leave two arcs
+    - and a line through the sampled front would bridge the gaps, drawing trade-offs the
+    problem forbids. Telling a hole from ordinary spacing means measuring gaps against a
+    threshold, which holds only until the sampling density changes, so the line is dropped
+    outright instead. The cloud still shows where the front runs and where it stops, and
+    `constrained` lets the caller drop the observations' own front line on the same terms.
     """
     objective = load_objective(objective_path)
     labels = [cfg.label for cfg in objective.obj_cfg or []]
@@ -97,9 +111,15 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
     except Exception:  # noqa: BLE001 - unconstrained problems do not define one
         Y_con = None
 
+    constrained = _is_constrained(objective)
+
     Y = Y_obj[_feasible_mask(objective, X, Y_obj, Y_con)]
     if Y.numel() == 0:
-        return [], []
+        return [], [], constrained
+
+    points = [(float(a), float(b)) for a, b in zip(Y[:, ix], Y[:, iy])]
+    if constrained:
+        return points, [], True
 
     # Non-dominated in maximization space, as the optimizer scores it.
     from botorch.utils.multi_objective import is_non_dominated
@@ -107,6 +127,5 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
     signed[..., objective.to_minimize] *= -1
     front = Y[is_non_dominated(signed)]
 
-    points = [(float(a), float(b)) for a, b in zip(Y[:, ix], Y[:, iy])]
     edge = sorted((float(a), float(b)) for a, b in zip(front[:, ix], front[:, iy]))
-    return points, edge
+    return points, edge, False
