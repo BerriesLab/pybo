@@ -37,6 +37,7 @@ class LinearEqualityTest(MCMultiObjectiveBase):
             lin_eq_X_con_cfg=[
                 LinEqXConCfg(idxs=[0, 1], coeff=[1.0, 2.0], rhs=1.0)
             ],
+            gt_obj_noise_std=[0.02, 0.02]
         )
 
     @staticmethod

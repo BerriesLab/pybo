@@ -34,7 +34,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.num_par,
-            lengthscale_constraint=Interval(1e-2, 1),
+            lengthscale_constraint=Interval(1e-2, 10),
         ),
         outputscale_constraint=Interval(1e-4, 1e2),
     )

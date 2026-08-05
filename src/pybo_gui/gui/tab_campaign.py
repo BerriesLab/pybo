@@ -33,6 +33,7 @@ from pybo_gui.gui.widgets import (
 
 DIMENSIONS = ("1D", "2D", "3D", "N-D")
 MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
+_NO_OBJECTIVE = "No objective loaded — keys will come from the selected steps."
 
 
 def _result_keys(exp_map: dict) -> list:
@@ -187,11 +188,14 @@ def build(step_list, settings) -> QWidget:
     obj_layout = QVBoxLayout(obj_box)
     obj_edit = QLineEdit()
     obj_edit.setPlaceholderText("path to the run's objective.py")
-    obj_status = QLabel("No objective loaded — keys will come from the selected steps.")
+    obj_status = QLabel(_NO_OBJECTIVE)
     obj_status.setStyleSheet("color: grey;")
     browse = QPushButton("Browse")
     load_btn = QPushButton("Load objective")
-    obj_layout.addWidget(_row(obj_edit, browse, load_btn))
+    unload_btn = QPushButton("Unload")
+    unload_btn.setToolTip("Go back to the keys the selected steps carry, with no senses")
+    unload_btn.setEnabled(False)
+    obj_layout.addWidget(_row(obj_edit, browse, load_btn, unload_btn))
     obj_layout.addWidget(obj_status)
     layout.addWidget(obj_box)
 
@@ -369,15 +373,30 @@ def build(step_list, settings) -> QWidget:
         except Exception as exc:  # noqa: BLE001 - a bad path must not kill the tab
             state["problem"] = None
             obj_status.setText(f"Could not load: {exc}")
+            unload_btn.setEnabled(False)
             _sync_ground_truth()
             return
         state["problem"] = problem
         _refresh_keys()
         _sync_ground_truth()
+        unload_btn.setEnabled(True)
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
                            for o in problem["objectives"])
         obj_status.setText(f"{len(problem['objectives'])} objectives: {senses}. "
                            f"ref_point={problem['ref_point']}")
+
+    def _unload_objective() -> None:
+        """Drop the loaded problem definition and fall back to the steps' own keys.
+
+        The path goes too: it is what --ground-truth is handed, so leaving it behind
+        would let a cleared objective still be drawn under the observations.
+        """
+        state["problem"] = None
+        obj_edit.clear()
+        obj_status.setText(_NO_OBJECTIVE)
+        unload_btn.setEnabled(False)
+        _refresh_keys()
+        _sync_ground_truth()
 
     def _browse_objective() -> None:
         chosen, _ = QFileDialog.getOpenFileName(page, "Choose an objective", obj_edit.text(),
@@ -388,6 +407,7 @@ def build(step_list, settings) -> QWidget:
 
     browse.clicked.connect(_browse_objective)
     load_btn.clicked.connect(lambda: _load_objective(obj_edit.text()))
+    unload_btn.clicked.connect(_unload_objective)
     btn_refresh.clicked.connect(_refresh_keys)
 
     # ---- Dimensionality wiring ----------------------------------------------

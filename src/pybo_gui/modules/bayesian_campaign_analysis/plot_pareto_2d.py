@@ -12,7 +12,7 @@ from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
-from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 
 parser = argparse.ArgumentParser()
@@ -372,20 +372,30 @@ if args.show_numbers:
                     xytext=(4, 4), textcoords="offset points",
                     fontsize=FONT_LEGEND - 2, color="dimgray")
 
-# Exploration Pareto fronts (sobol, lhs, manual) — shared colour and style. The
-# non-dominated points are always circled; they are only joined into a front line on an
-# unconstrained problem, where the trade-offs between two of them are all attainable.
-for expl_lbl in FRONT_LABELS:
-    pts   = [(r["x"], r["y"]) for r in valid if r["label"] == expl_lbl and r["feasible"]]
-    front = pareto_front(pts, sx, sy)
+# Pareto fronts — shared colour and style. The non-dominated points are always circled;
+# they are only joined into a front line on an unconstrained problem, where the trade-offs
+# between two of them are all attainable.
+#
+# One front per *base* label, not per label: a run's initial design is a series of its own
+# for styling ("run3 (initial)"), but it is the same campaign, so a design point still
+# undominated at the end belongs on that run's front. Grouping by base is also what keeps
+# --label-by provenance honest - there "initial" and "proposed" are bases in their own
+# right, so asking for them apart still draws them apart.
+for base in sorted({base_label(lbl) for lbl in FRONT_LABELS}):
+    members = [r for r in valid if base_label(r["label"]) == base and r["feasible"]]
+    front = pareto_front([(r["x"], r["y"]) for r in members], sx, sy)
     if not front:
         continue
-    color  = _label_color(expl_lbl)
-    marker = _label_marker(expl_lbl)
+    color  = _label_color(base)
     xs, ys = [p[0] for p in front], [p[1] for p in front]
     if not constrained:
-        ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=_front_style(expl_lbl), zorder=2)
-    ax.scatter(xs, ys, s=SCATTER["marker_size"], marker=marker, facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
+        ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=_front_style(base), zorder=2)
+    # Circle each point with the marker of the series it actually came from, so a surviving
+    # design point still reads as exploration rather than as a proposal.
+    markers_at = {(r["x"], r["y"]): _label_marker(r["label"]) for r in members}
+    for x, y in front:
+        ax.scatter([x], [y], s=SCATTER["marker_size"], marker=markers_at.get((x, y), "o"),
+                   facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
     # No handle here: the series' own entry already carries this front's colour and dash,
     # and repeating the run's name once per front is what made the legend swallow the plot.
 
