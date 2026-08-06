@@ -31,7 +31,7 @@ from pybo_gui.gui.widgets import (
     repopulate, set_text_async,
 )
 
-DIMENSIONS = ("1D", "2D", "3D", "N-D")
+OBJECTIVE_COUNTS = ("1", "2", "3", "4+")
 MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
 _NO_OBJECTIVE = "No objective loaded — keys will come from the selected steps."
 
@@ -57,8 +57,8 @@ def _parameter_keys(exp_map: dict) -> list:
     """Every parameter column in the experiment map, or [] when nothing is built yet.
 
     _result_keys deliberately merges parameters in with the results, since an axis will
-    take either. The 1D landscape draws the objective *over* its parameters, so there
-    they have to be told apart.
+    take either. The single-objective landscape draws the objective *over* its
+    parameters, so there they have to be told apart.
     """
     keys = []
     for entry in (exp_map or {}).get("experiments", []):
@@ -214,29 +214,29 @@ def build(step_list, settings) -> QWidget:
     obj_layout.addWidget(obj_status)
     layout.addWidget(obj_box)
 
-    # ---- Dimensionality ------------------------------------------------------
-    dim_group = QButtonGroup(page)
-    dim_buttons = {}
-    dim_row = QWidget()
-    dim_layout = QHBoxLayout(dim_row)
-    dim_layout.setContentsMargins(0, 0, 0, 0)
-    lead = QLabel("Dimensions:")
+    # ---- Objective count -------------------------------------------------------
+    count_group = QButtonGroup(page)
+    count_buttons = {}
+    count_row = QWidget()
+    count_layout = QHBoxLayout(count_row)
+    count_layout.setContentsMargins(0, 0, 0, 0)
+    lead = QLabel("Objectives:")
     lead.setFixedWidth(78)
-    dim_layout.addWidget(lead)
-    for name in DIMENSIONS:
+    count_layout.addWidget(lead)
+    for name in OBJECTIVE_COUNTS:
         button = QRadioButton(name)
-        dim_group.addButton(button)
-        dim_buttons[name] = button
-        dim_layout.addWidget(button)
-    dim_layout.addStretch()
-    dim_buttons["1D"].setToolTip("A single-objective campaign: the objective over its "
-                                 "parameters, and the best value it reached")
-    dim_buttons["2D"].setChecked(True)
-    layout.addWidget(dim_row)
+        count_group.addButton(button)
+        count_buttons[name] = button
+        count_layout.addWidget(button)
+    count_layout.addStretch()
+    count_buttons["1"].setToolTip("A single-objective campaign: the objective over its "
+                                  "parameters, and the best value it reached")
+    count_buttons["2"].setChecked(True)
+    layout.addWidget(count_row)
 
-    def _dimension() -> str:
-        button = dim_group.checkedButton()
-        return button.text() if button else "2D"
+    def _n_objectives() -> str:
+        button = count_group.checkedButton()
+        return button.text() if button else "2"
 
     # ---- Axes ----------------------------------------------------------------
     axes_box = QGroupBox("Objectives")
@@ -358,14 +358,14 @@ def build(step_list, settings) -> QWidget:
         return _parameter_keys(state["map"])
 
     def _sync_landscape() -> None:
-        """Offer the 1D landscape only where there is a plane to draw it on.
+        """Offer the single-objective landscape only where there is a plane to draw it on.
 
         Above two parameters the points would be a projection: two far apart in a
         parameter with no axis land on top of each other, so a fold in the surface reads
         as scatter in the data. The best-value trace stays either way - it is about the
-        campaign rather than about the space, so it holds at any dimension.
+        campaign rather than about the space, so it holds regardless of parameter count.
         """
-        if _dimension() != "1D":
+        if _n_objectives() != "1":
             return
         n = len(_parameters())
         btn_pareto.setEnabled(1 <= n <= 2)
@@ -400,7 +400,7 @@ def build(step_list, settings) -> QWidget:
             senses = {}
 
         repopulate(x_combo, objectives)
-        if _dimension() == "1D":
+        if _n_objectives() == "1":
             # The rows are a landscape rather than a trade-off: one objective, and the
             # one or two parameters it is drawn over. So y and z offer parameters, and
             # neither is an objective whose second entry should be preselected.
@@ -408,8 +408,8 @@ def build(step_list, settings) -> QWidget:
             repopulate(y_combo, parameters)
             repopulate(z_combo, parameters, blank_first=True)
             # A problem of exactly two parameters is a plane, and the plane is the whole
-            # picture there - so both axes are filled in, the way 2D preselects its
-            # second objective. More than two and there is no obvious pair to guess at.
+            # picture there - so both axes are filled in, the way two objectives preselects
+            # its second objective. More than two and there is no obvious pair to guess at.
             if len(parameters) == 2:
                 z_combo.setCurrentText(parameters[1])
         else:
@@ -474,47 +474,49 @@ def build(step_list, settings) -> QWidget:
     unload_btn.clicked.connect(_unload_objective)
     btn_refresh.clicked.connect(_refresh_keys)
 
-    # ---- Dimensionality wiring ----------------------------------------------
+    # ---- Objective-count wiring -----------------------------------------------
 
-    def _on_dimension_change() -> None:
-        dim = _dimension()
-        is_nd = dim == "N-D"
-        is_3d = dim == "3D"
-        is_1d = dim == "1D"
-        # N-D has no scatter to draw beyond three axes, so the axis frame gives way to
+    def _on_objective_count_change() -> None:
+        count = _n_objectives()
+        is_many = count == "4+"
+        is_three = count == "3"
+        is_single = count == "1"
+        # 4+ has no scatter to draw beyond three axes, so the axis frame gives way to
         # the checklist and the Pareto button goes with it.
-        axes_box.setVisible(not is_nd)
-        nd_box.setVisible(is_nd)
-        z_row.setEnabled(not is_nd)
-        # z is a real objective only in 3D; in 2D it colours the points and in 1D it is
-        # the second parameter, so in neither does its sense mean anything.
-        z_sense.setEnabled(is_3d)
-        # 1D reads the same three rows as a landscape - the one objective, and the one or
-        # two parameters it is drawn over - so only the objective's sense is left live.
-        axes_box.setTitle("Objective and parameters" if is_1d else "Objectives")
-        x_lead.setText("objective:" if is_1d else "x:")
-        y_lead.setText("parameter:" if is_1d else "y:")
-        z_lead.setText("parameter 2:" if is_1d else ("z:" if is_3d else "z (colour):"))
-        y_sense.setEnabled(not is_1d)
+        axes_box.setVisible(not is_many)
+        nd_box.setVisible(is_many)
+        z_row.setEnabled(not is_many)
+        # z is a real objective only with three; with two it colours the points and with
+        # one it is the second parameter, so in neither does its sense mean anything.
+        z_sense.setEnabled(is_three)
+        # One objective reads the same three rows as a landscape - the one objective, and
+        # the one or two parameters it is drawn over - so only the objective's sense is
+        # left live.
+        axes_box.setTitle("Objective and parameters" if is_single else "Objectives")
+        x_lead.setText("objective:" if is_single else "x:")
+        y_lead.setText("parameter:" if is_single else "y:")
+        z_lead.setText("parameter 2:" if is_single else ("z:" if is_three else "z (colour):"))
+        y_sense.setEnabled(not is_single)
         # One objective has no front and no volume: what the two buttons plot instead is
         # the landscape and the best value reached, so they say so.
         cb_ground.setToolTip(
-            "Load an objective to draw the true landscape under the observations" if is_1d
+            "Load an objective to draw the true landscape under the observations" if is_single
             else "Load an objective to draw the true front under the observations")
-        btn_pareto.setText("Plot objective" if is_1d else "Plot Pareto")
-        btn_hv.setText("Plot best value" if is_1d else "Plot hypervolume")
-        btn_hvi.setText("Plot improvement" if is_1d else "Plot HV improvement")
-        btn_pareto.setEnabled(not is_nd)
-        # Grouping and point labels belong to the scatter, which N-D has none of.
+        btn_pareto.setText("Plot objective" if is_single else "Plot Pareto")
+        btn_hv.setText("Plot best value" if is_single else "Plot hypervolume")
+        btn_hvi.setText("Plot improvement" if is_single else "Plot HV improvement")
+        btn_pareto.setEnabled(not is_many)
+        # Grouping and point labels belong to the scatter, which 4+ objectives has none of.
         for widget in (cb_grouped, cb_numbers):
-            widget.setEnabled(not is_nd)
+            widget.setEnabled(not is_many)
         for widget in ERRORBAR_TEXT:
-            widget.setEnabled(cb_grouped.isChecked() and not is_nd)
-        # The key lists mean different things per dimension, so they are rebuilt rather
-        # than left showing the previous one's.
+            widget.setEnabled(cb_grouped.isChecked() and not is_many)
+        # The key lists mean different things per objective count, so they are rebuilt
+        # rather than left showing the previous one's.
         _refresh_keys()
 
-    dim_group.buttonToggled.connect(lambda _b, checked: checked and _on_dimension_change())
+    count_group.buttonToggled.connect(
+        lambda _b, checked: checked and _on_objective_count_change())
 
     # ---- Launching -----------------------------------------------------------
 
@@ -657,7 +659,8 @@ def build(step_list, settings) -> QWidget:
         return ["--grouped", "--errorbar", mode]
 
     def _plot_objective() -> None:
-        """The 1D landscape: the one objective over the one or two parameters chosen."""
+        """The single-objective landscape: the objective over the one or two parameters
+        chosen."""
         obj = x_combo.currentText()
         if not obj:
             status.setText("Choose the objective.")
@@ -681,7 +684,7 @@ def build(step_list, settings) -> QWidget:
         _launch("plot_objective", *extra)
 
     def _plot_pareto() -> None:
-        if _dimension() == "1D":
+        if _n_objectives() == "1":
             _plot_objective()
             return
         x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()
@@ -689,9 +692,9 @@ def build(step_list, settings) -> QWidget:
             status.setText("Choose an x and a y objective.")
             return
         extra = _constraint_args()
-        if _dimension() == "3D":
+        if _n_objectives() == "3":
             if not z:
-                status.setText("3D needs a z objective.")
+                status.setText("Three objectives needs a z objective.")
                 return
             extra += _grouped_args()
             if cb_numbers.isChecked():
@@ -716,7 +719,7 @@ def build(step_list, settings) -> QWidget:
         extra = _constraint_args() + (["--improvement"] if improvement else [])
         if cb_grouped.isChecked():
             extra.append("--grouped")
-        if _dimension() == "1D":
+        if _n_objectives() == "1":
             # One objective: the metric is the best value it reached, so the objective
             # goes in on its own and the parameter rows have no part in it.
             x = x_combo.currentText()
@@ -724,10 +727,10 @@ def build(step_list, settings) -> QWidget:
                 status.setText("Choose the objective.")
                 return
             extra += ["--objective", x] + _sense_args((x, x_sense))
-        elif _dimension() == "N-D":
+        elif _n_objectives() == "4+":
             chosen = nd_collect()
             if len(chosen) < 2:
-                status.setText("Tick at least two objectives for an N-D hypervolume.")
+                status.setText("Tick at least two objectives for the hypervolume.")
                 return
             for key, _is_max in chosen:
                 extra += ["--objective", key]
@@ -740,8 +743,9 @@ def build(step_list, settings) -> QWidget:
                 return
             pairs = [(x, x_sense), (y, y_sense)]
             extra += ["--x", x, "--y", y]
-            # The 2D colour axis is not an objective, so it joins only in 3D.
-            if _dimension() == "3D" and z:
+            # The two-objective colour axis is not an objective, so it joins only with
+            # three objectives.
+            if _n_objectives() == "3" and z:
                 extra += ["--z", z]
                 pairs.append((z, z_sense))
             extra += _sense_args(*pairs)
@@ -784,6 +788,6 @@ def build(step_list, settings) -> QWidget:
         if guess is not None:
             obj_edit.setText(str(guess))
 
-    _on_dimension_change()
+    _on_objective_count_change()
     _sync_ground_truth()
     return page
