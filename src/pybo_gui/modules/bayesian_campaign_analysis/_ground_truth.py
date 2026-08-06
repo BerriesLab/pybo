@@ -143,9 +143,14 @@ def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DE
     Returns (columns, values, shape):
 
     * `columns` is one list per parameter in `par_keys`, and `values` the true objective
-      there. Infeasible samples are already dropped, so a constrained problem shows its
-      landscape only where the problem allows - which is the same thing the masked
-      contour in pybo's own Experiment2DPlotter says.
+      there. On one parameter the caller draws a line through it sorted by x, so an
+      infeasible sample is blanked to NaN rather than dropped - dropping would let the
+      line silently bridge a forbidden region whenever no sample happened to land on
+      either edge of it, worse the sparser or more random the coverage. On two
+      parameters a dropped point has no such consequence: a grid is blanked the same way
+      because its contour needs the grid intact, and a random cloud is only ever
+      scattered, which loses nothing by dropping infeasible points outright - which is
+      the same thing the masked contour in pybo's own Experiment2DPlotter says.
     * `shape` is the grid's (n_x, n_y) when two parameters were covered by ``grid``, and
       None otherwise. It is what lets a caller reshape the columns into a contour; a
       random cloud has no such shape, so it can only be scattered.
@@ -195,9 +200,11 @@ def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DE
         Y_con = None
 
     mask = _feasible_mask(objective, X, Y_obj, Y_con)
-    # A contour needs its grid intact, so an infeasible point is blanked rather than
-    # dropped; a scatter has no such structure and simply loses them.
-    if shape is not None:
+    # Blanked (kept, marked NaN) wherever a line could be drawn through the result - a
+    # grid's contour, or the one-parameter line - so it breaks exactly where the problem
+    # forbids rather than being silently bridged. Otherwise (a two-parameter random
+    # cloud, drawn as a scatter with no line to bridge anything) simply dropped.
+    if shape is not None or len(par_keys) == 1:
         values = torch.where(mask, Y_obj[:, i_obj], torch.nan)
     else:
         X, values = X[mask], Y_obj[mask][:, i_obj]

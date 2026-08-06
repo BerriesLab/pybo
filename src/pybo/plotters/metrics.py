@@ -31,7 +31,13 @@ class BestValuePlotter(PlotterBase):
     def plot(self):
         best_values = np.array(self.bo.best_values)
         x = self.bo.n_initial_samples + np.arange(len(best_values)) * self.bo.batch_size
-        self.ax.plot(x, best_values, **fig_cfg["metrics"]["line"])
+        # Before the first feasible observation, best_values holds an
+        # inf/-inf sentinel (no feasible point exists yet). Drop those:
+        # a connected line through them is misleading (blows up the axis
+        # and implies a trend that isn't there), so plot only the defined,
+        # feasible points as unconnected markers.
+        mask = np.isfinite(best_values)
+        self.ax.scatter(x[mask], best_values[mask], **fig_cfg["metrics"]["scatter"])
         if self.bo.objective.best_value is not None:
             self.ax.axhline(y=self.bo.objective.best_value, linestyle='--', color='black', label='Max HV')
         return self

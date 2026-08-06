@@ -192,9 +192,13 @@ legend_handles = [
 
 if args.improvement:
     # Per-step marginal gain HV(k) - HV(k-1), with HV(0) = 0. Drawn as a log-scale
-    # scatter + connecting line; zero-improvement steps are floored to one decade
-    # below the smallest positive gain so they pin to a row at the bottom (a dotted
-    # line marks that floor). The line stays continuous through the floored points.
+    # scatter, connected by a line for the multi-objective hypervolume; zero-improvement
+    # steps are floored to one decade below the smallest positive gain so they pin to a
+    # row at the bottom (a dotted line marks that floor). The line stays continuous
+    # through the floored points. A single-objective trace has no line: its x-axis
+    # already skips every infeasible evaluation (rows were dropped at load time), so
+    # connecting what's left would draw a false continuity straight through the gaps
+    # those exclusions leave.
     # Per-step marginal gain per trace, on one shared floor so the decades line up.
     per_trace = {}
     for name, (s_steps, s_hvs, s_labels) in traces.items():
@@ -214,13 +218,14 @@ if args.improvement:
     ax.axhline(floor, color="#888888", linestyle=":", linewidth=0.8, alpha=0.7, zorder=1)
     for name, (s_steps, _s_hvs, s_labels) in traces.items():
         ydraw = [d if d > 0 else floor for d in per_trace[name]]
-        ax.plot(s_steps, ydraw, color=_color(name), linewidth=0.8, zorder=2)
+        if not single:
+            ax.plot(s_steps, ydraw, color=_color(name), linewidth=0.8, zorder=2)
         for lbl in sorted(set(s_labels)):
             idx = [i for i, l in enumerate(s_labels) if l == lbl]
             ax.scatter(
                 [s_steps[i] for i in idx],
                 [ydraw[i] for i in idx],
-                s=SCATTER["marker_size"] * 0.7, marker=_marker(lbl),
+                s=SCATTER["marker_size"] * (1.0 if single else 0.7), marker=_marker(lbl),
                 facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
             )
@@ -228,13 +233,14 @@ if args.improvement:
                   r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
 else:
     for name, (s_steps, s_hvs, s_labels) in traces.items():
-        ax.plot(s_steps, s_hvs, color=_color(name), linewidth=1.2, zorder=3)
+        if not single:
+            ax.plot(s_steps, s_hvs, color=_color(name), linewidth=1.2, zorder=3)
         for lbl in sorted(set(s_labels)):
             idx = [i for i, l in enumerate(s_labels) if l == lbl]
             ax.scatter(
                 [s_steps[i] for i in idx],
                 [s_hvs[i]   for i in idx],
-                s=SCATTER["marker_size"] * 0.7, marker=_marker(lbl),
+                s=SCATTER["marker_size"] * (1.0 if single else 0.7), marker=_marker(lbl),
                 facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
             )

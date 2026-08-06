@@ -320,6 +320,16 @@ SETTINGS = {
             linestyle="-",
             linewidth=LINEWIDTH_METRICS,
         ),
+        # Unconnected markers: used where a line would misleadingly imply a
+        # trend between points that aren't a continuous/well-defined series
+        # (e.g. best-feasible-value, which is undefined before the first
+        # feasible observation in constrained problems).
+        "scatter": dict(
+            marker="o",
+            color=PARETO,
+            edgecolor=EDGE,
+            s=S_OBS,
+        ),
     },
 
     # --- Evolution panels (one per parameter / objective / constraint) ---
