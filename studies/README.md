@@ -90,3 +90,19 @@ the steps inside it.
 
 `_common.py` (and any other `_`-prefixed file) is an internal helper, not a
 runnable study.
+
+## Building a ground-truth surrogate from a run
+
+`src/ground_truth/` fits a fast polynomial or Gaussian-process surrogate to
+the `parameters -> objectives` observed in a collected run's
+`experiment.json` files — e.g. to replace an expensive real experiment with
+a synthetic stand-in that a study can then sweep against cheaply. It reads
+the same `experiment.json` schema these studies write, recursively, so it
+works unmodified on any study's or tutorial's output:
+
+```
+python -m ground_truth.build_gt polynomial --root-dir data/branin_currin --degree 2
+python -m ground_truth.build_gt gp --root-dir data/branin_currin --kernel matern
+```
+
+See `src/ground_truth/README.md` for the full flag reference.
