@@ -1,0 +1,28 @@
+{
+  "datetime": "2026-03-09T17:37:05.559224",
+  "experiment_type": "sobol",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 81,
+      "source": "sobol",
+      "parameters": {
+        "V0": 64.0,
+        "dV": 76.0,
+        "td1": 16783.0,
+        "td2": 38859.0
+      },
+      "objectives": {
+        "Machining Time": 53.47796802123388,
+        "Machining Time_var": null,
+        "Tool Wear": 78.4,
+        "Tool Wear_var": null
+      },
+      "constraints": {},
+      "trackers": {
+        "Orbiting Time": 16.582595006624857,
+        "Orbiting Time_var": null
+      }
+    }
+  ]
+}

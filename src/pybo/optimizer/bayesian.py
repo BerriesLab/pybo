@@ -273,7 +273,12 @@ class BayesianOptimizer(OptimizerBase):
                     input_transform=Normalize(d=self.objective.dim, bounds=self.objective.bounds),
                     outcome_transform=Standardize(m=1),
                     covar_module=copy.deepcopy(self._kernel),
-                    likelihood=gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4)),
+                    # Passing an explicit likelihood makes BoTorch ignore train_Yvar entirely, so
+                    # the fixed-noise path has to leave it None and let BoTorch build the
+                    # FixedNoiseGaussianLikelihood itself. The noise floor only bites when the
+                    # noise is learned, so nothing is lost by dropping it there.
+                    likelihood=(None if train_y_var is not None else
+                                gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))),
                 )
             )
 

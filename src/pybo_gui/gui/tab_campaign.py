@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
 
 from pybo_gui.configs import settings as configs_settings
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
-from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
+from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import (
+    DEFAULT_DECIMALS, build_groups)
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import launch_analysis, watch
 from pybo_gui.gui.widgets import (
@@ -193,8 +194,18 @@ def build(step_list, settings) -> QWidget:
     btn_load_map = QPushButton("Load map")
     map_status = QLabel("")
     map_status.setStyleSheet("color: grey;")
+    # What counts as the same setting: parameters are compared rounded to this many
+    # decimals. The default compares them as measured, which splits a setting whose
+    # repeats were logged at the rig's rounded setpoint and at the raw proposal; lowering
+    # it is what makes those one group. Negative values round to tens and upwards.
+    decimals_spin = QSpinBox()
+    decimals_spin.setRange(-3, 9)
+    decimals_spin.setValue(DEFAULT_DECIMALS)
+    decimals_spin.setToolTip("Decimals a parameter is rounded to before two observations "
+                             "count as the same setting.")
     map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map,
                               btn_load_map))
+    map_layout.addWidget(_row(QLabel("Grouping decimals:"), decimals_spin))
     map_layout.addWidget(map_status)
     layout.addWidget(map_box)
 
@@ -533,7 +544,7 @@ def build(step_list, settings) -> QWidget:
             return False
         try:
             exp_map = build_map(steps)
-            groups = build_groups(exp_map)
+            groups = build_groups(exp_map, decimals_spin.value())
         except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
             status.setText(f"Map build failed: {exc}")
             map_status.setText(f"Map build failed: {exc}")
@@ -562,6 +573,27 @@ def build(step_list, settings) -> QWidget:
         (out_dir / "group_map.json").write_text(
             json.dumps(state["groups"], indent=2), encoding="utf-8")
         return out_dir
+
+    def _regroup() -> None:
+        """Re-group the map held in memory at the current decimals.
+
+        Applied to whatever is in memory, loaded map included: the saved grouping was made
+        at whatever decimals were set then, and leaving it in place would mean the spinbox
+        reads one thing while the plots group by another. Only the grouping is redone - the
+        observations themselves do not depend on it.
+        """
+        if not state["map"]:
+            return
+        state["groups"] = build_groups(state["map"], decimals_spin.value())
+        _write_map(_scratch)
+        configs_settings.set_data_path(_scratch)
+        repeated = [g["replicates"] for g in state["groups"] if g["replicates"] > 1]
+        map_status.setText(
+            f"{len(state['map']['experiments'])} observations, {len(state['groups'])} "
+            f"groups at {decimals_spin.value()} decimals, {len(repeated)} with repeats"
+            + (f" (sizes {sorted(repeated, reverse=True)})" if repeated else ""))
+
+    decimals_spin.valueChanged.connect(lambda _v: _regroup())
 
     def _ensure_map() -> bool:
         """The map to work from: a loaded one as it is, else rebuilt from the selection.
@@ -598,7 +630,7 @@ def build(step_list, settings) -> QWidget:
         # each entry, is still usable: the grouping is derivable from the map itself.
         if groups is None or any("group_id" not in e
                                  for e in exp_map.get("experiments", [])):
-            groups = build_groups(exp_map)
+            groups = build_groups(exp_map, decimals_spin.value())
 
         state["map"], state["groups"] = exp_map, groups
         state["source"] = "loaded"

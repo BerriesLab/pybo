@@ -1,0 +1,28 @@
+{
+  "datetime": "2026-04-30T19:12:45.654102",
+  "experiment_type": "bayesian",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 67,
+      "source": "bayesian",
+      "parameters": {
+        "V0": 78.66018087989114,
+        "dV": 71.33981912010805,
+        "td1": 22453.389053583476,
+        "td2": 24819.857551318913
+      },
+      "objectives": {
+        "Machining Time": 53.227914440631864,
+        "Machining Time_var": null,
+        "Tool Wear": 77.4,
+        "Tool Wear_var": null
+      },
+      "constraints": {},
+      "trackers": {
+        "Orbiting Time": 15.340198473135631,
+        "Orbiting Time_var": null
+      }
+    }
+  ]
+}

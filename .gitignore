@@ -12,7 +12,6 @@ env/
 # Data
 # unique_dir() avoids a collision by suffixing, so data_001, data_002 ... appear beside
 # data/; the glob covers the whole family rather than just the first name.
-/data*/
 /tutorials/**/**/data*/
 /studies/data*/
 /dist/

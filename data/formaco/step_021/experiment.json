@@ -1,0 +1,30 @@
+{
+  "datetime": "2026-06-06T18:59:10.316512",
+  "experiment_type": "manual",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 21,
+      "source": "manual",
+      "parameters": {
+        "Maximum Current (A)": 13.135037273168564,
+        "Pedestal Current (A)": 5.2645187973976135,
+        "Maximum Ramp Time (ns)": 71479.70191240312
+      },
+      "objectives": {
+        "Machining Time (min)": 140.48863927523294,
+        "Machining Time (min)_var": null,
+        "Tool Wear (μm)": 38.8,
+        "Tool Wear (μm)_var": null
+      },
+      "constraints": {
+        "con_00": 20.017714575926462,
+        "con_00_var": null
+      },
+      "trackers": {
+        "Orbiting Time Deviation (min)": null,
+        "Orbiting Time Deviation (min)_var": null
+      }
+    }
+  ]
+}

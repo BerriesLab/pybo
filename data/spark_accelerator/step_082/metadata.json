@@ -1,0 +1,380 @@
+{
+  "experiment_id": "experiment_0011",
+  "experiment_type": "sobol",
+  "output_path": "spark_accelerator_6-20\\experiment_0006",
+  "start_time": 1773078513.0269637,
+  "end_time": 1773087775.305551,
+  "parameters": {
+    "U": 66,
+    "UHPS": 62,
+    "td1": 21409,
+    "td2": 24532
+  },
+  "results": {
+    "wear_microns": 79.2,
+    "down_time_minutes": 58.476083771387735,
+    "orbiting_time_minutes": 19.772102344036103,
+    "cavity_depth_mm": 9.924
+  },
+  "primary_cavity": {
+    "cavity_id": "exp6_primary",
+    "experiment_id": 6,
+    "cavity_type": "primary",
+    "output_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary",
+    "phases": {
+      "down": {
+        "phase_type": "down",
+        "start_time": 1773083009.8010852,
+        "end_time": 1773086518.3661115,
+        "total_time": 3508.565026283264,
+        "z_axis_data_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\z_axis_exp6_primary_down.csv",
+        "scopeview_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\scopeview_down.svdx",
+        "scopeview_hires_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\scopeview_down_hires.svdx",
+        "waveforms_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms",
+        "waveform_captures": [
+          {
+            "index": 0,
+            "timestamp": "2026-03-09T20:04:31.548837",
+            "z_position_mm": 119.465402230835,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0000_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0000_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0000_ch3.trc"
+            ]
+          },
+          {
+            "index": 1,
+            "timestamp": "2026-03-09T20:06:34.265752",
+            "z_position_mm": 119.27207337341301,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0001_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0001_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0001_ch3.trc"
+            ]
+          },
+          {
+            "index": 2,
+            "timestamp": "2026-03-09T20:08:35.067796",
+            "z_position_mm": 119.067538842773,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0002_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0002_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0002_ch3.trc"
+            ]
+          },
+          {
+            "index": 3,
+            "timestamp": "2026-03-09T20:10:37.928252",
+            "z_position_mm": 118.816217050171,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0003_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0003_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0003_ch3.trc"
+            ]
+          },
+          {
+            "index": 4,
+            "timestamp": "2026-03-09T20:12:38.517368",
+            "z_position_mm": 118.506539926147,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0004_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0004_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0004_ch3.trc"
+            ]
+          },
+          {
+            "index": 5,
+            "timestamp": "2026-03-09T20:14:39.166745",
+            "z_position_mm": 118.225539788818,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0005_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0005_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0005_ch3.trc"
+            ]
+          },
+          {
+            "index": 6,
+            "timestamp": "2026-03-09T20:16:39.934473",
+            "z_position_mm": 117.78086052856399,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0006_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0006_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0006_ch3.trc"
+            ]
+          },
+          {
+            "index": 7,
+            "timestamp": "2026-03-09T20:18:40.401847",
+            "z_position_mm": 117.433961495972,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0007_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0007_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0007_ch3.trc"
+            ]
+          },
+          {
+            "index": 8,
+            "timestamp": "2026-03-09T20:20:41.217329",
+            "z_position_mm": 117.07365380248999,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0008_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0008_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0008_ch3.trc"
+            ]
+          },
+          {
+            "index": 9,
+            "timestamp": "2026-03-09T20:22:41.878327",
+            "z_position_mm": 116.678098306274,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0009_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0009_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0009_ch3.trc"
+            ]
+          },
+          {
+            "index": 10,
+            "timestamp": "2026-03-09T20:24:42.610997",
+            "z_position_mm": 116.334527597046,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0010_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0010_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0010_ch3.trc"
+            ]
+          },
+          {
+            "index": 11,
+            "timestamp": "2026-03-09T20:26:43.140218",
+            "z_position_mm": 115.966952905273,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0011_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0011_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0011_ch3.trc"
+            ]
+          },
+          {
+            "index": 12,
+            "timestamp": "2026-03-09T20:28:47.971115",
+            "z_position_mm": 115.59657441101099,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0012_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0012_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0012_ch3.trc"
+            ]
+          },
+          {
+            "index": 13,
+            "timestamp": "2026-03-09T20:30:48.698020",
+            "z_position_mm": 115.223563775635,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0013_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0013_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0013_ch3.trc"
+            ]
+          },
+          {
+            "index": 14,
+            "timestamp": "2026-03-09T20:32:49.290620",
+            "z_position_mm": 114.84426842651399,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0014_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0014_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0014_ch3.trc"
+            ]
+          },
+          {
+            "index": 15,
+            "timestamp": "2026-03-09T20:34:50.031753",
+            "z_position_mm": 114.51141701660201,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0015_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0015_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0015_ch3.trc"
+            ]
+          },
+          {
+            "index": 16,
+            "timestamp": "2026-03-09T20:36:52.889957",
+            "z_position_mm": 114.28951607666001,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0016_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0016_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0016_ch3.trc"
+            ]
+          },
+          {
+            "index": 17,
+            "timestamp": "2026-03-09T20:38:57.719277",
+            "z_position_mm": 113.874696359253,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0017_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0017_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0017_ch3.trc"
+            ]
+          },
+          {
+            "index": 18,
+            "timestamp": "2026-03-09T20:40:58.316822",
+            "z_position_mm": 113.391145333862,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0018_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0018_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0018_ch3.trc"
+            ]
+          },
+          {
+            "index": 19,
+            "timestamp": "2026-03-09T20:42:59.551369",
+            "z_position_mm": 113.013700112915,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0019_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0019_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0019_ch3.trc"
+            ]
+          },
+          {
+            "index": 20,
+            "timestamp": "2026-03-09T20:45:00.407145",
+            "z_position_mm": 112.64007912597701,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0020_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0020_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0020_ch3.trc"
+            ]
+          },
+          {
+            "index": 21,
+            "timestamp": "2026-03-09T20:47:03.190160",
+            "z_position_mm": 112.349914178467,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0021_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0021_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0021_ch3.trc"
+            ]
+          },
+          {
+            "index": 22,
+            "timestamp": "2026-03-09T20:49:03.591351",
+            "z_position_mm": 112.174295053101,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0022_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0022_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0022_ch3.trc"
+            ]
+          },
+          {
+            "index": 23,
+            "timestamp": "2026-03-09T20:51:10.392060",
+            "z_position_mm": 111.53080330810499,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0023_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0023_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0023_ch3.trc"
+            ]
+          },
+          {
+            "index": 24,
+            "timestamp": "2026-03-09T20:53:15.344130",
+            "z_position_mm": 111.135810479736,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0024_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0024_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0024_ch3.trc"
+            ]
+          },
+          {
+            "index": 25,
+            "timestamp": "2026-03-09T20:55:16.220315",
+            "z_position_mm": 110.777848825073,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0025_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0025_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0025_ch3.trc"
+            ]
+          },
+          {
+            "index": 26,
+            "timestamp": "2026-03-09T20:57:17.212890",
+            "z_position_mm": 110.41921959838899,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0026_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0026_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0026_ch3.trc"
+            ]
+          },
+          {
+            "index": 27,
+            "timestamp": "2026-03-09T20:59:19.718824",
+            "z_position_mm": 110.058311090088,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0027_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0027_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0027_ch3.trc"
+            ]
+          },
+          {
+            "index": 28,
+            "timestamp": "2026-03-09T21:01:24.080131",
+            "z_position_mm": 109.70421181640599,
+            "files": [
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0028_ch1.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0028_ch2.trc",
+              "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\down\\waveforms\\waveform_0028_ch3.trc"
+            ]
+          }
+        ],
+        "collector_errors": []
+      },
+      "orbiting": {
+        "phase_type": "orbiting",
+        "start_time": 1773086518.367112,
+        "end_time": 1773087704.6932526,
+        "total_time": 1186.3261406421661,
+        "z_axis_data_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\orbiting\\z_axis_exp6_primary_orbiting.csv",
+        "scopeview_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\orbiting\\scopeview_orbiting.svdx",
+        "scopeview_hires_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\orbiting\\scopeview_orbiting_hires.svdx",
+        "waveforms_path": "spark_accelerator_6-20\\experiment_0006\\exp6_primary\\orbiting\\waveforms",
+        "waveform_captures": [],
+        "collector_errors": []
+      }
+    }
+  },
+  "reference_cavity": {
+    "cavity_id": "exp6_reference",
+    "experiment_id": 6,
+    "cavity_type": "reference",
+    "output_path": "spark_accelerator_6-20\\experiment_0006\\exp6_reference",
+    "phases": {
+      "measuring": {
+        "phase_type": "measuring",
+        "start_time": 1773087716.2478447,
+        "end_time": 1773087775.2195501,
+        "total_time": 58.97170543670654,
+        "z_axis_data_path": "spark_accelerator_6-20\\experiment_0006\\exp6_reference\\measuring\\z_axis_exp6_reference_measuring.csv",
+        "scopeview_path": "spark_accelerator_6-20\\experiment_0006\\exp6_reference\\measuring\\scopeview_measuring.svdx",
+        "scopeview_hires_path": "spark_accelerator_6-20\\experiment_0006\\exp6_reference\\measuring\\scopeview_measuring_hires.svdx",
+        "waveforms_path": "spark_accelerator_6-20\\experiment_0006\\exp6_reference\\measuring\\waveforms",
+        "waveform_captures": [],
+        "collector_errors": []
+      }
+    }
+  },
+  "collectors_enabled": {
+    "z_axis": true,
+    "scopeview": true,
+    "scopeview_hires": true,
+    "waveforms": true
+  },
+  "errors": [],
+  "technology": "spark_accelerator",
+  "techno_params": {
+    "U": 66.0,
+    "UHPS": 62.0,
+    "td1": 21409.0,
+    "td2": 24532.0
+  },
+  "validation": {
+    "visual_inspection": true,
+    "parameters": true
+  }
+}

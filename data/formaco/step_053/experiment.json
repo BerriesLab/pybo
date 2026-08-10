@@ -1,0 +1,30 @@
+{
+  "datetime": "2026-07-09T23:29:57.463810",
+  "experiment_type": "bayesian",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 53,
+      "source": "bayesian",
+      "parameters": {
+        "Maximum Current (A)": 7.829595861155738,
+        "Pedestal Current (A)": 6.933677927343541,
+        "Maximum Ramp Time (ns)": 7985.691880382857
+      },
+      "objectives": {
+        "Machining Time (min)": 101.59568704764048,
+        "Machining Time (min)_var": null,
+        "Tool Wear (μm)": 64.7,
+        "Tool Wear (μm)_var": null
+      },
+      "constraints": {
+        "con_00": 21.312223374843597,
+        "con_00_var": null
+      },
+      "trackers": {
+        "Orbiting Time Deviation (min)": null,
+        "Orbiting Time Deviation (min)_var": null
+      }
+    }
+  ]
+}
