@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Fit a polynomial ground-truth surrogate for a collected "
                     "pybo run's objectives.")
-    parser.add_argument("--root-dir", default="/Users/berri/Repositories/pybo/data/vformac",
+    parser.add_argument("--root-dir", default="",
                         help="Root folder of the Bayesian optimization run, searched "
                              "recursively for experiment.json files (default: %(default)s)")
     parser.add_argument("--degree", type=int, default=2,
