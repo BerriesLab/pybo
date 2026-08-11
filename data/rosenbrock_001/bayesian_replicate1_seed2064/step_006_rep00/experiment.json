@@ -1,0 +1,21 @@
+{
+  "datetime": "2026-08-06T12:54:37.545328",
+  "experiment_type": "bayesian",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 6,
+      "source": "initial",
+      "parameters": {
+        "par_00": -1.7785478681325912,
+        "par_01": -0.11031144857406616
+      },
+      "objectives": {
+        "Rosenbrock": 1079.3293391760258,
+        "Rosenbrock_var": null
+      },
+      "constraints": {},
+      "trackers": {}
+    }
+  ]
+}

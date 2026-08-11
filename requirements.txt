@@ -1,3 +1,19 @@
 # Dependencies are declared in pyproject.toml (single source of truth).
 # Install the package together with its dependencies in editable mode:
 -e .
+
+torch~=2.8.0
+botorch~=0.13.0
+pyBO~=0.3.0
+ImageIO~=2.37.2
+numpy~=2.2.5
+matplotlib~=3.10.1
+scipy~=1.15.2
+gpytorch~=1.14
+PySide6~=6.11.1
+PyYAML~=6.0.2
+asteval~=1.0.9
+pandas~=2.3.3
+pytest~=8.4.1
+tqdm~=4.67.1
+scikit-learn~=1.6.1

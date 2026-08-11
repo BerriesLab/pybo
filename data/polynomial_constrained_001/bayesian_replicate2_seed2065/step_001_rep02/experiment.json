@@ -1,0 +1,23 @@
+{
+  "datetime": "2026-08-06T12:06:17.813872",
+  "experiment_type": "bayesian",
+  "batch_size": 1,
+  "data": [
+    {
+      "observation_n": 5,
+      "source": "initial",
+      "parameters": {
+        "par_00": -1.020713746547699
+      },
+      "objectives": {
+        "obj_00": -1.5123264026141274,
+        "obj_00_var": null
+      },
+      "constraints": {
+        "con_00": -1.5015769777138779,
+        "con_00_var": null
+      },
+      "trackers": {}
+    }
+  ]
+}
