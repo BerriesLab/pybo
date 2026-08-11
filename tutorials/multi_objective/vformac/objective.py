@@ -59,11 +59,15 @@ class VFormAC(MCMultiObjectiveBase):
                 LinIneqXConCfg(idxs=[2, 3], coeff=[-1, -1], rhs=-1.8 * self._t_r),
                 LinIneqXConCfg(idxs=[2, 3], coeff=[1, 1], rhs=1.2 * self._t_r)
             ],
-            # Measured from the 8 repeated settings, 14 degrees of freedom. Simulation
-            # only: it is what evaluate_*_with_noise adds to the fit, never a variance
-            # recorded against an observation.
-            gt_obj_noise_std=[3.187, 9.549],
-            gt_trk_noise_std=[1.064],
+            # Pooled within-setting std over the 8 settings measured twice, so 8 degrees
+            # of freedom. In obj_cfg order, which is what makes 0.0385 the removal rate's
+            # and 5.274 the wear's - the previous pair was indexed against a machining
+            # time this problem no longer has, and put a std of 3.187 on a removal rate
+            # whose whole range is 1.98 to 2.84. Simulation only: it is what
+            # evaluate_*_with_noise adds to the fit, never a variance recorded against an
+            # observation.
+            gt_obj_noise_std=[0.0385, 5.274],
+            gt_trk_noise_std=[1.131],
         )
 
         # Anchored on __file__ rather than the working directory, so the campaign
