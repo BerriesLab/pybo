@@ -41,7 +41,7 @@ def stop_all() -> None:
                 pass
 
 
-def watch(procs, on_start=None, on_done=None) -> None:
+def watch(procs, on_start=None, on_done=None, on_fail=None) -> None:
     """Wait on `procs` off the main thread, marshalling the callbacks back onto it.
 
     Binding the timer to QCoreApplication.instance() is what makes this safe: that
@@ -57,7 +57,12 @@ def watch(procs, on_start=None, on_done=None) -> None:
     def _wait():
         for proc in active:
             proc.wait()
-        if on_done is not None:
+        # A plot that exits non-zero printed its reason to its own console, which the GUI
+        # does not show - so without this it reads as "Done." and looks like it never ran.
+        failed = [p.returncode for p in active if p.returncode]
+        if failed and on_fail is not None:
+            QTimer.singleShot(0, app, lambda: on_fail(failed))
+        elif on_done is not None:
             QTimer.singleShot(0, app, on_done)
 
     threading.Thread(target=_wait, daemon=True).start()

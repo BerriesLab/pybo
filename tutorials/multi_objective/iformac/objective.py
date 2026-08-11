@@ -64,17 +64,6 @@ class IFormACConstrained(MCMultiObjectiveBase):
         self._con_fit = self._load_polynomial_gt(gt_file, "constraints")
 
     def _orbiting_time(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Orbiting time in minutes, from the fit of the column the runs recorded it in.
-
-        It lives in the "constraints" block because that is where the runs wrote it, but
-        what it holds is the measurement, not a constraint value: over the 87 records it
-        averages 21.36 against the 21.81 target, and 52 of them sit inside the band. The
-        hinge that turns it into a constraint is applied by evaluate_true_constraint,
-        which is the shape the band can be read off - a polynomial fitted to the hinge
-        itself could not represent its flat floor.
-        """
-        # Negative orbiting time is not a thing the fit is allowed to predict at a corner.
         return torch.clamp(self._evaluate_polynomial_gt(self._con_fit, X).squeeze(-1), min=0)
 
     def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:

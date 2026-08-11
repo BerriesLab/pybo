@@ -694,7 +694,10 @@ def build(step_list, settings) -> QWidget:
         proc = launch_analysis(module, *extra)
         watch([proc],
               on_start=lambda: set_text_async(status, f"Running {script}..."),
-              on_done=lambda: set_text_async(status, "Done."))
+              on_done=lambda: set_text_async(status, "Done."),
+              on_fail=lambda codes: set_text_async(
+                  status, f"{script} exited with {codes[0]} — see its console. "
+                          f"Exit 2 is a constraint that would not parse."))
 
     def _grouped_args() -> list:
         if not cb_grouped.isChecked():
