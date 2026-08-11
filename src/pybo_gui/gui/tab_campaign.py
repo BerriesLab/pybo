@@ -309,14 +309,16 @@ def build(step_list, settings) -> QWidget:
     gt_samples.setPrefix("N = ")
     gt_spacing = QDoubleSpinBox()
     gt_spacing.setDecimals(4)
-    # The step is in parameter units, not a fraction of the range, so there is no
-    # spacing that is too coarse in general: on an axis running 5000-20000 rpm even
-    # Δ = 100 is a fine grid. The ceiling is only here to keep the box finite - the
-    # grid itself is uncapped, and _grid_X prints the point count it is about to build.
-    gt_spacing.setRange(0.0001, 1_000_000.0)
+    # A fraction of each axis' own range, so 1.0 is the coarsest grid there is - two
+    # points per axis, the bounds - and anything above it would mean less than that.
+    # Small values are still uncapped in point count: _grid_X prints what it is about
+    # to build rather than refusing it.
+    gt_spacing.setRange(0.0001, 1.0)
     gt_spacing.setValue(0.05)
     gt_spacing.setSingleStep(0.01)
     gt_spacing.setPrefix("Δ = ")
+    gt_spacing.setToolTip("Step along each axis as a fraction of its range: "
+                          "0.05 is 21 points per parameter, whatever its units")
     for widget in ERRORBAR_TEXT:
         widget.setEnabled(False)
         widget.toggled.connect(

@@ -51,7 +51,8 @@ parser.add_argument("--gt-method", choices=["random", "grid"], default="random",
 parser.add_argument("--gt-samples", type=int, default=4096, dest="gt_samples",
                     help="Samples drawn when --gt-method is random.")
 parser.add_argument("--gt-spacing", type=float, default=0.05, dest="gt_spacing",
-                    help="Step on every axis when --gt-method is grid.")
+                    help="Step on every axis when --gt-method is grid, as a fraction "
+                         "of that axis' range: 0.05 is 21 points per parameter.")
 parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments can be the best one; infeasible "

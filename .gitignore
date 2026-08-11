@@ -34,3 +34,4 @@ __pycache__/
 # comparison while studies/analysis was written. They import that project's
 # `configs` / `utils` packages, so they do not run here.
 /bayesian_campaign_analysis/
+/.venv/

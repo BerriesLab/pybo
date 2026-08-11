@@ -9,10 +9,12 @@ Two ways to cover the space, because they fail differently:
 * ``random`` draws N quasi-random samples. The count is what you set whatever the
   dimension, so it stays usable on a problem with many parameters, and it respects the
   input constraints because it goes through the same sampler the runs draw with.
-* ``grid`` steps every axis by a fixed spacing. Even coverage and reproducible, but the
-   point count is exponential in the number of parameters, and nothing caps it: a spacing
-  fine enough on one axis can be billions of points over four. The count is printed
-  before the grid is built, so a run that is about to be too big says so.
+* ``grid`` steps every axis by a fraction of its own range. Even coverage and
+  reproducible. The step is a fraction rather than a number of parameter units because
+  one absolute step cannot serve axes four orders of magnitude apart - a current in
+  [7.5, 15] and a ramp time in [7800, 78000] - where any step fine enough for the second
+  collapses the first to a single point. The count is still exponential in the number of
+  parameters and nothing caps it, so it is printed before the grid is built.
 
 This is the only part of the campaign analysis that needs the problem itself rather than
 its records, so it is kept apart: nothing else here imports pybo or torch, and a plot that
@@ -37,22 +39,29 @@ def _random_X(objective, samples: int):
 
 
 def _grid_X(objective, spacing: float):
-    """Every point of a uniform grid stepping each axis by `spacing`."""
+    """Every point of a uniform grid stepping each axis by `spacing` of its own range.
+
+    So 0.05 is 5% of every axis - 21 points along each, whatever units it is in - and
+    the same number covers a problem whose parameters share no scale."""
     if spacing <= 0:
         raise SystemExit("Ground-truth grid spacing must be positive.")
+    if spacing > 1:
+        raise SystemExit(f"Ground-truth grid spacing is a fraction of each axis, so "
+                         f"{spacing} would leave one point per axis. Use a value in "
+                         f"(0, 1].")
     bounds = objective.bounds
-    axes = []
-    for d in range(objective.dim):
-        lo, hi = float(bounds[0, d]), float(bounds[1, d])
-        # +spacing/2 so the upper bound is included when it lands on a step.
-        axes.append(torch.arange(lo, hi + spacing / 2, spacing,
-                                 device=objective.device, dtype=objective.dtype))
-    total = 1
-    for axis in axes:
-        total *= len(axis)
+    # Steps per axis, not a step size: the same count on every axis is what makes the
+    # grid even in the box the optimizer sees, rather than even in whichever unit an
+    # axis happens to be recorded in.
+    steps = int(round(1.0 / spacing))
+    axes = [torch.linspace(float(bounds[0, d]), float(bounds[1, d]), steps + 1,
+                           device=objective.device, dtype=objective.dtype)
+            for d in range(objective.dim)]
+    total = (steps + 1) ** objective.dim
     # Reported, not refused: how many points are too many depends on the machine and on
     # what the grid is for, so the count goes to the caller and the choice stays theirs.
-    print(f"Ground-truth grid: {spacing} over {objective.dim} parameters = {total:,} points")
+    print(f"Ground-truth grid: {spacing} of each axis = {steps + 1} points on each of "
+          f"{objective.dim} parameters = {total:,} points")
     # cartesian_prod rather than stacking itertools.product: same ordering, but it stays
     # in torch instead of building one small tensor per point, which is what a grid this
     # size cannot afford. A single parameter comes back flat, hence the reshape.
@@ -187,9 +196,10 @@ def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DE
         # axis varies fastest and the points reshape into a grid - but only over the
         # problem's own axes. A landscape asked for two parameters of a problem that has
         # more would be a slice through the rest, which this does not claim to draw.
-        counts = [len(torch.arange(float(objective.bounds[0, d]),
-                                   float(objective.bounds[1, d]) + spacing / 2, spacing))
-                  for d in range(objective.dim)]
+        # The same count _grid_X puts on every axis, since the step is a fraction of each
+        # axis rather than a size in its units. Derived the same way there, so the two
+        # cannot drift apart into a reshape that silently transposes the surface.
+        counts = [int(round(1.0 / spacing)) + 1] * objective.dim
         # The grid's own shape, in the problem's parameter order - not in the order the
         # axes were asked for. Every column is reshaped by it alike, so the three arrays
         # stay one mesh; which of them runs along the rows is not something a contour
