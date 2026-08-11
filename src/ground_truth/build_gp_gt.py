@@ -42,7 +42,9 @@ def main():
                         help="Assume every observed objective value is physically "
                              "non-negative and fit log(y) instead of y, guaranteeing "
                              "strictly positive predictions. Off by default: only turn "
-                             "this on when the objectives can never be zero or negative.")
+                             "this on when the objectives can never be zero or negative. "
+                             "Applies to the objectives only, never to constraints or "
+                             "trackers.")
     args = parser.parse_args()
 
     root_dir = args.root_dir
@@ -74,60 +76,76 @@ def main():
         base_kernel = RBF(length_scale=np.ones(X.shape[1]))
     kernel = ConstantKernel() * base_kernel + WhiteKernel()
 
-    def _maybe_positive(regressor):
-        """Wrapped in log(y)/exp(...) when --positive is set, guaranteeing strictly
-        positive predictions; passed through unchanged otherwise. Only turn
-        --positive on when every observed objective value is > 0."""
-        if not args.positive:
+    def _maybe_positive(regressor, positive):
+        """Wrapped in log(y)/exp(...) when positive is set, guaranteeing strictly
+        positive predictions; passed through unchanged otherwise. Only ever set
+        for the objectives, and only when every observed value is > 0."""
+        if not positive:
             return regressor
         return TransformedTargetRegressor(regressor=regressor, func=np.log, inverse_func=np.exp)
 
-    # MultiOutputRegressor fits one GP per objective column with its own kernel
-    # hyperparameters (GaussianProcessRegressor alone would fit a single kernel
-    # shared across all objectives, which is wrong here since different
-    # objectives can have very different smoothness/noise).
-    pipeline = _maybe_positive(
-        make_pipeline(
-            StandardScaler(),
-            MultiOutputRegressor(
-                GaussianProcessRegressor(
-                    kernel=kernel, normalize_y=True,
-                    n_restarts_optimizer=args.n_restarts_optimizer,
-                )
-            ),
-        )
-    )
-    pipeline.fit(X, Y_obj)
-    print(pipeline.score(X, Y_obj))  # R^2 in original (exp-transformed if --positive) scale
-    print((pipeline.predict(X) > 0).all())  # sanity check: every prediction positive
+    for block, Y in [("objectives", Y_obj), ("constraints", Y_con), ("trackers", Y_trk)]:
+        print(f"\n=== {block} ===")
+        if Y is None:
+            print("none recorded (or only recorded on some observations), skipped")
+            continue
 
-    # A GP has no "degree" to sweep — kernel hyperparameters (length scales,
-    # noise level) are already optimized per objective via marginal likelihood.
-    # Print the fitted kernel per objective as the equivalent diagnostic to the
-    # polynomial version's coefficient table.
-    regressor = pipeline.regressor_ if args.positive else pipeline
-    gp_regressors = regressor.named_steps["multioutputregressor"].estimators_
-    for objective, gp in zip(Y_obj.columns, gp_regressors):
-        print(objective, "->", gp.kernel_)
+        # --positive is an objectives-only assumption. A constraint's sign is its
+        # feasibility boundary (f(X) >= 0 is feasible), so log(y) would be
+        # undefined on every infeasible observation and, on all-feasible data,
+        # would build a surrogate that can never predict infeasibility at all.
+        # Trackers carry no guaranteed sign either. Both are fit in raw space.
+        positive = args.positive and block == "objectives"
 
-    # Cross-validated R^2 per objective, same metric as the polynomial version's
-    # degree sweep, for direct comparison against it. Single-output GPs here
-    # (no MultiOutputRegressor needed) since each fold only ever scores one
-    # objective column at a time.
-    r2_per_objective = {}
-    for objective in Y_obj.columns:
-        single_pipeline = _maybe_positive(
+        # MultiOutputRegressor fits one GP per column with its own kernel
+        # hyperparameters (GaussianProcessRegressor alone would fit a single kernel
+        # shared across all columns, which is wrong here since different
+        # objectives can have very different smoothness/noise).
+        pipeline = _maybe_positive(
             make_pipeline(
                 StandardScaler(),
-                GaussianProcessRegressor(
-                    kernel=kernel, normalize_y=True,
-                    n_restarts_optimizer=args.n_restarts_optimizer,
+                MultiOutputRegressor(
+                    GaussianProcessRegressor(
+                        kernel=kernel, normalize_y=True,
+                        n_restarts_optimizer=args.n_restarts_optimizer,
+                    )
                 ),
-            )
+            ),
+            positive,
         )
-        scores = cross_val_score(single_pipeline, X, Y_obj[objective], cv=5, scoring="r2")
-        r2_per_objective[objective] = scores.mean()
-    print(pd.Series(r2_per_objective, name="R2"))
+        pipeline.fit(X, Y)
+        print(pipeline.score(X, Y))  # R^2 in original (exp-transformed if --positive) scale
+        if positive:
+            print((pipeline.predict(X) > 0).all())  # sanity check: every prediction positive
+
+        # A GP has no "degree" to sweep — kernel hyperparameters (length scales,
+        # noise level) are already optimized per column via marginal likelihood.
+        # Print the fitted kernel per column as the equivalent diagnostic to the
+        # polynomial version's coefficient table.
+        regressor = pipeline.regressor_ if positive else pipeline
+        gp_regressors = regressor.named_steps["multioutputregressor"].estimators_
+        for label, gp in zip(Y.columns, gp_regressors):
+            print(label, "->", gp.kernel_)
+
+        # Cross-validated R^2 per column, same metric as the polynomial version's
+        # degree sweep, for direct comparison against it. Single-output GPs here
+        # (no MultiOutputRegressor needed) since each fold only ever scores one
+        # column at a time.
+        r2_per_label = {}
+        for label in Y.columns:
+            single_pipeline = _maybe_positive(
+                make_pipeline(
+                    StandardScaler(),
+                    GaussianProcessRegressor(
+                        kernel=kernel, normalize_y=True,
+                        n_restarts_optimizer=args.n_restarts_optimizer,
+                    ),
+                ),
+                positive,
+            )
+            scores = cross_val_score(single_pipeline, X, Y[label], cv=5, scoring="r2")
+            r2_per_label[label] = scores.mean()
+        print(pd.Series(r2_per_label, name="R2"))
 
 
 if __name__ == "__main__":

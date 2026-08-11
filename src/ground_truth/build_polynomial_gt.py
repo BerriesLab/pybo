@@ -33,7 +33,9 @@ def main():
                         help="Assume every observed objective value is physically "
                              "non-negative and fit log(y) instead of y, guaranteeing "
                              "strictly positive predictions. Off by default: only turn "
-                             "this on when the objectives can never be zero or negative.")
+                             "this on when the objectives can never be zero or negative. "
+                             "Applies to the objectives only, never to constraints or "
+                             "trackers.")
     args = parser.parse_args()
 
     root_dir = args.root_dir
@@ -60,39 +62,53 @@ def main():
     Y_con = _records_to_frame(constraint_records)
     Y_trk = _records_to_frame(tracker_records)
 
-    base_pipeline = make_pipeline(
-        StandardScaler().set_output(transform="pandas"),
-        PolynomialFeatures(degree=degree).set_output(transform="pandas"),
-        LinearRegression(),
-    )
-    if args.positive:
-        # An unconstrained polynomial fit has no way to know objectives can't go
-        # negative. Fitting log(y) and inverse-transforming with exp() guarantees
-        # strictly positive predictions everywhere, at the cost of the fit now
-        # minimizing log-scale (roughly relative) error instead of absolute error.
-        pipeline = TransformedTargetRegressor(
-            regressor=base_pipeline, func=np.log, inverse_func=np.exp
-        )
-    else:
-        pipeline = base_pipeline
-    pipeline.fit(X, Y_obj)
-    regressor = pipeline.regressor_ if args.positive else pipeline
-    feature_names = regressor.named_steps["polynomialfeatures"].get_feature_names_out()
+    for block, Y in [("objectives", Y_obj), ("constraints", Y_con), ("trackers", Y_trk)]:
+        print(f"\n=== {block} ===")
+        if Y is None:
+            print("none recorded (or only recorded on some observations), skipped")
+            continue
 
-    coef_table = pd.DataFrame(
-        regressor.named_steps["linearregression"].coef_.T,
-        index=feature_names,
-        columns=Y_obj.columns,
-    )
-    # PolynomialFeatures' bias column ("1") is collinear with LinearRegression's
-    # own fit_intercept, so its coefficient is always 0 — replace it with the
-    # actual intercept rather than showing that misleading zero. These
-    # coefficients are now in log-target space (multiplicative effects on y).
-    coef_table = coef_table.rename(index={"1": "intercept"})
-    coef_table.loc["intercept"] = regressor.named_steps["linearregression"].intercept_
-    print(coef_table)
-    print(f"R2 = {pipeline.score(X, Y_obj)}")  # R^2 in original (exp-transformed) scale
-    print(f"All positive: {(pipeline.predict(X) > 0).all()}")  # sanity check
+        # --positive is an objectives-only assumption. A constraint's sign is its
+        # feasibility boundary (f(X) >= 0 is feasible), so log(y) would be
+        # undefined on every infeasible observation and, on all-feasible data,
+        # would build a surrogate that can never predict infeasibility at all.
+        # Trackers carry no guaranteed sign either. Both are fit in raw space.
+        positive = args.positive and block == "objectives"
+
+        base_pipeline = make_pipeline(
+            StandardScaler().set_output(transform="pandas"),
+            PolynomialFeatures(degree=degree).set_output(transform="pandas"),
+            LinearRegression(),
+        )
+        if positive:
+            # An unconstrained polynomial fit has no way to know objectives can't go
+            # negative. Fitting log(y) and inverse-transforming with exp() guarantees
+            # strictly positive predictions everywhere, at the cost of the fit now
+            # minimizing log-scale (roughly relative) error instead of absolute error.
+            pipeline = TransformedTargetRegressor(
+                regressor=base_pipeline, func=np.log, inverse_func=np.exp
+            )
+        else:
+            pipeline = base_pipeline
+        pipeline.fit(X, Y)
+        regressor = pipeline.regressor_ if positive else pipeline
+        feature_names = regressor.named_steps["polynomialfeatures"].get_feature_names_out()
+
+        coef_table = pd.DataFrame(
+            regressor.named_steps["linearregression"].coef_.T,
+            index=feature_names,
+            columns=Y.columns,
+        )
+        # PolynomialFeatures' bias column ("1") is collinear with LinearRegression's
+        # own fit_intercept, so its coefficient is always 0 — replace it with the
+        # actual intercept rather than showing that misleading zero. With --positive
+        # these coefficients are in log-target space (multiplicative effects on y).
+        coef_table = coef_table.rename(index={"1": "intercept"})
+        coef_table.loc["intercept"] = regressor.named_steps["linearregression"].intercept_
+        print(coef_table)
+        print(f"R2 = {pipeline.score(X, Y)}")  # R^2 in original (exp-transformed) scale
+        if positive:
+            print(f"All positive: {(pipeline.predict(X) > 0).all()}")  # sanity check
 
 
 if __name__ == "__main__":
