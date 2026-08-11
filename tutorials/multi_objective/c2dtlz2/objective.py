@@ -37,7 +37,7 @@ class C2DTLZ2(MCMultiObjectiveBase):
                 ParCfg(bounds=(0.0, 1.0)),
                 ParCfg(bounds=(0.0, 1.0)),
                 ParCfg(bounds=(0.0, 1.0)),
-                ParCfg(index=3, bounds=(0.0, 1.0)),
+                ParCfg(bounds=(0.0, 1.0)),
             ],
             obj_cfg=[
                 ObjCfg(to_minimize=True, ref_point=1.6),

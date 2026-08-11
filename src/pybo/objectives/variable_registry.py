@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 from typing import Any, Optional, Callable
 
@@ -11,7 +11,12 @@ class VariableRegistry(Enum):
 class CfgBase:
     """Base configuration class"""
     label: str | None = None
-    index: int | None = None
+    # Derived, not configuration: the position in the cfg list, filled in by the
+    # objective's _process_* methods. init=False because letting it be passed in
+    # lets it disagree with that position, and the readers do not agree on which
+    # of the two wins (_process_bounds sorts the parameters by index,
+    # _process_outcomes takes the objectives in list order).
+    index: int | None = field(default=None, init=False)
 
 
 @dataclass(kw_only=True)
