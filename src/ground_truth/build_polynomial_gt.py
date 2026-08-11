@@ -1,6 +1,7 @@
 import argparse
 import json
 import glob
+import sys
 
 import numpy as np
 import pandas as pd
@@ -21,6 +22,10 @@ def _records_to_frame(records):
 
 
 def main():
+    # Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+    # Windows, which cannot encode them.
+    sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(
         description="Fit a polynomial ground-truth surrogate for a collected "
                     "pybo run's objectives.")
@@ -49,7 +54,9 @@ def main():
     constraint_records = []
     tracker_records = []
     for path in paths:
-        with open(path) as f:
+        # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
+        # like "Tool Wear (μm)" on the way in.
+        with open(path, encoding="utf-8") as f:
             json_file = json.load(f)
         for observation in json_file["data"]:
             parameter_records.append(observation["parameters"])
@@ -109,6 +116,32 @@ def main():
         print(f"R2 = {pipeline.score(X, Y)}")  # R^2 in original (exp-transformed) scale
         if positive:
             print(f"All positive: {(pipeline.predict(X) > 0).all()}")  # sanity check
+
+        # The same fit as a torch expression, ready to paste into an objective's
+        # evaluate_true_* — see iformac/constrained/objective.py for the shape.
+        # The fit is on standardised X, so the standardisation goes with it: the
+        # coefficients mean nothing applied to the raw physical values.
+        scaler = regressor.named_steps["standardscaler"]
+        powers = regressor.named_steps["polynomialfeatures"].powers_
+        linear_regression = regressor.named_steps["linearregression"]
+        for column, label in enumerate(Y.columns):
+            print(f"\n# --- {block} / {label} ---")
+            for k, (mean, scale) in enumerate(zip(scaler.mean_, scaler.scale_)):
+                print(f"x{k} = (X[..., {k}] - {mean:.6g}) / {scale:.6g}")
+            # The bias term is the all-zero row of powers, and its coefficient is 0
+            # by construction (see above), so the intercept opens the sum instead.
+            terms = [f"{linear_regression.intercept_[column]:.6g}"]
+            for term_powers, coefficient in zip(powers, linear_regression.coef_[column]):
+                if not term_powers.any():
+                    continue
+                factors = "".join(f" * x{k}" + (f"**{p}" if p > 1 else "")
+                                  for k, p in enumerate(term_powers) if p)
+                sign = "-" if coefficient < 0 else "+"
+                terms.append(f"{sign} {abs(coefficient):.6g}{factors}")
+            body = "\n        ".join(terms)
+            # log(y) was fit, so the pasted expression has to come back out of log
+            # space too, or it is silently wrong by orders of magnitude.
+            print(f"return torch.exp({body})" if positive else f"return ({body})")
 
 
 if __name__ == "__main__":

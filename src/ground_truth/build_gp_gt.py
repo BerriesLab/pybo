@@ -1,6 +1,7 @@
 import argparse
 import json
 import glob
+import sys
 
 import numpy as np
 import pandas as pd
@@ -24,6 +25,10 @@ def _records_to_frame(records):
 
 
 def main():
+    # Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+    # Windows, which cannot encode them.
+    sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(
         description="Fit a Gaussian process ground-truth surrogate for a collected "
                     "pybo run's objectives.")
@@ -57,7 +62,9 @@ def main():
     constraint_records = []
     tracker_records = []
     for path in paths:
-        with open(path) as f:
+        # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
+        # like "Tool Wear (μm)" on the way in.
+        with open(path, encoding="utf-8") as f:
             json_file = json.load(f)
         for observation in json_file["data"]:
             parameter_records.append(observation["parameters"])
