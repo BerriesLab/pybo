@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
@@ -338,6 +340,72 @@ class MCObjectiveBase(ABC):
                 if cfg.label is None:
                     cfg.label = f"con_{pos:02d}"
         return [c.f for c in cfgs]
+
+    # ===== Polynomial ground truth (ground_truth.build_polynomial_gt --out) =====
+
+    def _load_polynomial_gt(self, path: str | Path, block: str) -> dict:
+        """The named block ("objectives", "constraints" or "trackers") of a JSON
+        file written by build_polynomial_gt --out, as tensors ready for
+        _evaluate_polynomial_gt. Call it once, after super().__init__(), which is
+        what defines the device and dtype the tensors land on.
+
+        The columns are aligned by label rather than by position, so a cfg list
+        that no longer matches the saved fit raises instead of silently reading
+        the wrong column."""
+        cfgs = {"objectives": self.obj_cfg,
+                "constraints": self.ineq_Y_con_cfg,
+                "trackers": self.trk_cfg}[block]
+        if not cfgs:
+            raise ValueError(f"This objective declares no {block}, so there is nothing "
+                             f"to load from {path}.")
+
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"No polynomial ground truth at {path}. Build one with: python -m "
+                f"ground_truth.build_polynomial_gt --root-dir <run> --out {path}")
+        saved = json.loads(path.read_text(encoding="utf-8"))
+
+        if block not in saved["blocks"]:
+            raise KeyError(
+                f"{path} holds no '{block}' block (it has: "
+                f"{', '.join(saved['blocks']) or 'nothing'}). The fit skips a block "
+                f"that was never recorded in the run it was built from.")
+        fit = saved["blocks"][block]
+
+        missing = [cfg.label for cfg in cfgs if cfg.label not in fit["labels"]]
+        if missing:
+            raise KeyError(
+                f"{path} has no fit for {', '.join(missing)} in '{block}' (it holds: "
+                f"{', '.join(fit['labels'])}). Rebuild it from a run that records "
+                f"these labels.")
+        order = [fit["labels"].index(cfg.label) for cfg in cfgs]
+
+        return {
+            "log_space": fit["log_space"],
+            "mean": torch.tensor(fit["scaler_mean"], device=self.device, dtype=self.dtype),
+            "scale": torch.tensor(fit["scaler_scale"], device=self.device, dtype=self.dtype),
+            "powers": torch.tensor(fit["powers"], device=self.device, dtype=self.dtype),
+            "coefficients": torch.tensor(fit["coefficients"], device=self.device,
+                                         dtype=self.dtype)[:, order],
+            "intercept": torch.tensor(fit["intercept"], device=self.device,
+                                      dtype=self.dtype)[order],
+        }
+
+    @staticmethod
+    def _evaluate_polynomial_gt(fit: dict, X: Tensor) -> Tensor:
+        """The loaded polynomial at X, shaped (..., dim) -> (..., n_labels). Batch
+        dimensions pass through untouched, so the (b, q, d) tensors BoTorch
+        evaluates candidates on work as they are."""
+        X_scaled = (X - fit["mean"]) / fit["scale"]
+        # One row of "powers" per term, holding the exponent of each parameter in
+        # that term, so the product over the parameter axis is the term itself. The
+        # bias is the all-zero row, and x**0 == 1 produces it for free.
+        terms = torch.prod(X_scaled.unsqueeze(-2) ** fit["powers"], dim=-1)
+        Y = terms @ fit["coefficients"] + fit["intercept"]
+        # log(y) was fit, so the prediction is in log space and has to come back out
+        # of it. That is what makes the result strictly positive.
+        return Y.exp() if fit["log_space"] else Y
 
     # ===== Methods =====
 

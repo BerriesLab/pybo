@@ -34,6 +34,11 @@ def main():
                              "recursively for experiment.json files (default: %(default)s)")
     parser.add_argument("--degree", type=int, default=2,
                         help="Polynomial degree (default: %(default)s)")
+    parser.add_argument("--out",
+                        help="Write the fitted coefficients to this JSON file, for an "
+                             "objective to load with _load_polynomial_gt. Nothing is "
+                             "written when omitted. Suppresses the paste-ready block, "
+                             "which is what you want a saved file for in the first place.")
     parser.add_argument("--positive", action="store_true",
                         help="Assume every observed objective value is physically "
                              "non-negative and fit log(y) instead of y, guaranteeing "
@@ -69,6 +74,7 @@ def main():
     Y_con = _records_to_frame(constraint_records)
     Y_trk = _records_to_frame(tracker_records)
 
+    fitted_blocks = {}
     for block, Y in [("objectives", Y_obj), ("constraints", Y_con), ("trackers", Y_trk)]:
         print(f"\n=== {block} ===")
         if Y is None:
@@ -117,13 +123,31 @@ def main():
         if positive:
             print(f"All positive: {(pipeline.predict(X) > 0).all()}")  # sanity check
 
+        scaler = regressor.named_steps["standardscaler"]
+        powers = regressor.named_steps["polynomialfeatures"].powers_
+        linear_regression = regressor.named_steps["linearregression"]
+
+        # Everything _load_polynomial_gt needs to rebuild the fit in torch.
+        # log_space records --positive: without it a reader skips the exp() and is
+        # silently wrong by orders of magnitude.
+        fitted_blocks[block] = {
+            "labels": list(Y.columns),
+            "log_space": positive,
+            "scaler_mean": scaler.mean_.tolist(),
+            "scaler_scale": scaler.scale_.tolist(),
+            "powers": powers.tolist(),
+            "coefficients": linear_regression.coef_.T.tolist(),
+            "intercept": np.atleast_1d(linear_regression.intercept_).tolist(),
+        }
+        if args.out:
+            # The paste-ready block below is what --out replaces: at the degrees
+            # worth saving to a file it is hundreds of unusable lines.
+            continue
+
         # The same fit as a torch expression, ready to paste into an objective's
         # evaluate_true_* — see iformac/constrained/objective.py for the shape.
         # The fit is on standardised X, so the standardisation goes with it: the
         # coefficients mean nothing applied to the raw physical values.
-        scaler = regressor.named_steps["standardscaler"]
-        powers = regressor.named_steps["polynomialfeatures"].powers_
-        linear_regression = regressor.named_steps["linearregression"]
         for column, label in enumerate(Y.columns):
             print(f"\n# --- {block} / {label} ---")
             for k, (mean, scale) in enumerate(zip(scaler.mean_, scaler.scale_)):
@@ -142,6 +166,13 @@ def main():
             # log(y) was fit, so the pasted expression has to come back out of log
             # space too, or it is silently wrong by orders of magnitude.
             print(f"return torch.exp({body})" if positive else f"return ({body})")
+
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump({"model": "polynomial", "degree": degree,
+                       "parameters": list(X.columns), "blocks": fitted_blocks},
+                      f, indent=2, ensure_ascii=False)
+        print(f"\nsaved -> {args.out}")
 
 
 if __name__ == "__main__":
