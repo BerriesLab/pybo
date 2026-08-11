@@ -7,19 +7,18 @@
       "observation_n": 7,
       "source": "manual",
       "parameters": {
-        "Maximum Current (A)": 9.0,
-        "Pedestal Current (A)": 6.6,
-        "Maximum Ramp Time (ns)": 8128.0
+        "Maximum Current": 9.0,
+        "Pedestal Current": 6.6,
+        "Maximum Ramp Time": 8128.0
       },
       "objectives": {
-        "Machining Time (min)": 87.88411482572556,
-        "Machining Time (min)_var": null,
-        "Tool Wear (μm)": 71.0,
-        "Tool Wear (μm)_var": null
+        "Tool Wear": 71.0,
+        "Tool Wear_var": null,
+        "Material Removal Rate": 1.643072815677163
       },
       "constraints": {
-        "con_00": 20.494190275669098,
-        "con_00_var": null
+        "Orbiting Time": 20.494190275669098,
+        "Orbiting Time_var": null
       },
       "trackers": {
         "Orbiting Time Deviation (min)": null,

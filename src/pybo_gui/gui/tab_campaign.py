@@ -309,7 +309,11 @@ def build(step_list, settings) -> QWidget:
     gt_samples.setPrefix("N = ")
     gt_spacing = QDoubleSpinBox()
     gt_spacing.setDecimals(4)
-    gt_spacing.setRange(0.0001, 1.0)
+    # The step is in parameter units, not a fraction of the range, so there is no
+    # spacing that is too coarse in general: on an axis running 5000-20000 rpm even
+    # Δ = 100 is a fine grid. The ceiling is only here to keep the box finite - the
+    # grid itself is uncapped, and _grid_X prints the point count it is about to build.
+    gt_spacing.setRange(0.0001, 1_000_000.0)
     gt_spacing.setValue(0.05)
     gt_spacing.setSingleStep(0.01)
     gt_spacing.setPrefix("Δ = ")
@@ -539,7 +543,11 @@ def build(step_list, settings) -> QWidget:
         map through configs.settings.data_path, so that is repointed here too.
         """
         steps = step_list.checked_paths
-        if not steps:
+        # No steps is a request for the ground truth on its own, as long as there is a
+        # ground truth to draw: build_map([]) is an empty map, and a plot over one draws
+        # the backdrop and no series. Without one it is just an empty plot, so that still
+        # asks for a selection rather than opening a blank figure.
+        if not steps and not cb_ground.isChecked():
             status.setText("Select at least one step in the Steps window.")
             return False
         try:
@@ -557,6 +565,10 @@ def build(step_list, settings) -> QWidget:
         # session, not the user's data tree - Save map is how a copy gets kept.
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
+        if not steps:
+            map_status.setText("No steps selected — the ground truth will be drawn "
+                               "on its own")
+            return True
         series = len({e["experiment_type"] for e in exp_map["experiments"]})
         map_status.setText(f"{len(exp_map['experiments'])} observations from "
                            f"{len(steps)} selected director"

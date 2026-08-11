@@ -8,20 +8,6 @@ from pybo.objectives.variable_registry import ParCfg, ObjCfg, TrkCfg, LinIneqXCo
 
 class VFormAC(MCMultiObjectiveBase):
     """
-    The ground truth is a polynomial fitted to the campaign's own 94 experiments,
-    not an analytic function: build_polynomial_gt writes polynomial_gt.json and this
-    loads it. The fit is the truth; the noise measured from the repeated settings is
-    added on top by gt_obj_noise_std rather than baked into the fit.
-
-    Regenerate the file after changing the data or the degree:
-        python -m ground_truth.build_polynomial_gt --root-dir data/vformac \
-            --degree 2 --out tutorials/multi_objective/vformac/polynomial_gt.json
-
-    Unlike the Gaussian process this replaces, a polynomial keeps extrapolating
-    where nothing was measured - V0 was only ever run over [60, 90] of its
-    [60, 120]. Over that third of the box the surface is the polynomial's guess,
-    not evidence.
-
     2x objectives:
         - Machining Time: to minimize.
         - Tool Wear: to minimize.
@@ -56,17 +42,17 @@ class VFormAC(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="V0", bounds=(60, 120)),
-                ParCfg(label="dV", bounds=(60, 85)),
-                ParCfg(label="td1", bounds=(0.5 * self._t_r, 0.8 * self._t_r)),
-                ParCfg(label="td2", bounds=(0.4 * self._t_r, 1.3 * self._t_r)),
+                ParCfg(label="V0", unit="V", bounds=(60, 120)),
+                ParCfg(label="dV", unit="V", bounds=(60, 85)),
+                ParCfg(label="td1", unit="ns", bounds=(0.5 * self._t_r, 0.8 * self._t_r)),
+                ParCfg(label="td2", unit="ns", bounds=(0.4 * self._t_r, 1.3 * self._t_r)),
             ],
             obj_cfg=[
-                ObjCfg(label="Machining Time", to_minimize=True, ref_point=200.0),
-                ObjCfg(label="Tool Wear", to_minimize=True, ref_point=150.0),
+                ObjCfg(label="Material Removal Rate", unit="mm^3/min", to_minimize=False, ref_point=0),
+                ObjCfg(label="Tool Wear", unit="um", to_minimize=True, ref_point=150.0),
             ],
             trk_cfg=[
-                TrkCfg(label="Orbiting Time"),
+                TrkCfg(label="Orbiting Time", unit="min"),
             ],
             lin_ineq_X_con_cfg=[
                 LinIneqXConCfg(idxs=[0, 1], coeff=[-1, -1], rhs=-150),

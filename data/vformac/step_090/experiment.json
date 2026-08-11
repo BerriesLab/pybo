@@ -13,10 +13,9 @@
         "td2": 30672.0
       },
       "objectives": {
-        "Machining Time": 67.99859851996104,
-        "Machining Time_var": null,
         "Tool Wear": 71.7,
-        "Tool Wear_var": null
+        "Tool Wear_var": null,
+        "Material Removal Rate": 2.123573178609134
       },
       "constraints": {},
       "trackers": {

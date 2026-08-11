@@ -15,17 +15,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 # the preview and the error messages from dying on a character they are quoting.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from tutorials.multi_objective.iformac.constrained.objective import IFormACConstrained
+from tutorials.multi_objective.iformac.objective import IFormACConstrained
 
 # --- mapping ---
 # label -> the metadata.json key measuring it. Written out rather than matched by position
 # or by case, so renaming a label breaks here, loudly, instead of pairing the wrong column.
-PAR_MAP = {"Maximum Current (A)": "I_MAX",
-           "Pedestal Current (A)": "I_P",
-           "Maximum Ramp Time (ns)": "tau_R_max"}
+PAR_MAP = {"Maximum Current": "I_MAX",
+           "Pedestal Current": "I_P",
+           "Maximum Ramp Time": "tau_R_max"}
 OBJ_MAP = {"Machining Time (min)": "down_time_minutes",
            "Tool Wear (μm)": "wear_microns"}
-CON_MAP = {"con_00": "orbiting_time_minutes"}
+CON_MAP = {"Orbiting Time": "orbiting_time_minutes"}
 # Nothing in metadata.json measures the deviation - it is derived from a target the rig
 # never recorded - so the tracker is written null rather than guessed at.
 TRK_MAP = {"Orbiting Time Deviation (min)": None}

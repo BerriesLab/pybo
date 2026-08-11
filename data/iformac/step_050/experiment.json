@@ -7,19 +7,18 @@
       "observation_n": 50,
       "source": "bayesian",
       "parameters": {
-        "Maximum Current (A)": 12.1872355865414,
-        "Pedestal Current (A)": 3.127000136969787,
-        "Maximum Ramp Time (ns)": 77825.94055435734
+        "Maximum Current": 12.1872355865414,
+        "Pedestal Current": 3.127000136969787,
+        "Maximum Ramp Time": 77825.94055435734
       },
       "objectives": {
-        "Machining Time (min)": 202.9677272717158,
-        "Machining Time (min)_var": null,
-        "Tool Wear (μm)": 27.4,
-        "Tool Wear (μm)_var": null
+        "Tool Wear": 27.4,
+        "Tool Wear_var": null,
+        "Material Removal Rate": 0.7114431537516782
       },
       "constraints": {
-        "con_00": 26.22531950076421,
-        "con_00_var": null
+        "Orbiting Time": 26.22531950076421,
+        "Orbiting Time_var": null
       },
       "trackers": {
         "Orbiting Time Deviation (min)": null,

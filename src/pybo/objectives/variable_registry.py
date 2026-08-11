@@ -11,12 +11,13 @@ class VariableRegistry(Enum):
 class CfgBase:
     """Base configuration class"""
     label: str | None = None
-    # Derived, not configuration: the position in the cfg list, filled in by the
-    # objective's _process_* methods. init=False because letting it be passed in
-    # lets it disagree with that position, and the readers do not agree on which
-    # of the two wins (_process_bounds sorts the parameters by index,
-    # _process_outcomes takes the objectives in list order).
+    unit: str | None = None
     index: int | None = field(default=None, init=False)
+
+    @property
+    def axis_label(self) -> str:
+        """Label and unit as one string, for an axis title."""
+        return f"{self.label} ({self.unit})" if self.unit else self.label
 
 
 @dataclass(kw_only=True)
