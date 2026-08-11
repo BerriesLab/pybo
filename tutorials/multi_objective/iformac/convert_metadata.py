@@ -28,7 +28,7 @@ OBJ_MAP = {"Machining Time (min)": "down_time_minutes",
 CON_MAP = {"Orbiting Time": "orbiting_time_minutes"}
 # Nothing in metadata.json measures the deviation - it is derived from a target the rig
 # never recorded - so the tracker is written null rather than guessed at.
-TRK_MAP = {"Orbiting Time Deviation (min)": None}
+TRK_MAP = {"Orbiting Time Deviation": None}
 
 # Nothing is rescaled: the ramp time stays in the nanoseconds the rig logs it in, which is
 # the unit it is always carried in. The objective still labels that parameter "(us)" with

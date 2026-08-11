@@ -21,8 +21,8 @@
         "Orbiting Time_var": null
       },
       "trackers": {
-        "Orbiting Time Deviation (min)": null,
-        "Orbiting Time Deviation (min)_var": null
+        "Orbiting Time Deviation": null,
+        "Orbiting Time Deviation_var": null
       }
     }
   ]
