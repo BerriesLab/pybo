@@ -284,7 +284,10 @@ all_labels     = sorted({r["label"] for r in valid})
 legend_handles = [legend_handles_gt] if legend_handles_gt is not None else []
 _last_sc       = None
 
-for lbl in all_labels:
+# Skipped entirely when aggregating: a dozen runs' observations are what made the
+# picture unreadable, which is the reason for asking to collapse them, and one legend
+# entry per run buries the two that name the mean fronts.
+for lbl in [] if args.aggregate_runs else all_labels:
     marker = _label_marker(lbl)
     subset = [r for r in valid if r["label"] == lbl and r["feasible"]]
     if use_z:
@@ -357,7 +360,7 @@ for lbl in all_labels:
 # markers (in both grouped and non-grouped mode) and excluded from the front.
 # When a color code is passed they are coloured on the shared z-scale (which
 # spans all points, so their true z value shows); otherwise dimmed gray.
-infeasible_pts = infeasible
+infeasible_pts = [] if args.aggregate_runs else infeasible
 if use_z:
     infeasible_pts = [r for r in infeasible if r["z_val"] is not None]
 if infeasible_pts:
