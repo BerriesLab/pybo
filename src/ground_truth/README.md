@@ -102,6 +102,20 @@ actually contribute, and settings measured only once drop out rather than
 counting as a variance of zero. The printed group count and `dof` say how much
 the estimate is worth — at 2 or 3 dof it is barely an estimate.
 
+Per column, over the settings `g` measured `n_g >= 2` times, with `y_g,i` the
+i-th observation at setting `g` and `mean(y_g)` that setting's mean:
+
+```
+                  sum_g sum_i (y_g,i - mean(y_g))^2
+sigma = sqrt( ------------------------------------- )
+                        sum_g (n_g - 1)
+```
+
+The denominator is the reported `dof`, the number of terms in the outer sums the
+reported group count. Settings with `n_g = 1` contribute nothing to either sum.
+Two settings count as the same one when their parameters, normalised to their
+own observed range, agree to `--group-decimals` decimals.
+
 ## The paste-ready method
 
 `build_polynomial_gt` prints each block as a **whole method**, ready to paste
