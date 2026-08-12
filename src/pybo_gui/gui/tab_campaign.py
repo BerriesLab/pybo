@@ -293,6 +293,21 @@ def build(step_list, settings) -> QWidget:
     errorbar_help = QLabel("")
     errorbar_help.setWordWrap(True)
     errorbar_help.setStyleSheet("color: grey;")
+    # A different axis from Grouped: that averages the repeats of one setting within a
+    # step, this averages whole runs of an arm against each other. They compose, so both
+    # can be on at once.
+    cb_aggregate = QCheckBox("Average runs")
+    band_combo = QComboBox()
+    band_combo.addItems(["ci95", "sem", "std", "minmax"])
+    BAND_TEXT = {
+        "ci95": "95% CI - where the arm's mean lies. The one that says whether two arms differ.",
+        "sem": "Std. error of the mean - narrower than the CI, and not a significance statement.",
+        "std": "Std. dev. - where a single run lands. Does not shrink with more runs.",
+        "minmax": "Min/max - the plain range across the runs.",
+    }
+    band_help = QLabel("")
+    band_help.setWordWrap(True)
+    band_help.setStyleSheet("color: grey;")
     cb_numbers = QCheckBox("Show numbers")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
@@ -325,11 +340,22 @@ def build(step_list, settings) -> QWidget:
             lambda checked, w=widget: checked and errorbar_help.setText(ERRORBAR_TEXT[w]))
     cb_grouped.stateChanged.connect(
         lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in ERRORBAR_TEXT])
+
+    def _on_band_change() -> None:
+        on = cb_aggregate.isChecked()
+        band_combo.setEnabled(on)
+        band_help.setText(BAND_TEXT[band_combo.currentText()] if on else "")
+
+    cb_aggregate.stateChanged.connect(lambda _s: _on_band_change())
+    band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
+    _on_band_change()
     errorbar_help.setText(ERRORBAR_TEXT[rb_sem])
     status = QLabel("")
     status.setStyleSheet("color: grey;")
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers))
+    plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
+    plot_layout.addWidget(band_help)
     plot_layout.addWidget(errorbar_help)
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing))
     plot_layout.addWidget(status)
@@ -701,6 +727,12 @@ def build(step_list, settings) -> QWidget:
                   status, f"{script} exited with {codes[0]} — see its console. "
                           f"Exit 2 is a constraint that would not parse."))
 
+    def _aggregate_args() -> list:
+        """The flags for collapsing an arm's runs into one curve, or nothing when off."""
+        if not cb_aggregate.isChecked():
+            return []
+        return ["--aggregate-runs", "--band", band_combo.currentText()]
+
     def _grouped_args() -> list:
         if not cb_grouped.isChecked():
             return []
@@ -762,6 +794,7 @@ def build(step_list, settings) -> QWidget:
         if z:
             extra += ["--z", z, "--zlabel", z_entry.text()]
         extra += _sense_args((x, x_sense), (y, y_sense)) + _ground_truth_args()
+        extra += _aggregate_args()
         _launch("plot_pareto_2d", *extra)
 
     def _plot_hypervolume(improvement: bool) -> None:
@@ -798,6 +831,10 @@ def build(step_list, settings) -> QWidget:
                 extra += ["--z", z]
                 pairs.append((z, z_sense))
             extra += _sense_args(*pairs)
+        # The per-step gain view rewrites what a point means, and the plot refuses the
+        # two together, so the flags are only added to the cumulative one.
+        if not improvement:
+            extra += _aggregate_args()
         _launch("plot_hypervolume", *extra)
 
     # The viewers rebuild first, so what they show is the current selection rather than
@@ -815,19 +852,22 @@ def build(step_list, settings) -> QWidget:
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
     btn_hvi.clicked.connect(lambda: _plot_hypervolume(True))
 
-    # Diagnostic rows: label, script, and whether it understands --grouped.
-    for text, script, grouped in (
-            ("Evolution", "plot_evolution", True),
-            ("Correlation matrix", "plot_correlation_matrix", False),
-            ("Results boxplot", "plot_results_boxplot", False),
-            ("Results vs datetime", "plot_results_vs_datetime", False),
+    # Diagnostic rows: label, script, and whether it understands --grouped and
+    # --aggregate-runs. Only the curve-shaped plots can average runs; a correlation
+    # matrix or a boxplot has no per-step curve to collapse.
+    for text, script, grouped, aggregates in (
+            ("Evolution", "plot_evolution", True, True),
+            ("Correlation matrix", "plot_correlation_matrix", False, False),
+            ("Results boxplot", "plot_results_boxplot", False, False),
+            ("Results vs datetime", "plot_results_vs_datetime", False, False),
     ):
         label = QLabel(f"{text}:")
         label.setFixedWidth(160)
         button = QPushButton("Plot")
         button.clicked.connect(
-            lambda _checked=False, s=script, g=grouped:
-            _launch(s, *(["--grouped"] if g and cb_grouped.isChecked() else [])))
+            lambda _checked=False, s=script, g=grouped, a=aggregates:
+            _launch(s, *(["--grouped"] if g and cb_grouped.isChecked() else []),
+                    *(_aggregate_args() if a else [])))
         diag_layout.addWidget(_row(label, button))
 
     # An objective usually sits with the tutorial that produced the data, so offer the

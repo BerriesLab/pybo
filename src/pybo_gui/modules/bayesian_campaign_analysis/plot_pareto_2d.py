@@ -14,6 +14,8 @@ from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
+from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
+    BAND_MODES, mean_band, band_label, attainment_grid, step_interpolate)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
@@ -30,6 +32,13 @@ parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem
                          "to the group's min and max. sem and std both fold in the "
                          "measurement variance the run recorded, when it recorded one.")
 parser.add_argument("--show-numbers", action="store_true", default=False)
+parser.add_argument("--aggregate-runs", action="store_true", default=False,
+                    help="Replace the per-run fronts with one mean front per arm, read "
+                         "onto a shared grid, plus a band. 2-D only, and only over the "
+                         "range every run of the arm covers.")
+parser.add_argument("--band", default="ci95", choices=BAND_MODES,
+                    help="What the band around the aggregated front shows (default: "
+                         "%(default)s).")
 parser.add_argument("--maximize", action="append", default=[],
                     help="Result key of an objective to maximize (repeatable). "
                          "Its axis is negated for the Pareto-front computation "
@@ -118,6 +127,13 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
+        # The arm whose runs get averaged together. From technology, not the label:
+        # under the default labelling the label names the run, which separates the very
+        # runs that have to be pooled.
+        "arm":      str(exp.get("technology", "")).lower() or _label(exp),
+        # Kept alongside the label so pooling by arm still separates the runs when the
+        # map was built by strategy, where the label no longer names them.
+        "run":      exp.get("run"),
         "group_id": exp["group_id"],
         "x":        column(exp, args.x),
         "y":        column(exp, args.y),
@@ -172,6 +188,8 @@ if args.grouped:
             y_err_lo = y_err_hi = sd_y
         rows.append({
             "label":    items[0]["label"],
+            "arm":      items[0]["arm"],
+            "run":      items[0]["run"],
             "group_id": gid,
             "x":        x_mean,
             "x_err_lo": x_err_lo,
@@ -220,7 +238,11 @@ if use_z:
 FRONT_LABELS     = sorted({r["label"] for r in valid})
 
 
-_label_color, _label_marker, _front_style = styler(fig_cfg, FRONT_LABELS)
+# Arms take a colour of their own when aggregating, so a mean front is not confused
+# with any one run's. Left alone otherwise: adding names shifts the colours the styler
+# assigns by position.
+_arms = sorted({r["arm"] for r in valid}) if args.aggregate_runs else []
+_label_color, _label_marker, _front_style = styler(fig_cfg, list(FRONT_LABELS) + _arms)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
@@ -382,7 +404,48 @@ if args.show_numbers:
 # undominated at the end belongs on that run's front. Grouping by base is also what keeps
 # --label-by provenance honest - there "initial" and "proposed" are bases in their own
 # right, so asking for them apart still draws them apart.
-for base in sorted({base_label(lbl) for lbl in FRONT_LABELS}):
+if args.aggregate_runs:
+    # One mean front per arm instead of one per run. The runs of an arm reach their
+    # fronts at x values none of the others visited, so they cannot be averaged point by
+    # point: each is read onto a shared grid first. All of it happens in signed
+    # (minimisation) space, so "the best y attained at or before this x" is one rule
+    # whichever way an axis runs, and the result is signed back at the end.
+    by_arm = {}
+    for r in valid:
+        if r["feasible"]:
+            by_arm.setdefault(r["arm"], {}).setdefault(
+                r["run"] or base_label(r["label"]), []).append(
+                (sx * r["x"], sy * r["y"]))
+
+    for arm in sorted(by_arm):
+        fronts = []
+        for pts in by_arm[arm].values():
+            f = sorted(pareto_front(pts), key=lambda p: p[0])
+            if f:
+                fronts.append(([p[0] for p in f], [p[1] for p in f]))
+        if not fronts:
+            continue
+        try:
+            grid = attainment_grid(fronts)
+        except ValueError as error:
+            print(f"! {arm}: {error}")
+            continue
+        curves = [step_interpolate(fx, fy, grid) for fx, fy in fronts]
+        mean, low, high = mean_band(curves, args.band)
+        color = _label_color(arm)
+        # Back out of signed space to plot in the objectives' own units.
+        gx = sx * grid
+        ax.fill_between(gx, sy * low, sy * high, color=color, alpha=0.18,
+                        linewidth=0, zorder=2)
+        # Drawn as the staircase it is: a straight line between two front points would
+        # claim pairs no run achieved.
+        ax.step(gx, sy * mean, where="post" if sx > 0 else "pre",
+                color=color, linewidth=1.4, zorder=3)
+        legend_handles.append(mlines.Line2D(
+            [], [], color=color, linewidth=1.4,
+            label=f"{arm.capitalize()} - {band_label(args.band, len(fronts))}"))
+
+for base in [] if args.aggregate_runs else sorted({base_label(lbl) for lbl in FRONT_LABELS}):
     members = [r for r in valid if base_label(r["label"]) == base and r["feasible"]]
     front = pareto_front([(r["x"], r["y"]) for r in members], sx, sy)
     if not front:

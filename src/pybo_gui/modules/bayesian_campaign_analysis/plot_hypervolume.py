@@ -12,6 +12,8 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
+from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
+    BAND_MODES, mean_band, band_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 
@@ -33,6 +35,15 @@ parser.add_argument("--constraint", action="append", default=[],
                          "Infeasible experiments are excluded from the hypervolume.")
 parser.add_argument("--grouped", action="store_true", default=False,
                     help="Average replicate experiments per group_id into one point.")
+parser.add_argument("--aggregate-runs", action="store_true", default=False,
+                    help="Collapse the runs of each arm into one mean curve with a band, "
+                         "instead of drawing a curve per run. Runs are matched by step "
+                         "and truncated to the shortest.")
+parser.add_argument("--band", default="ci95", choices=BAND_MODES,
+                    help="What the band around the aggregated mean shows (default: "
+                         "%(default)s). ci95 says where the arm's mean lies, so it is the "
+                         "one that answers whether two arms differ; std says where a "
+                         "single run lands and does not shrink with more replicates.")
 parser.add_argument("--improvement", action="store_true", default=False,
                     help="Plot per-step hypervolume improvement (ΔHV) instead of the "
                          "cumulative hypervolume.")
@@ -100,6 +111,11 @@ for exp in load_experiments_from_map(MAP_PATH):
     point = tuple(s * v for s, v in zip(signs, raw))
     rows.append({
         "label":    _label(exp),
+        # The arm the run belongs to, which is what several runs get averaged within.
+        # Read from technology rather than from the label: the label is whatever the map
+        # was built by, and under the default it names the run, so it tells the runs of
+        # one arm apart instead of holding them together.
+        "arm":      str(exp.get("technology", "")).lower() or _label(exp),
         "group_id": exp["group_id"],
         "point":    point,
     })
@@ -147,6 +163,7 @@ for r in rows:
     series.setdefault(base_label(r["label"]), []).append(r)
 
 traces = {}
+series_arm = {}
 for name, items in series.items():
     s_steps, s_hvs, s_labels, seen = [], [], [], []
     for r in items:
@@ -159,14 +176,32 @@ for name, items in series.items():
         s_steps.append(len(seen))
         s_labels.append(r["label"])
     traces[name] = (s_steps, s_hvs, s_labels)
+    series_arm[name] = items[0]["arm"]
 
 all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
-_color, _marker, _front_style = styler(fig_cfg, all_labels)
+
+# The runs of each arm, in the order their traces were built, ready to be averaged.
+arm_curves = {}
+for name, (_s_steps, s_hvs, _s_labels) in traces.items():
+    arm_curves.setdefault(series_arm[name], []).append(s_hvs)
+
+if args.aggregate_runs and args.improvement:
+    # Both rewrite what a point on the curve means, and stacking them would average
+    # per-step gains that were already floored onto a shared log decade.
+    raise SystemExit("--aggregate-runs and --improvement do not combine: the first "
+                     "averages runs of a cumulative curve, the second replaces that "
+                     "curve with per-step gains. Pick one.")
+
+# Arms take a colour of their own when aggregating, so the mean curve is not confused
+# with any single run's. Left alone otherwise, since adding names here would shift the
+# colours assigned by position to every existing label.
+_color, _marker, _front_style = styler(
+    fig_cfg, all_labels + sorted(arm_curves) if args.aggregate_runs else all_labels)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
 
-if len(traces) == 1:
+if len(traces) == 1 and not args.aggregate_runs:
     # One campaign: shade where each phase of it ran, as the single-sequence view did.
     steps, _hvs, labels = next(iter(traces.values()))
     prev_lbl     = labels[0]
@@ -231,6 +266,31 @@ if args.improvement:
             )
     ax.set_ylabel(f"Improvement in best {objective_keys[0]}" if single else
                   r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
+elif args.aggregate_runs:
+    # One curve per arm: the mean over its runs at each step, and the band asked for.
+    # The individual runs are not drawn underneath - the point of asking for this view
+    # is that a dozen overlapping curves is what made the arms hard to compare.
+    legend_handles = []
+    for arm in sorted(arm_curves):
+        mean, low, high = mean_band(arm_curves[arm], args.band)
+        steps = range(1, len(mean) + 1)
+        ax.fill_between(steps, low, high, color=_color(arm), alpha=0.18,
+                        linewidth=0, zorder=2)
+        ax.plot(steps, mean, color=_color(arm), linewidth=1.6, zorder=3)
+        legend_handles.append(mlines.Line2D(
+            [], [], color=_color(arm), linewidth=1.6,
+            label=f"{arm.capitalize()} - {band_label(args.band, len(arm_curves[arm]))}"))
+    # Runs of one arm rarely stop at the same step; the shortest is what they were
+    # truncated to, and saying so keeps a curve that ends early from reading as a run
+    # that stalled. Reported per arm, since each is truncated to its own shortest and
+    # arms are free to differ from each other.
+    for arm in sorted(arm_curves):
+        lengths = {len(c) for c in arm_curves[arm]}
+        if len(lengths) > 1:
+            print(f"! {arm}: runs of unequal length ({min(lengths)}-{max(lengths)} "
+                  f"steps), truncated to {min(lengths)}")
+    ax.set_ylabel(f"Best {objective_keys[0]}" if single else "Hypervolume",
+                  fontsize=FONT_LABEL)
 else:
     for name, (s_steps, s_hvs, s_labels) in traces.items():
         if not single:
