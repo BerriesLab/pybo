@@ -35,3 +35,4 @@ __pycache__/
 # `configs` / `utils` packages, so they do not run here.
 /bayesian_campaign_analysis/
 /.venv/
+/data/
