@@ -14,6 +14,15 @@ env/
 # data/; the glob covers the whole family rather than just the first name.
 /tutorials/**/**/data*/
 /studies/data*/
+# A study writes its sweep under data/studies*/ when --output-dir points there, one
+# run directory per replicate. That is generated output, regenerable from the study
+# command, and it dwarfs the ported campaigns that data/ exists to hold.
+/data/studies*/
+# The pasteable ground-truth bodies build_polynomial_gt --paste-out writes: a copy of
+# coefficients the objective already holds in full, so keeping it invites the two to
+# disagree.
+/tutorials/**/gt_bodies.txt
+/tutorials/**/gnd_truth.txt
 /dist/
 /tutorials/multi_objective/avagama/
 
