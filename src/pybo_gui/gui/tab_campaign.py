@@ -853,10 +853,12 @@ def build(step_list, settings) -> QWidget:
     btn_hvi.clicked.connect(lambda: _plot_hypervolume(True))
 
     # Diagnostic rows: label, script, and whether it understands --grouped and
-    # --aggregate-runs. Only the curve-shaped plots can average runs; a correlation
-    # matrix or a boxplot has no per-step curve to collapse.
+    # --aggregate-runs. None of these average runs: at a given step, runs with different
+    # seeds are evaluating unrelated points, so the mean of their raw values describes
+    # nothing - only a cumulative quantity like the hypervolume means the same thing at
+    # step k in every run.
     for text, script, grouped, aggregates in (
-            ("Evolution", "plot_evolution", True, True),
+            ("Evolution", "plot_evolution", True, False),
             ("Correlation matrix", "plot_correlation_matrix", False, False),
             ("Results boxplot", "plot_results_boxplot", False, False),
             ("Results vs datetime", "plot_results_vs_datetime", False, False),

@@ -9,20 +9,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_initial, styler
-from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
-    BAND_MODES, mean_band, band_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 
 parser = argparse.ArgumentParser(description="Per-parameter/result evolution plot.")
 parser.add_argument("--grouped", action="store_true", default=False,
                     help="Average replicate experiments per group_id into one point.")
-parser.add_argument("--aggregate-runs", action="store_true", default=False,
-                    help="Collapse the runs of each arm into one mean curve with a band, "
-                         "instead of scattering every run's observations. Runs are "
-                         "matched by observation number.")
-parser.add_argument("--band", default="ci95", choices=BAND_MODES,
-                    help="What the band around the aggregated mean shows (default: "
-                         "%(default)s).")
 args = parser.parse_args()
 
 # ---- CONFIG ----
@@ -81,10 +72,6 @@ for exp in experiments:
         "iteration":     exp.get(ITERATION_KEY),
         "group_id":      exp["group_id"],
         "run":           exp.get("run"),
-        # The arm several runs get averaged within. Read from technology, since the
-        # label names whatever the map was built by and under the default that is the
-        # run - which tells the runs of one arm apart rather than holding them together.
-        "arm":           str(exp.get("technology", "")).lower() or _label(exp),
         "label":         _label(exp),
         "parameters":    exp.get("parameters", {}),
         "results":       exp.get("results", {}),
@@ -189,87 +176,38 @@ for lbl in all_labels:
 
 leg_cfg = fig_cfg["legend"]
 
-# Filled in as each column is drawn in aggregated mode, so the legend names the bands
-# actually plotted rather than the per-observation markers, which are not drawn then.
-agg_handles = {}
-
-
-def _arm_curves(col, source):
-    """(arm, x values, one curve per run) for a column, ready to be averaged.
-
-    Runs are matched on the observation number the campaign loop assigned, not on
-    position, and only the x values *every* run of the arm reached are kept. Runs of one
-    arm normally share an initial-design size and batch size, so their x grids coincide
-    and the intersection is simply the shortest of them; taking it explicitly means a run
-    that stopped early shortens the curve instead of silently dropping out of the mean
-    partway along and changing what n means.
-
-    A step with q > 1 puts several rows on one x, so those are averaged within the run
-    first - otherwise a batch would weigh more than a single evaluation purely for having
-    been proposed together.
-    """
-    by_arm = {}
-    for r in rows:
-        y = r[source].get(col)
-        if y is None or "x" not in r:
-            continue
-        run = r["run"] or base_label(r["label"])
-        by_arm.setdefault(r["arm"], {}).setdefault(run, {}).setdefault(r["x"], []).append(y)
-
-    out = []
-    for arm in sorted(by_arm):
-        runs = by_arm[arm]
-        shared = sorted(set.intersection(*(set(v) for v in runs.values())))
-        if not shared:
-            print(f"! {arm}: its runs share no observation number, nothing to average")
-            continue
-        curves = [[sum(runs[run][x]) / len(runs[run][x]) for x in shared] for run in runs]
-        out.append((arm, shared, curves))
-    return out
-
-
 for col in all_cols:
     source = col_source[col]
     pretty = PRETTY_NAMES.get(col, col)
 
     fig, ax = plt.subplots(1, 1, figsize=fig_cfg["figsize"]["evolution"])
 
-    if args.aggregate_runs:
-        for arm, x_values, curves in _arm_curves(col, source):
-            mean, low, high = mean_band(curves, args.band)
-            ax.fill_between(x_values, low, high, color=_color(arm), alpha=0.18,
-                            linewidth=0, zorder=2)
-            ax.plot(x_values, mean, color=_color(arm), linewidth=1.6, zorder=3)
-            agg_handles[arm] = mlines.Line2D(
-                [], [], color=_color(arm), linewidth=1.6,
-                label=f"{arm.capitalize()} - {band_label(args.band, len(curves))}")
-    else:
-        # Fully-connect every point in one block to every point in the next, skipping
-        # points whose value for this column is missing. A campaign at a time, so no line
-        # ever joins two runs.
-        for blocks in campaign_blocks:
-            for prev, nxt in zip(blocks, blocks[1:]):
-                for a in prev:
-                    ya = a[source].get(col)
-                    if ya is None:
+    # Fully-connect every point in one block to every point in the next, skipping
+    # points whose value for this column is missing. A campaign at a time, so no line
+    # ever joins two runs.
+    for blocks in campaign_blocks:
+        for prev, nxt in zip(blocks, blocks[1:]):
+            for a in prev:
+                ya = a[source].get(col)
+                if ya is None:
+                    continue
+                for b in nxt:
+                    yb = b[source].get(col)
+                    if yb is None:
                         continue
-                    for b in nxt:
-                        yb = b[source].get(col)
-                        if yb is None:
-                            continue
-                        ax.plot([a["x"], b["x"]], [ya, yb], **CONNECT)
+                    ax.plot([a["x"], b["x"]], [ya, yb], **CONNECT)
 
-        for lbl in all_labels:
-            style_key  = "initial" if is_initial(lbl) else lbl
-            marker     = _marker(lbl)
-            face_color = _color(lbl)
-            subset = [r for r in rows if r["label"] == lbl and r[source].get(col) is not None]
-            xs = [r["x"] for r in subset]
-            ys = [r[source].get(col) for r in subset]
-            ax.scatter(xs, ys,
-                       s=SCATTER["marker_size"] * 0.7, marker=marker,
-                       facecolors=face_color, edgecolors=SCATTER["edge_color"],
-                       linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3)
+    for lbl in all_labels:
+        style_key  = "initial" if is_initial(lbl) else lbl
+        marker     = _marker(lbl)
+        face_color = _color(lbl)
+        subset = [r for r in rows if r["label"] == lbl and r[source].get(col) is not None]
+        xs = [r["x"] for r in subset]
+        ys = [r[source].get(col) for r in subset]
+        ax.scatter(xs, ys,
+                   s=SCATTER["marker_size"] * 0.7, marker=marker,
+                   facecolors=face_color, edgecolors=SCATTER["edge_color"],
+                   linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3)
 
     # One line per distinct design size: runs that share an n_init share the line.
     for x_init in sorted({n for n in n_inits if n}):
@@ -280,10 +218,7 @@ for col in all_cols:
     ax.tick_params(labelsize=FONT_LABEL - 1)
     ax.grid(True, **fig_cfg["grid"])
     ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
-    # In aggregated mode the per-observation markers are not drawn, so naming them
-    # would put a key in the legend for something the figure does not contain.
-    handles = list((agg_handles if args.aggregate_runs else legend_handles).values())
-    ax.legend(handles=handles, loc=leg_cfg["loc"],
+    ax.legend(handles=list(legend_handles.values()), loc=leg_cfg["loc"],
               fontsize=FONT_LEGEND, frameon=leg_cfg["frameon"],
               framealpha=leg_cfg["framealpha"])
     fig.tight_layout(pad=fig_cfg["layout_pad"])
