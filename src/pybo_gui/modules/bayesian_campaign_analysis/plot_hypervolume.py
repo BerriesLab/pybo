@@ -137,6 +137,10 @@ if args.grouped:
         grouped[gid].append(r)
     rows = [{
         "label": grouped[gid][0]["label"],
+        # A group is repeats of one setting within one run, so the whole of it belongs
+        # to that run's arm. Carried through, or aggregating would lose the very field
+        # it pools by the moment the two options are used together.
+        "arm": grouped[gid][0]["arm"],
         "point": tuple(sum(it["point"][d] for it in grouped[gid]) / len(grouped[gid])
                        for d in range(len(objective_keys))),
     } for gid in order]
@@ -176,7 +180,9 @@ for name, items in series.items():
         s_steps.append(len(seen))
         s_labels.append(r["label"])
     traces[name] = (s_steps, s_hvs, s_labels)
-    series_arm[name] = items[0]["arm"]
+    # Falls back to the series' own name: a row that reached here without an arm still
+    # gets a trace of its own rather than taking a plot down that was not aggregating.
+    series_arm[name] = items[0].get("arm") or name
 
 all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
 
