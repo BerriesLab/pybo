@@ -32,7 +32,9 @@ parser.add_argument("--maximize", action="append", default=[],
                          "always computed as a minimization. Default: minimize.")
 parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
-                         "Infeasible experiments are excluded from the hypervolume.")
+                         "An infeasible experiment contributes no point to the "
+                         "hypervolume but still counts as an evaluation, so the curve "
+                         "goes flat there rather than losing a step off the x axis.")
 parser.add_argument("--grouped", action="store_true", default=False,
                     help="Average replicate experiments per group_id into one point.")
 parser.add_argument("--aggregate-runs", action="store_true", default=False,
@@ -105,8 +107,12 @@ for exp in load_experiments_from_map(MAP_PATH):
     raw = tuple(r.get(k) for k in objective_keys)
     if any(v is None for v in raw):
         continue
-    if not is_feasible(r, constraints):
-        continue
+    # An infeasible evaluation is kept, flagged rather than dropped. It must not join
+    # the Pareto set - nothing it attained is allowed to count - but it did spend a slot
+    # of the budget, and dropping it here took that slot off the x axis too. An arm that
+    # wastes evaluations on infeasible points then read as though it had never made
+    # them, and two arms that waste different numbers were compared over budgets that
+    # were not the same length.
     # Negate maximized objectives so the point lives in minimization space.
     point = tuple(s * v for s, v in zip(signs, raw))
     rows.append({
@@ -117,6 +123,7 @@ for exp in load_experiments_from_map(MAP_PATH):
         # one arm apart instead of holding them together.
         "arm":      str(exp.get("technology", "")).lower() or _label(exp),
         "group_id": exp["group_id"],
+        "feasible": is_feasible(r, constraints),
         "point":    point,
     })
 
@@ -124,9 +131,11 @@ if not rows:
     print("No data with the requested keys.")
     sys.exit(1)
 
-# In grouped mode, collapse replicate experiments (same group_id) — already
-# filtered to feasible, complete, non-baseline — into one point per group whose
-# coordinates are the elementwise mean. Label comes from the group's first row.
+# In grouped mode, collapse replicate experiments (same group_id) into one point per
+# group whose coordinates are the elementwise mean. Label comes from the group's first
+# row. Only the feasible members are averaged, so a group's point is never pulled by a
+# reading that violated a constraint; a group with no feasible member keeps its slot on
+# the x axis and contributes no point.
 if args.grouped:
     grouped, order = {}, []
     for r in rows:
@@ -137,21 +146,32 @@ if args.grouped:
         grouped[gid].append(r)
     rows = [{
         "label": grouped[gid][0]["label"],
+        "feasible": any(it["feasible"] for it in grouped[gid]),
         # A group is repeats of one setting within one run, so the whole of it belongs
         # to that run's arm. Carried through, or aggregating would lose the very field
         # it pools by the moment the two options are used together.
         "arm": grouped[gid][0]["arm"],
-        "point": tuple(sum(it["point"][d] for it in grouped[gid]) / len(grouped[gid])
-                       for d in range(len(objective_keys))),
+        "point": tuple(
+            sum(it["point"][d] for it in grouped[gid] if it["feasible"])
+            / max(1, sum(1 for it in grouped[gid] if it["feasible"]))
+            for d in range(len(objective_keys))),
     } for gid in order]
 
 # ---- FIXED REFERENCE POINT ----
 # Range-based margin so the reference stays "worse" than every point in
 # minimization space, valid for both positive and negated (maximized) axes.
+# From the feasible points alone: the reference exists to bound the volume the front
+# encloses, and a point that violates a constraint is not on any front. Letting one push
+# the corner out would inflate every arm's hypervolume by the same wasted evaluation.
+feasible_rows = [row for row in rows if row["feasible"]]
+if not feasible_rows:
+    print("Every observation violates the constraints - nothing to measure a volume "
+          "against.")
+    sys.exit(1)
 ref = []
 for d in range(len(objective_keys)):
-    lo = min(row["point"][d] for row in rows)
-    hi = max(row["point"][d] for row in rows)
+    lo = min(row["point"][d] for row in feasible_rows)
+    hi = max(row["point"][d] for row in feasible_rows)
     span = hi - lo
     pad = REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)
     ref.append(hi + pad)
@@ -170,14 +190,25 @@ traces = {}
 series_arm = {}
 for name, items in series.items():
     s_steps, s_hvs, s_labels, seen = [], [], [], []
-    for r in items:
-        seen.append(r["point"])
-        # Back out of minimization space for the single-objective trace, so the curve is
-        # in the objective's own units and reads against the problem rather than against
-        # a reference point that exists only to make a volume finite.
-        s_hvs.append(signs[0] * min(p[0] for p in seen) if single
-                     else hypervolume_nd(pareto_front_nd(seen), ref))
-        s_steps.append(len(seen))
+    for spent, r in enumerate(items, start=1):
+        # Only a feasible point joins the set the metric is measured on; an infeasible
+        # one still advances the count, leaving the curve flat for that evaluation.
+        # That flat stretch is the honest picture: the budget was spent and bought
+        # nothing.
+        if r["feasible"]:
+            seen.append(r["point"])
+        if not seen:
+            # Nothing attained yet, and no volume without a point. float("nan") holds
+            # the slot so the x axis still counts the evaluation, and matplotlib leaves
+            # the curve unstarted rather than drawing it up from a floor of zero.
+            s_hvs.append(float("nan"))
+        else:
+            # Back out of minimization space for the single-objective trace, so the curve
+            # is in the objective's own units and reads against the problem rather than
+            # against a reference point that exists only to make a volume finite.
+            s_hvs.append(signs[0] * min(p[0] for p in seen) if single
+                         else hypervolume_nd(pareto_front_nd(seen), ref))
+        s_steps.append(spent)
         s_labels.append(r["label"])
     traces[name] = (s_steps, s_hvs, s_labels)
     # Falls back to the series' own name: a row that reached here without an arm still

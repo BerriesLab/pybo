@@ -17,8 +17,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
-    QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-    QWidget,
+    QDoubleSpinBox, QSizePolicy, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from pybo_gui.configs import settings as configs_settings
@@ -140,6 +140,21 @@ def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
     dlg.show()
 
 
+def _status_label(text: str = "") -> QLabel:
+    """A grey status line that wraps instead of widening the window.
+
+    These carry whatever the last action had to say - a path, an exception - and a
+    QLabel asks for the width its text wants, so one long message pushes the whole tab
+    wider and it never shrinks back. Ignoring the horizontal hint makes it take the
+    width the layout has and wrap inside it.
+    """
+    label = QLabel(text)
+    label.setStyleSheet("color: grey;")
+    label.setWordWrap(True)
+    label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    return label
+
+
 def _row(*widgets) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -192,8 +207,7 @@ def build(step_list, settings) -> QWidget:
     btn_view_grp = QPushButton("View group map")
     btn_save_map = QPushButton("Save map")
     btn_load_map = QPushButton("Load map")
-    map_status = QLabel("")
-    map_status.setStyleSheet("color: grey;")
+    map_status = _status_label()
     # What counts as the same setting: parameters are compared rounded to this many
     # decimals. The default compares them as measured, which splits a setting whose
     # repeats were logged at the rig's rounded setpoint and at the raw proposal; lowering
@@ -214,8 +228,7 @@ def build(step_list, settings) -> QWidget:
     obj_layout = QVBoxLayout(obj_box)
     obj_edit = QLineEdit()
     obj_edit.setPlaceholderText("path to the run's objective.py")
-    obj_status = QLabel(_NO_OBJECTIVE)
-    obj_status.setStyleSheet("color: grey;")
+    obj_status = _status_label(_NO_OBJECTIVE)
     browse = QPushButton("Browse")
     load_btn = QPushButton("Load objective")
     unload_btn = QPushButton("Unload")
@@ -290,9 +303,7 @@ def build(step_list, settings) -> QWidget:
         rb_std: "Std. dev. — how much a single measurement scatters. Repeats do not shrink it.",
         rb_minmax: "Min/max — the plain range of the group's measurements.",
     }
-    errorbar_help = QLabel("")
-    errorbar_help.setWordWrap(True)
-    errorbar_help.setStyleSheet("color: grey;")
+    errorbar_help = _status_label()
     # A different axis from Grouped: that averages the repeats of one setting within a
     # step, this averages whole runs of an arm against each other. They compose, so both
     # can be on at once.
@@ -305,9 +316,7 @@ def build(step_list, settings) -> QWidget:
         "std": "Std. dev. - where a single run lands. Does not shrink with more runs.",
         "minmax": "Min/max - the plain range across the runs.",
     }
-    band_help = QLabel("")
-    band_help.setWordWrap(True)
-    band_help.setStyleSheet("color: grey;")
+    band_help = _status_label()
     cb_numbers = QCheckBox("Show numbers")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
@@ -350,8 +359,7 @@ def build(step_list, settings) -> QWidget:
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
     errorbar_help.setText(ERRORBAR_TEXT[rb_sem])
-    status = QLabel("")
-    status.setStyleSheet("color: grey;")
+    status = _status_label()
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
@@ -627,11 +635,10 @@ def build(step_list, settings) -> QWidget:
         state["groups"] = build_groups(state["map"], decimals_spin.value())
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
-        repeated = [g["replicates"] for g in state["groups"] if g["replicates"] > 1]
-        map_status.setText(
-            f"{len(state['map']['experiments'])} observations, {len(state['groups'])} "
-            f"groups at {decimals_spin.value()} decimals, {len(repeated)} with repeats"
-            + (f" (sizes {sorted(repeated, reverse=True)})" if repeated else ""))
+        # Just that the spinbox took effect. The counts said little, and listing every
+        # group's size ran to hundreds of numbers on a study-sized map, which is what
+        # stretched the window: a status line has to fit on one.
+        map_status.setText(f"regrouped at {decimals_spin.value()} decimals")
 
     decimals_spin.valueChanged.connect(lambda _v: _regroup())
 
