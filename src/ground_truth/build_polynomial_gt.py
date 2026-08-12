@@ -91,9 +91,14 @@ def main():
     parser.add_argument("--group-decimals", type=int, default=6,
                         help="Decimals to round the range-normalised parameters to when "
                              "deciding which observations repeat the same setting, for "
-                             "the pooled noise std (default: %(default)s). Lower it if "
-                             "repeats were recorded with drifting setpoints and end up "
-                             "in groups of one.")
+                             "the pooled noise std (default: %(default)s). The default is "
+                             "high on purpose: it only absorbs float formatting, since "
+                             "true repeats normally share identical setpoints. Lower it "
+                             "only if repeats were recorded with drifting setpoints, and "
+                             "check the group count against the repeats you know you ran "
+                             "- once it exceeds them, distinct settings are being pooled "
+                             "and their spread is counted as noise, which is exactly what "
+                             "pure error must exclude.")
     parser.add_argument("--positive", action="store_true",
                         help="Assume every observed objective value is physically "
                              "non-negative and fit log(y) instead of y, guaranteeing "
