@@ -37,7 +37,6 @@ class LinearEqualityTest(MCMultiObjectiveBase):
             lin_eq_X_con_cfg=[
                 LinEqXConCfg(idxs=[0, 1], coeff=[1.0, 2.0], rhs=1.0)
             ],
-            gt_obj_noise_std=[0.02, 0.02]
         )
 
     @staticmethod
@@ -48,5 +47,8 @@ class LinearEqualityTest(MCMultiObjectiveBase):
     def _f2(X: torch.Tensor) -> torch.Tensor:
         return (X[..., 0]).pow(2) + (X[..., 1] - 1).pow(2)
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.stack([self._f1(X), self._f2(X)], dim=-1)
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        Y = torch.stack([self._f1(X), self._f2(X)], dim=-1)
+        if noisy:
+            Y = Y + 0.02 * torch.randn_like(Y)
+        return Y

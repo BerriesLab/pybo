@@ -18,13 +18,18 @@ class PolynomialConstrained(MCSingleObjectiveBase):
             ineq_Y_con_cfg=[
                 IneqYConCfg(f=Identity(index=-1))
             ],
-            gt_obj_noise_std=[0.02],
-            gt_con_noise_std=[0.01]
         )
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return X ** 4 - 2 * X ** 2 + 0.5 * X
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        Y = X ** 4 - 2 * X ** 2 + 0.5 * X
+        if noisy:
+            Y = Y + 0.02 * torch.randn_like(Y)
+        return Y
 
-    def evaluate_true_constraint(self, X: torch.Tensor) -> torch.Tensor:
-        # f(X) > -0.2 is feasible
-        return self.evaluate_true_objective(X) + 0.02
+    def evaluate_true_constraint(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # f(X) > -0.2 is feasible. Built on the clean objective and given its own
+        # draw, so the constraint is not the objective's noise seen twice.
+        Y = self.evaluate_true_objective(X) + 0.02
+        if noisy:
+            Y = Y + 0.01 * torch.randn_like(Y)
+        return Y

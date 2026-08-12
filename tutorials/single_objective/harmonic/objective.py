@@ -17,5 +17,9 @@ class Harmonic(MCSingleObjectiveBase):
             ],
         )
 
-    def evaluate_true_objective(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, noisy: bool = False) -> Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         return torch.cos(2 * torch.pi * X)

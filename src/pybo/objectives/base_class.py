@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 from torch import Tensor
 from abc import ABC
 from botorch.acquisition.multi_objective import MCMultiOutputObjective
@@ -21,9 +19,6 @@ class MCObjectiveBase(ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_obj_noise_std: float | list[float] | None = None,
-            gt_con_noise_std: float | list[float] | None = None,
-            gt_trk_noise_std: float | list[float] | None = None,
     ):
         r"""
         Args:
@@ -71,18 +66,6 @@ class MCObjectiveBase(ABC):
         a list of functions representing a constraint of the form `callable(x) <= 0`
         (feasible if non-positive). ATTENTION: the sign convention for Y constraints is
         the opposite of the sign convention for X constraints.
-
-        -gt_obj_noise_std: The noise std. dev. added to the ground truth objectives.
-        One entry per objective, or a scalar broadcast to all of them.
-
-        -gt_con_noise_std: The noise std. dev. added to the ground truth Y
-        constraints. One entry per constraint, or a scalar broadcast to all of them.
-
-        -gt_trk_noise_std: The noise std. dev. added to the ground truth trackers.
-        One entry per tracker, or a scalar broadcast to all of them.
-
-        Each measured channel declares its own noise because each lives on its own
-        scale: a constraint or a tracker is rarely on the scale of any objective.
         """
         super().__init__()
 
@@ -110,9 +93,6 @@ class MCObjectiveBase(ABC):
         self._to_minimize = self._process_to_minimize()
         self._outcomes = self._process_outcomes()
         self._bounds = self._process_bounds()
-        self._gt_obj_noise_std = self._process_gt_obj_noise(gt_obj_noise_std)
-        self._gt_con_noise_std = self._process_gt_con_noise(gt_con_noise_std)
-        self._gt_trk_noise_std = self._process_gt_trk_noise(gt_trk_noise_std)
 
         # === Constraints ===
         self._lin_eq_X_con = self._process_lin_eq_X(lin_eq_X_con_cfg)
@@ -175,18 +155,6 @@ class MCObjectiveBase(ABC):
     @property
     def num_outcomes(self) -> int:
         return self._num_outcomes
-
-    @property
-    def gt_obj_noise_std(self) -> torch.Tensor | None:
-        return self._gt_obj_noise_std
-
-    @property
-    def gt_con_noise_std(self) -> torch.Tensor | None:
-        return self._gt_con_noise_std
-
-    @property
-    def gt_trk_noise_std(self) -> torch.Tensor | None:
-        return self._gt_trk_noise_std
 
     @property
     def lin_eq_X_con(self):
@@ -254,24 +222,6 @@ class MCObjectiveBase(ABC):
         lb = [p.bounds[0] for p in sorted_pars]
         ub = [p.bounds[1] for p in sorted_pars]
         return torch.tensor([lb, ub], device=self.device, dtype=self.dtype)
-
-    def _process_gt_noise(self, val: float | list[float] | None, n: int, name: str) -> Tensor | None:
-        """Expands a scalar over the channel and checks the length of a list."""
-        if val is None: return None
-        if isinstance(val, (float, int)):
-            val = [float(val)] * n
-        if len(val) != n:
-            raise ValueError(f"{name} must have {n} entries, got {len(val)}.")
-        return torch.tensor(val, device=self.device, dtype=self.dtype)
-
-    def _process_gt_obj_noise(self, val: float | list[float] | None) -> Tensor | None:
-        return self._process_gt_noise(val, self.num_objectives, "gt_obj_noise_std")
-
-    def _process_gt_con_noise(self, val: float | list[float] | None) -> Tensor | None:
-        return self._process_gt_noise(val, self.num_con, "gt_con_noise_std")
-
-    def _process_gt_trk_noise(self, val: float | list[float] | None) -> Tensor | None:
-        return self._process_gt_noise(val, self.num_trk, "gt_trk_noise_std")
 
     def _process_to_minimize(self, ):
         return torch.tensor(
@@ -341,106 +291,27 @@ class MCObjectiveBase(ABC):
                     cfg.label = f"con_{pos:02d}"
         return [c.f for c in cfgs]
 
-    # ===== Polynomial ground truth (ground_truth.build_polynomial_gt --out) =====
-
-    def _load_polynomial_gt(self, path: str | Path, block: str) -> dict:
-        """The named block ("objectives", "constraints" or "trackers") of a JSON
-        file written by build_polynomial_gt --out, as tensors ready for
-        _evaluate_polynomial_gt. Call it once, after super().__init__(), which is
-        what defines the device and dtype the tensors land on.
-
-        The columns are aligned by label rather than by position, so a cfg list
-        that no longer matches the saved fit raises instead of silently reading
-        the wrong column."""
-        cfgs = {"objectives": self.obj_cfg,
-                "constraints": self.ineq_Y_con_cfg,
-                "trackers": self.trk_cfg}[block]
-        if not cfgs:
-            raise ValueError(f"This objective declares no {block}, so there is nothing "
-                             f"to load from {path}.")
-
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"No polynomial ground truth at {path}. Build one with: python -m "
-                f"ground_truth.build_polynomial_gt --root-dir <run> --out {path}")
-        saved = json.loads(path.read_text(encoding="utf-8"))
-
-        if block not in saved["blocks"]:
-            raise KeyError(
-                f"{path} holds no '{block}' block (it has: "
-                f"{', '.join(saved['blocks']) or 'nothing'}). The fit skips a block "
-                f"that was never recorded in the run it was built from.")
-        fit = saved["blocks"][block]
-
-        missing = [cfg.label for cfg in cfgs if cfg.label not in fit["labels"]]
-        if missing:
-            raise KeyError(
-                f"{path} has no fit for {', '.join(missing)} in '{block}' (it holds: "
-                f"{', '.join(fit['labels'])}). Rebuild it from a run that records "
-                f"these labels.")
-        order = [fit["labels"].index(cfg.label) for cfg in cfgs]
-
-        return {
-            "log_space": fit["log_space"],
-            "mean": torch.tensor(fit["scaler_mean"], device=self.device, dtype=self.dtype),
-            "scale": torch.tensor(fit["scaler_scale"], device=self.device, dtype=self.dtype),
-            "powers": torch.tensor(fit["powers"], device=self.device, dtype=self.dtype),
-            "coefficients": torch.tensor(fit["coefficients"], device=self.device,
-                                         dtype=self.dtype)[:, order],
-            "intercept": torch.tensor(fit["intercept"], device=self.device,
-                                      dtype=self.dtype)[order],
-        }
-
-    @staticmethod
-    def _evaluate_polynomial_gt(fit: dict, X: Tensor) -> Tensor:
-        """The loaded polynomial at X, shaped (..., dim) -> (..., n_labels). Batch
-        dimensions pass through untouched, so the (b, q, d) tensors BoTorch
-        evaluates candidates on work as they are."""
-        X_scaled = (X - fit["mean"]) / fit["scale"]
-        # One row of "powers" per term, holding the exponent of each parameter in
-        # that term, so the product over the parameter axis is the term itself. The
-        # bias is the all-zero row, and x**0 == 1 produces it for free.
-        terms = torch.prod(X_scaled.unsqueeze(-2) ** fit["powers"], dim=-1)
-        Y = terms @ fit["coefficients"] + fit["intercept"]
-        # log(y) was fit, so the prediction is in log space and has to come back out
-        # of it. That is what makes the result strictly positive.
-        return Y.exp() if fit["log_space"] else Y
-
     # ===== Methods =====
 
-    def evaluate_true_objective(self, X: Tensor) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, noisy: bool = False) -> Tensor:
         """
         Evaluate the true objective at the given input locations X.
+        The attribute noisy is used to add noise to the ground truth.
+        The noise must be hard coded in the ground truth definition.
         """
         pass
 
-    def evaluate_true_objective_with_noise(self, X: Tensor) -> Tensor:
-        Y = self.evaluate_true_objective(X)
-        Y = self.add_noise(Y, self._gt_obj_noise_std)
-        return Y
-
-    def evaluate_true_constraint(self, X: Tensor) -> Tensor:
+    def evaluate_true_constraint(self, X: Tensor, noisy: bool = False) -> Tensor:
         """
         Evaluates and stacks all inequality Y constraints.
         """
         pass
 
-    def evaluate_true_constraints_with_noise(self, X: Tensor) -> Tensor:
-        Y = self.evaluate_true_constraint(X)
-        Y = self.add_noise(Y, self._gt_con_noise_std)
-        return Y
-
-    def evaluate_tracker(self, X: Tensor) -> Tensor:
+    def evaluate_tracker(self, X: Tensor, noisy: bool = False) -> Tensor:
         """
         Evaluate values to monitor but not to optimize.
         """
         pass
-
-    def evaluate_tracker_with_noise(self, X: Tensor) -> Tensor:
-        Y = self.evaluate_tracker(X)
-        Y = self.add_noise(Y, self._gt_trk_noise_std)
-        return Y
 
     def evaluate_true_slack(self, X: Tensor, slack: float = 0) -> Tensor:
         """
@@ -451,21 +322,6 @@ class MCObjectiveBase(ABC):
         if slack < 0:
             raise ValueError("slack must be positive")
         return self.evaluate_true_constraint(X=X) - slack
-
-    @staticmethod
-    def add_noise(Y: Tensor, std: Tensor) -> Tensor:
-        """
-        A method to add noise to the observations. "std" holds one entry per
-        column of Y: which channel it describes is the caller's to decide.
-        """
-        if std is None:
-            raise ValueError("std is required to add_noise.")
-        if Y.shape[-1] != std.shape[-1]:
-            raise ValueError(
-                f"std has {std.shape[-1]} entries but Y has "
-                f"{Y.shape[-1]} columns.")
-        noise = std.to(Y.device) * torch.randn_like(Y)
-        return Y + noise
 
     def is_X_feasible(self, X: torch.Tensor, atol: float = 1e-6) -> torch.Tensor:
         """ Supports X (..., d) and q-batch X (..., q, d) for inter- and intra-point
@@ -569,9 +425,6 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_obj_noise_std: float | list[float] | None = None,
-            gt_con_noise_std: float | list[float] | None = None,
-            gt_trk_noise_std: float | list[float] | None = None,
     ):
         ABC.__init__(self)
         MCAcquisitionObjective.__init__(self)
@@ -586,9 +439,6 @@ class MCSingleObjectiveBase(MCAcquisitionObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
-            gt_obj_noise_std=gt_obj_noise_std,
-            gt_con_noise_std=gt_con_noise_std,
-            gt_trk_noise_std=gt_trk_noise_std,
         )
         self.best_value = best_value
 
@@ -620,9 +470,6 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg: list[LinIneqXConCfg] = None,
             nonlin_ineq_X_con_cfg: list[NonLinIneqXConCfg] = None,
             ineq_Y_con_cfg: list[IneqYConCfg] = None,
-            gt_obj_noise_std: float | list[float] | None = None,
-            gt_con_noise_std: float | list[float] | None = None,
-            gt_trk_noise_std: float | list[float] | None = None,
     ):
         ABC.__init__(self)
         MCMultiOutputObjective.__init__(self)
@@ -637,9 +484,6 @@ class MCMultiObjectiveBase(MCMultiOutputObjective, MCObjectiveBase, ABC):
             lin_ineq_X_con_cfg=lin_ineq_X_con_cfg,
             nonlin_ineq_X_con_cfg=nonlin_ineq_X_con_cfg,
             ineq_Y_con_cfg=ineq_Y_con_cfg,
-            gt_obj_noise_std=gt_obj_noise_std,
-            gt_con_noise_std=gt_con_noise_std,
-            gt_trk_noise_std=gt_trk_noise_std,
         )
         self.ref_point = [cfg.ref_point for cfg in self.obj_cfg]
         self.max_hv = max_hv

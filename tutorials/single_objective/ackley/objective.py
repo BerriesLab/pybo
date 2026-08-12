@@ -19,7 +19,11 @@ class Ackley(MCSingleObjectiveBase):
             ]
         )
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         x1 = X[:, 0]
         x2 = X[:, 1]
         arg1 = -0.2 * torch.sqrt(0.5 * (x1 ** 2 + x2 ** 2))

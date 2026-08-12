@@ -56,6 +56,14 @@ Shared:
   training data more closely but overfit fast on small datasets; there is no
   built-in cross-validation here, so sweep `--degree` by hand and compare the
   printed `R2` across runs if you need to pick one.
+- `--group-decimals` — decimals to round the range-normalised parameters to
+  when deciding which observations repeat the same setting (default: `6`).
+  Only affects the pooled noise std, never the fit. Parameters are normalised
+  to their own observed range first, so one value works across parameters of
+  very different magnitude (volts alongside nanoseconds). Repeats normally
+  record identical setpoints, making this a guard against float formatting
+  rather than real binning — lower it if repeated runs drifted and land in
+  groups of one.
 
 `build_gp_gt`:
 - `--kernel {rbf,matern}` — kernel family (default: `rbf`).
@@ -81,6 +89,82 @@ fitted block you get:
 - in-sample `R2` (`build_polynomial_gt`) or in-sample plus cross-validated
   `R2` per column (`build_gp_gt`),
 - an `All positive` sanity check on the objectives when `--positive` is set.
+
+`build_polynomial_gt` additionally reports the block's **pooled noise std**: the
+settings measured more than once are grouped together, and their spread is
+pooled into one std per column. This is *pure error* — it measures the process's
+own variability without reference to the fitted surface. The fit's residuals
+would instead confound that noise with the polynomial being the wrong shape.
+
+Groups are pooled, not averaged: the total squared deviation is divided by the
+total degrees of freedom, so uneven group sizes are weighted by what they
+actually contribute, and settings measured only once drop out rather than
+counting as a variance of zero. The printed group count and `dof` say how much
+the estimate is worth — at 2 or 3 dof it is barely an estimate.
+
+## The paste-ready method
+
+`build_polynomial_gt` prints each block as a **whole method**, ready to paste
+into an objective over whatever it holds today:
+
+```python
+    def evaluate_true_objective(self, X: Tensor, noisy: bool = False) -> Tensor:
+        x0 = (X[..., 0] - 10.863) / 2.12656
+        ...
+        tool_wear = (37.156
+                     + 8.7068 * x0
+                     ...)
+        if noisy:
+            tool_wear = tool_wear + 8.957 * torch.randn_like(tool_wear)
+        return torch.stack([tool_wear, ...], dim=-1)
+```
+
+The ground truth lives in the objective, not in a file the objective loads, and
+its noise lives in the same method as the quantity it belongs to — there is no
+framework attribute holding either. The `noisy` branch draws on each quantity
+**before** anything is derived from it, so an objective that builds a hinge or a
+deviation out of one of these inherits the noise instead of stacking a second
+draw on top. Blocks with no repeated settings get a `raise` in that branch
+instead of a draw, so asking a deterministic ground truth for noise fails loudly.
+
+The columns come out **in the order the labels appear in the records**, which
+need not match the objective's `obj_cfg` order — the labels are printed above
+the method for exactly this reason. Reorder the stack before pasting; nothing
+downstream checks it, so getting it wrong is silent.
+
+`--out` still archives the fit as JSON, including `noise_std`, `noise_groups`
+and `noise_dof` per block. Nothing reads it back: it is a record of what was
+fitted, not a runtime input.
+
+### `--paste-out`: one block per quantity
+
+An objective holds one method per physical quantity, not one per block, so
+`--paste-out FILE` writes the bodies in that shape instead — the standardisation
+lines and the named expression, with no `def`, no `noisy` branch and no
+`return`:
+
+```
+# trackers / Orbiting Time (degree 2, pooled noise std 0.6754)
+        x0 = (X[..., 0] - 10.863) / 2.12656
+        x1 = (X[..., 1] - 5.36859) / 1.43657
+        x2 = (X[..., 2] - 49683.3) / 25415.8
+        orbiting_time = (20.9966
+                         - 4.28653 * x0
+                         ...
+                         - 0.217852 * x2 ** 2)
+```
+
+The standardisation is repeated in every block rather than shared, because each
+one is meant to land in a method of its own and has to stand alone. The header
+carries the block, the label, the degree and the pooled noise std, so the number
+to put in that method's `noisy` branch travels with the coefficients.
+
+Paste the block whose **quantity** the method computes, which is not always the
+block the constraint column is named after: an objective that derives its
+constraint from a measurement fits the measurement, so iformac's
+`_orbiting_time` comes from `trackers / Orbiting Time`, while
+`constraints / Orbiting Time Deviation` is a fit of the already-banded distance
+and nothing consumes it.
 
 Nothing is written to disk — pipe or redirect stdout if you want to keep the
 output.

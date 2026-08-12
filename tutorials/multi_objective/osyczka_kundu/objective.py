@@ -66,7 +66,11 @@ class OsyczkaKundu(MCMultiObjectiveBase):
     def _nonlinear_c2(X: torch.Tensor) -> torch.Tensor:
         return (X[..., 4] - 3).pow(2) + X[..., 5] - 4
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         f1 = self._f1(X=X)
         f2 = self._f2(X=X)
         return torch.stack([f1, f2], dim=-1)

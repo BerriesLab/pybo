@@ -39,7 +39,6 @@ class LinearInequalityTest(MCMultiObjectiveBase):
             lin_ineq_X_con_cfg=[
                 LinIneqXConCfg(idxs=[0, 1], coeff=[-1.0, -1.0], rhs=-2.0)
             ],
-            gt_obj_noise_std=[0.03, 0.03]
         )
 
     @staticmethod
@@ -50,5 +49,8 @@ class LinearInequalityTest(MCMultiObjectiveBase):
     def _f2(X: Tensor) -> Tensor:
         return (X[..., 0] - 2).pow(2) + (X[..., 1] - 1).pow(2)
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.stack([self._f1(X), self._f2(X)], dim=-1)
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        Y = torch.stack([self._f1(X), self._f2(X)], dim=-1)
+        if noisy:
+            Y = Y + 0.03 * torch.randn_like(Y)
+        return Y

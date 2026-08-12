@@ -16,5 +16,9 @@ class Polynomial(MCSingleObjectiveBase):
             ],
         )
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         return X ** 4 - 2 * X ** 2 + 0.5 * X

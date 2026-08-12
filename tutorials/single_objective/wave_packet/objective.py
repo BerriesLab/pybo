@@ -21,7 +21,11 @@ class WavePacket(MCSingleObjectiveBase):
         self.k0 = 2 * torch.pi / self.p
         self.x0 = 0
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         term1 = torch.exp(-0.5 * ((X - self.x0) / self.sigma) ** 2)
         term2 = torch.sin(self.k0 * X)
         f = term1 * term2

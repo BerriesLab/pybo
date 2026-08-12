@@ -12,17 +12,18 @@
         "Maximum Ramp Time": 44783.81499049663
       },
       "objectives": {
+        "Material Removal Rate": 1.4765019911079083,
+        "Material Removal Rate_var": null,
         "Tool Wear": 57.4,
-        "Tool Wear_var": null,
-        "Material Removal Rate": 1.4765019911079083
+        "Tool Wear_var": null
       },
       "constraints": {
-        "Orbiting Time": 21.43669549226761,
-        "Orbiting Time_var": null
+        "Orbiting Time Deviation": 0.0,
+        "Orbiting Time Deviation_var": null
       },
       "trackers": {
-        "Orbiting Time Deviation": null,
-        "Orbiting Time Deviation_var": null
+        "Orbiting Time": 21.43669549226761,
+        "Orbiting Time_var": null
       }
     }
   ]

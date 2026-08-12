@@ -74,19 +74,9 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     )
 
     """ Choose between deterministic and noisy objective """
-    # Asking for noise the objective cannot produce is a mistake, not a preference
-    if noise and objective.gt_obj_noise_std is None:
-        raise ValueError(
-            f"--noise true needs an objective that declares gt_obj_noise_std, and "
-            f"{type(objective).__name__} declares none. Declare one in its "
-            f"__init__, or pass --noise false to measure it exactly.")
     noisy = noise
-    evaluate = (objective.evaluate_true_objective_with_noise if noisy
-                else objective.evaluate_true_objective)
     # The constraint is measured the same way the objective is, so a noisy run
     # is noisy on every channel rather than half-exact.
-    evaluate_constraint = (objective.evaluate_true_constraints_with_noise if noisy
-                           else objective.evaluate_true_constraint)
     if repeats > 1 and not noisy:
         print(f"! --repeats {repeats} on a deterministic objective: every repetition "
               f"returns the same values, so the extra rows carry no information.")
@@ -126,8 +116,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
             step_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(step_dir)
-            new_Y_obj = evaluate(new_X)
-            new_Y_con = evaluate_constraint(new_X)
+            new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
+            new_Y_con = objective.evaluate_true_constraint(new_X, noisy=noisy)
             if verbose:
                 print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
                 print(f"New Y_con: {new_Y_con.detach().cpu().numpy()}")

@@ -25,7 +25,6 @@ class BinhAndKorn(MCMultiObjectiveBase):
                 NonLinIneqXConCfg(f=self._input_c2, intra=True),
             ],
             ineq_Y_con_cfg=None,
-            gt_obj_noise_std=[1.4, 0.5]
         )
 
     @staticmethod
@@ -40,8 +39,11 @@ class BinhAndKorn(MCMultiObjectiveBase):
         x2 = X[..., 1]
         return (x1 - 5) ** 2 + (x2 - 5) ** 2
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.stack([self._binh(X), self._korn(X)], dim=-1)
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        Y = torch.stack([self._binh(X), self._korn(X)], dim=-1)
+        if noisy:
+            Y = Y + Y.new_tensor([1.4, 0.5]) * torch.randn_like(Y)
+        return Y
 
     @staticmethod
     def _input_c1(X: torch.Tensor) -> torch.Tensor:

@@ -47,8 +47,6 @@ class C2DTLZ2(MCMultiObjectiveBase):
             ineq_Y_con_cfg=[
                 IneqYConCfg(f=Identity(index=-1))
             ],
-            gt_obj_noise_std=[0.015, 0.015],
-            gt_con_noise_std=[0.01],
         )
 
         self.k = self.dim - self.num_obj + 1
@@ -68,7 +66,7 @@ class C2DTLZ2(MCMultiObjectiveBase):
         g_val = self._g(X)
         return (1 + g_val) * torch.sin(x0 * 0.5 * math.pi)
 
-    def evaluate_true_constraint(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_constraint(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
         f1 = self._f1(X)
         f2 = self._f2(X)
         a = 1 / math.sqrt(2)
@@ -91,10 +89,16 @@ class C2DTLZ2(MCMultiObjectiveBase):
         min_dist_sq = torch.min(torch.stack([d1_sq, d2_sq, d3_sq], dim=-1), dim=-1)[0]
         combined_violation = self._r ** 2 - min_dist_sq
 
+        if noisy:
+            combined_violation = combined_violation + 0.01 * torch.randn_like(combined_violation)
+
         # BoTorch convention:
         # > 0 -> Infeasible
         # <= 0 -> Feasible
         return combined_violation.unsqueeze(-1)
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return torch.stack([self._f1(X), self._f2(X)], dim=-1)
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        Y = torch.stack([self._f1(X), self._f2(X)], dim=-1)
+        if noisy:
+            Y = Y + 0.015 * torch.randn_like(Y)
+        return Y

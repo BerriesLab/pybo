@@ -8,17 +8,22 @@ DTYPE = torch.float64
 
 
 class SingleMin(MCSingleObjectiveBase):
-    def __init__(self, gt_obj_noise_std=None):
+    # Carries its own ground-truth noise, as an objective standing in for a rig does.
+    _NOISE_STD = 0.5
+
+    def __init__(self):
         super().__init__(
             device=DEVICE,
             dtype=DTYPE,
             par_cfg=[ParCfg(bounds=(-1.0, 5.0))],
             obj_cfg=[ObjCfg(bounds=(0.0, 9.0), to_minimize=True, ref_point=10.0)],
-            gt_obj_noise_std=gt_obj_noise_std,
         )
 
-    def evaluate_true_objective(self, X):
-        return (X - 2).pow(2)
+    def evaluate_true_objective(self, X, noisy: bool = False):
+        Y = (X - 2).pow(2)
+        if noisy:
+            Y = Y + self._NOISE_STD * torch.randn_like(Y)
+        return Y
 
 
 class MixedMulti(MCMultiObjectiveBase):
@@ -34,7 +39,9 @@ class MixedMulti(MCMultiObjectiveBase):
             ],
         )
 
-    def evaluate_true_objective(self, X):
+    def evaluate_true_objective(self, X, noisy: bool = False):
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth noise.")
         return X.clone()
 
 
@@ -49,7 +56,9 @@ class YConstrained(MCSingleObjectiveBase):
             ineq_Y_con_cfg=[IneqYConCfg(f=lambda Y: Y[..., 1:2] - 1.0)],
         )
 
-    def evaluate_true_objective(self, X):
+    def evaluate_true_objective(self, X, noisy: bool = False):
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth noise.")
         return X.clone()
 
 
@@ -79,10 +88,24 @@ def test_num_objectives_matches_num_obj_multi():
     assert obj.num_objectives == 2
 
 
-def test_scalar_gt_noise_expands_over_objectives():
-    obj = SingleMin(gt_obj_noise_std=0.5)
-    assert obj.gt_obj_noise_std.shape == (1,)
-    assert torch.equal(obj.gt_obj_noise_std, torch.tensor([0.5], dtype=DTYPE))
+def test_noisy_flag_perturbs_without_shifting_the_objective():
+    obj = SingleMin()
+    X = torch.full((4096, 1), 3.0, dtype=DTYPE)
+    clean = obj.evaluate_true_objective(X)
+    # Clean stays exact and repeatable; noisy scatters around it without moving it.
+    assert torch.equal(clean, obj.evaluate_true_objective(X))
+    torch.manual_seed(0)
+    noisy = obj.evaluate_true_objective(X, noisy=True)
+    assert noisy.shape == clean.shape
+    assert not torch.equal(noisy, clean)
+    assert torch.allclose(noisy.std(), torch.tensor(0.5, dtype=DTYPE), atol=0.05)
+    assert torch.allclose(noisy.mean(), clean.mean(), atol=0.05)
+
+
+def test_objective_without_noise_refuses_to_invent_it():
+    with pytest.raises(ValueError, match="no ground-truth noise"):
+        MixedMulti().evaluate_true_objective(
+            torch.zeros((1, 2), dtype=DTYPE), noisy=True)
 
 
 def test_ref_point_negation_to_max_space():

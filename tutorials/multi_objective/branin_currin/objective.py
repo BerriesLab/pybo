@@ -33,7 +33,6 @@ class BraninCurrin(MCMultiObjectiveBase):
                 ObjCfg(label="Currin", bounds=(0, 14), to_minimize=True, ref_point=6.0),
             ],
             max_hv=59.36011874867746,  # this is approximated using NSGA-II
-            gt_obj_noise_std=[3.0, 0.14],  # 3% of objective range
         )
 
     @staticmethod
@@ -60,8 +59,11 @@ class BraninCurrin(MCMultiObjectiveBase):
         denom = 100 * x0.pow(3) + 500 * x0.pow(2) + 4 * x0 + 20
         return factor1 * numer / denom
 
-    def evaluate_true_objective(self, X: Tensor, add_noise=False) -> Tensor:
+    def evaluate_true_objective(self, X: Tensor, noisy: bool = False) -> Tensor:
         branin = self._rescaled_branin(X=X)
         currin = self._currin(X=X)
         f = torch.stack([branin, currin], dim=-1)
+        if noisy:
+            # 3% of each objective's range.
+            f = f + f.new_tensor([3.0, 0.14]) * torch.randn_like(f)
         return f

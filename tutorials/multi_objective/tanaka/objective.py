@@ -38,7 +38,11 @@ class Tanaka(MCMultiObjectiveBase):
     def _f2(X: torch.Tensor) -> torch.Tensor:
         return X[..., 1]
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         return torch.stack([self._f1(X), self._f2(X)], dim=-1)
 
     @staticmethod
@@ -57,7 +61,11 @@ class Tanaka(MCMultiObjectiveBase):
         # Constraint 2: (x0 - 0.5)^2 + (x1 - 0.5)^2 <= 0.5
         return (x0 - 0.5).pow(2) + (x1 - 0.5).pow(2) - 0.5
 
-    def evaluate_true_constraint(self, X: torch.Tensor) -> torch.Tensor:
+    def evaluate_true_constraint(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        # Deterministic ground truth: there is no measurement here to be noisy.
+        if noisy:
+            raise ValueError(f"{type(self).__name__} declares no ground-truth "
+                             f"noise. Run with --noise false.")
         c1 = self._c1(X)
         c2 = self._c2(X)
         return torch.stack([c1, c2], dim=-1)

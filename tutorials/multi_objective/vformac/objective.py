@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import torch
 from torch import Tensor
 from pybo.objectives.base_class import MCMultiObjectiveBase
@@ -34,10 +32,8 @@ class VFormAC(MCMultiObjectiveBase):
     _c = 20
     _t_d100 = 54 * 1000  # ns
     _t_r = _t_d100 * (1 - _c / 50)
-    _GT_FILE = "polynomial_gt.json"
 
-    def __init__(self, device: torch.device, dtype: torch.dtype,
-                 gt_file: str | Path = None):
+    def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             device=device,
             dtype=dtype,
@@ -59,26 +55,88 @@ class VFormAC(MCMultiObjectiveBase):
                 LinIneqXConCfg(idxs=[2, 3], coeff=[-1, -1], rhs=-1.8 * self._t_r),
                 LinIneqXConCfg(idxs=[2, 3], coeff=[1, 1], rhs=1.2 * self._t_r)
             ],
-            # Pooled within-setting std over the 8 settings measured twice, so 8 degrees
-            # of freedom. In obj_cfg order, which is what makes 0.0385 the removal rate's
-            # and 5.274 the wear's - the previous pair was indexed against a machining
-            # time this problem no longer has, and put a std of 3.187 on a removal rate
-            # whose whole range is 1.98 to 2.84. Simulation only: it is what
-            # evaluate_*_with_noise adds to the fit, never a variance recorded against an
-            # observation.
-            gt_obj_noise_std=[0.0385, 5.274],
-            gt_trk_noise_std=[1.131],
         )
 
-        # Anchored on __file__ rather than the working directory, so the campaign
-        # runs from anywhere. Loaded after super().__init__, which is what defines
-        # the device and dtype the coefficients land on.
-        gt_file = gt_file or Path(__file__).resolve().parent / self._GT_FILE
-        self._obj_fit = self._load_polynomial_gt(gt_file, "objectives")
-        self._trk_fit = self._load_polynomial_gt(gt_file, "trackers")
+    @staticmethod
+    def _mrr(X: torch.Tensor, noisy=False) -> torch.Tensor:
+        x0 = (X[..., 0] - 73.0398) / 10.3042
+        x1 = (X[..., 1] - 71.4636) / 8.24348
+        x2 = (X[..., 2] - 21097.8) / 3046.4
+        x3 = (X[..., 3] - 27003.8) / 8058.64
+        mrr = (2.4836
+               + 0.180844 * x0
+               + 0.292312 * x1
+               - 0.046974 * x2
+               - 0.0418647 * x3
+               + 0.081316 * x0 ** 2
+               + 0.00627412 * x0 * x1
+               + 0.0197576 * x0 * x2
+               + 0.032413 * x0 * x3
+               - 0.00772497 * x1 ** 2
+               - 0.00530071 * x1 * x2
+               - 0.0136146 * x1 * x3
+               - 0.0524083 * x2 ** 2
+               - 0.0787928 * x2 * x3
+               + 3.32285e-05 * x3 ** 2)
+        if noisy:
+            mrr = mrr + 0.0385 * torch.randn_like(mrr)
+        return mrr
 
-    def evaluate_true_objective(self, X: torch.Tensor) -> torch.Tensor:
-        return self._evaluate_polynomial_gt(self._obj_fit, X)
+    @staticmethod
+    def _tw(X: torch.Tensor, noisy=False) -> torch.Tensor:
+        x0 = (X[..., 0] - 73.0398) / 10.3042
+        x1 = (X[..., 1] - 71.4636) / 8.24348
+        x2 = (X[..., 2] - 21097.8) / 3046.4
+        x3 = (X[..., 3] - 27003.8) / 8058.64
+        tw = (73.4973
+              + 0.880948 * x0
+              + 3.992 * x1
+              - 1.05452 * x2
+              - 1.30625 * x3
+              - 1.84203 * x0 ** 2
+              + 0.0442813 * x0 * x1
+              - 0.803941 * x0 * x2
+              - 0.089807 * x0 * x3
+              + 0.740801 * x1 ** 2
+              - 0.343838 * x1 * x2
+              - 1.03894 * x1 * x3
+              + 1.47413 * x2 ** 2
+              + 1.49911 * x2 * x3
+              + 1.60942 * x3 ** 2)
+        if noisy:
+            tw = tw + 5.274 * torch.randn_like(tw)
+        return tw
 
-    def evaluate_tracker(self, X: Tensor) -> Tensor:
-        return self._evaluate_polynomial_gt(self._trk_fit, X)
+    @staticmethod
+    def _orbiting_time(X: torch.Tensor, noisy=False) -> torch.Tensor:
+        x0 = (X[..., 0] - 73.0398) / 10.3042
+        x1 = (X[..., 1] - 71.4636) / 8.24348
+        x2 = (X[..., 2] - 21097.8) / 3046.4
+        x3 = (X[..., 3] - 27003.8) / 8058.64
+        orbiting_time = (17.2021
+                         - 1.46948 * x0
+                         - 1.84554 * x1
+                         + 0.294847 * x2
+                         + 0.334982 * x3
+                         - 0.921588 * x0 ** 2
+                         - 0.455983 * x0 * x1
+                         + 0.0783536 * x0 * x2
+                         + 0.273357 * x0 * x3
+                         + 0.107192 * x1 ** 2
+                         + 0.00211395 * x1 * x2
+                         + 0.145598 * x1 * x3
+                         + 0.16593 * x2 ** 2
+                         + 0.0182557 * x2 * x3
+                         - 0.170509 * x3 ** 2)
+        if noisy:
+            orbiting_time = orbiting_time + 1.131 * torch.randn_like(orbiting_time)
+        return orbiting_time
+
+    def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
+        mrr = self._mrr(X, noisy)
+        tw = self._tw(X, noisy)
+        return torch.stack([mrr, tw], dim=-1)
+
+    def evaluate_tracker(self, X: Tensor, noisy: bool = False) -> Tensor:
+        orbiting_time = self._orbiting_time(X=X, noisy=noisy)
+        return orbiting_time.unsqueeze(-1)

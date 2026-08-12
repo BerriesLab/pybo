@@ -18,23 +18,44 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from tutorials.multi_objective.iformac.objective import IFormACConstrained
 
 # --- mapping ---
-# label -> the metadata.json key measuring it. Written out rather than matched by position
-# or by case, so renaming a label breaks here, loudly, instead of pairing the wrong column.
+# label -> how to get it out of one step's metadata.json. Written out rather than matched
+# by position or by case, so renaming a label breaks here, loudly, instead of pairing the
+# wrong column. Parameters map straight to a key; everything else is a callable over the
+# step's values and the objective, because two of the three are derived rather than logged.
 PAR_MAP = {"Maximum Current": "I_MAX",
            "Pedestal Current": "I_P",
            "Maximum Ramp Time": "tau_R_max"}
-OBJ_MAP = {"Machining Time (min)": "down_time_minutes",
-           "Tool Wear (μm)": "wear_microns"}
-CON_MAP = {"Orbiting Time": "orbiting_time_minutes"}
-# Nothing in metadata.json measures the deviation - it is derived from a target the rig
-# never recorded - so the tracker is written null rather than guessed at.
-TRK_MAP = {"Orbiting Time Deviation": None}
 
-# Nothing is rescaled: the ramp time stays in the nanoseconds the rig logs it in, which is
-# the unit it is always carried in. The objective still labels that parameter "(us)" with
-# bounds (7.8, 78), so the ported values read 1000x high against it until the objective is
-# amended to nanoseconds - that is the objective's side to fix, not something to hide here
-# by quietly converting the measurement.
+# The rig logs a down time, not a rate. Every step in data/iformac satisfies
+# MRR * down_time_minutes = 144.4 to 3e-15, so that constant is the volume the cycle
+# removes, and the rate is the volume over the time.
+MACHINED_VOLUME = 144.4  # mm^3
+
+OBJ_MAP = {
+    "Material Removal Rate": lambda v, o: MACHINED_VOLUME / v["down_time_minutes"],
+    "Tool Wear": lambda v, o: v["wear_microns"],
+}
+
+# The constraint column carries the distance from the feasibility band, not the measured
+# minutes - the same quantity IFormACConstrained.evaluate_true_constraint produces, so a
+# ported row and a simulated one mean the same thing under the same label. The band is
+# read off the objective rather than restated here, so there is one definition of it.
+CON_MAP = {
+    "Orbiting Time Deviation": lambda v, o: max(
+        0.0,
+        o._orbiting_target - o._delta - v["orbiting_time_minutes"],
+        v["orbiting_time_minutes"] - o._orbiting_target - o._delta),
+}
+
+# The measurement itself, kept because the constraint column above is a distance.
+TRK_MAP = {"Orbiting Time": lambda v, o: v["orbiting_time_minutes"]}
+
+# Every metadata key the maps above read. A step missing any of them cannot be converted.
+REQUIRED_KEYS = ["I_MAX", "I_P", "tau_R_max",
+                 "wear_microns", "down_time_minutes", "orbiting_time_minutes"]
+
+# Nothing is rescaled: the ramp time stays in the nanoseconds the rig logs it in, and the
+# objective now declares that parameter in nanoseconds too, so the two agree.
 SCALE = {}
 
 parser = argparse.ArgumentParser(
@@ -86,8 +107,7 @@ for path in steps:
 
     # Three steps record no parameters at all. They cannot be converted, and skipping is
     # the only option - but it is reported: a silently short campaign is worse than none.
-    missing = sorted({key for _, mapping, _ in groups for key in mapping.values()
-                      if key is not None and key not in values})
+    missing = sorted(key for key in REQUIRED_KEYS if key not in values)
     if missing:
         skipped.append((path.parent.name, missing))
         continue
@@ -98,8 +118,7 @@ for path in steps:
     for name, mapping, labels in groups[1:]:
         named[name] = {}
         for label in labels:
-            key = mapping[label]
-            named[name][label] = None if key is None else values[key]
+            named[name][label] = mapping[label](values, objective)
             named[name][f"{label}_var"] = None
 
     source = args.source or (meta.get("experiment_type") or "unknown").lower()
