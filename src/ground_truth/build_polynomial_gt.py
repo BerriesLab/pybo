@@ -80,8 +80,8 @@ def main():
                              "Nothing reads it back - objectives hold their ground "
                              "truth in their own methods - so this is a record of a "
                              "fit, not a runtime input. Nothing is written when "
-                             "omitted. Suppresses the paste-ready block, which is the "
-                             "output you actually paste.")
+                             "omitted. Suppresses the block printed to stdout, but not "
+                             "--paste-out, which the two can be combined with.")
     parser.add_argument("--paste-out",
                         help="Write the pasteable body of each fitted quantity to this "
                              "text file: the standardisation lines and the named "
@@ -216,10 +216,10 @@ def main():
             "noise_groups": n_groups,
             "noise_dof": dof,
         }
-        if args.out:
-            # The paste-ready block below is what --out replaces: at the degrees
-            # worth saving to a file it is hundreds of unusable lines.
-            continue
+        # The whole-method block below goes to stdout unless --out was given: at the
+        # degrees worth archiving it is hundreds of unusable lines. The per-quantity
+        # bodies are collected either way, so --paste-out works alongside --out.
+        show = not args.out
 
         # The same fit as one whole method, ready to paste into an objective and
         # replace whatever it holds today. Emitted as a
@@ -231,13 +231,13 @@ def main():
         method = {"objectives": "evaluate_true_objective",
                   "constraints": "evaluate_true_constraint",
                   "trackers": "evaluate_tracker"}[block]
-        print(f"\n# --- {block}: paste into {method} ---")
-        print(f"# Columns are in the records' order: {', '.join(Y.columns)}.")
-        print(f"# Reorder the stack to match the order the objective declares them in.")
-        print(f"# Fitted from {root_dir} at degree {degree}, R2 = {pipeline.score(X, Y):.4g}.")
-        print(f"    def {method}(self, X: Tensor, noisy: bool = False) -> Tensor:")
+        if show: print(f"\n# --- {block}: paste into {method} ---")
+        if show: print(f"# Columns are in the records' order: {', '.join(Y.columns)}.")
+        if show: print(f"# Reorder the stack to match the order the objective declares them in.")
+        if show: print(f"# Fitted from {root_dir} at degree {degree}, R2 = {pipeline.score(X, Y):.4g}.")
+        if show: print(f"    def {method}(self, X: Tensor, noisy: bool = False) -> Tensor:")
         for k, (mean, scale) in enumerate(zip(scaler.mean_, scaler.scale_)):
-            print(f"        x{k} = (X[..., {k}] - {mean:.6g}) / {scale:.6g}")
+            if show: print(f"        x{k} = (X[..., {k}] - {mean:.6g}) / {scale:.6g}")
 
         scaling = [f"        x{k} = (X[..., {k}] - {mean:.6g}) / {scale:.6g}"
                    for k, (mean, scale) in enumerate(zip(scaler.mean_, scaler.scale_))]
@@ -263,7 +263,7 @@ def main():
             # space too, or it is silently wrong by orders of magnitude.
             opening = f"        {name} = torch.exp(" if positive else f"        {name} = ("
             expression = f"{opening}{body})"
-            print(expression)
+            if show: print(expression)
 
             # The standardisation is repeated for every quantity rather than shared,
             # because each one lands in a method of its own and has to stand alone.
@@ -276,20 +276,20 @@ def main():
         # it, so a caller that builds a hinge or a deviation out of one of these
         # inherits the noise instead of having a second draw stacked on top.
         if noise_std is not None:
-            print("        if noisy:")
+            if show: print("        if noisy:")
             for name, std in zip(names, noise_std):
                 print(f"            {name} = {name} + {std:.4g} * torch.randn_like({name})")
         else:
-            print("        if noisy:")
-            print(f'            raise ValueError(f"{{type(self).__name__}} declares no "')
-            print(f'                             f"ground-truth noise. Run with --noise false.")')
+            if show: print("        if noisy:")
+            if show: print(f'            raise ValueError(f"{{type(self).__name__}} declares no "')
+            if show: print(f'                             f"ground-truth noise. Run with --noise false.")')
 
         # One column is still a column: it leaves as [..., 1] like every other block,
         # so whatever consumes it does not have to special-case the single-output case.
         if len(names) == 1:
-            print(f"        return {names[0]}.unsqueeze(-1)")
+            if show: print(f"        return {names[0]}.unsqueeze(-1)")
         else:
-            print(f"        return torch.stack([{', '.join(names)}], dim=-1)")
+            if show: print(f"        return torch.stack([{', '.join(names)}], dim=-1)")
 
     if args.paste_out:
         with open(args.paste_out, "w", encoding="utf-8") as f:
