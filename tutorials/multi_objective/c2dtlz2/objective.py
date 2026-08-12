@@ -56,19 +56,27 @@ class C2DTLZ2(MCMultiObjectiveBase):
         xm = X[..., -self.k:]
         return torch.sum((xm - 0.5).pow(2), dim=-1)
 
-    def _f1(self, X: torch.Tensor) -> torch.Tensor:
+    # The noise sits with each measured objective, and everything computed from
+    # them - the disks below - inherits it by taking them noisy rather than by
+    # drawing again.
+    def _f1(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
         x0 = X[..., 0]
         g_val = self._g(X)
-        return (1 + g_val) * torch.cos(x0 * 0.5 * math.pi)
+        f1 = (1 + g_val) * torch.cos(x0 * 0.5 * math.pi)
+        return f1 + 0.015 * torch.randn_like(f1) if noisy else f1
 
-    def _f2(self, X: torch.Tensor) -> torch.Tensor:
+    def _f2(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
         x0 = X[..., 0]
         g_val = self._g(X)
-        return (1 + g_val) * torch.sin(x0 * 0.5 * math.pi)
+        f2 = (1 + g_val) * torch.sin(x0 * 0.5 * math.pi)
+        return f2 + 0.015 * torch.randn_like(f2) if noisy else f2
 
     def evaluate_true_constraint(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
-        f1 = self._f1(X)
-        f2 = self._f2(X)
+        # Which disk the measured (f1, f2) lands in. A constraint is never measured
+        # on its own: it is read off the objectives, so a noisy run has to ask them
+        # for the same values it recorded, not for a second independent draw.
+        f1 = self._f1(X, noisy=noisy)
+        f2 = self._f2(X, noisy=noisy)
         a = 1 / math.sqrt(2)
 
         # Disk 1: center in (1, 0)
@@ -89,16 +97,10 @@ class C2DTLZ2(MCMultiObjectiveBase):
         min_dist_sq = torch.min(torch.stack([d1_sq, d2_sq, d3_sq], dim=-1), dim=-1)[0]
         combined_violation = self._r ** 2 - min_dist_sq
 
-        if noisy:
-            combined_violation = combined_violation + 0.01 * torch.randn_like(combined_violation)
-
         # BoTorch convention:
         # > 0 -> Infeasible
         # <= 0 -> Feasible
         return combined_violation.unsqueeze(-1)
 
     def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
-        Y = torch.stack([self._f1(X), self._f2(X)], dim=-1)
-        if noisy:
-            Y = Y + 0.015 * torch.randn_like(Y)
-        return Y
+        return torch.stack([self._f1(X, noisy=noisy), self._f2(X, noisy=noisy)], dim=-1)

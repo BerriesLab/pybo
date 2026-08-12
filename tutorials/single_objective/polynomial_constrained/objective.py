@@ -27,9 +27,7 @@ class PolynomialConstrained(MCSingleObjectiveBase):
         return Y
 
     def evaluate_true_constraint(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
-        # f(X) > -0.2 is feasible. Built on the clean objective and given its own
-        # draw, so the constraint is not the objective's noise seen twice.
-        Y = self.evaluate_true_objective(X) + 0.02
-        if noisy:
-            Y = Y + 0.01 * torch.randn_like(Y)
-        return Y
+        # f(X) > -0.2 is feasible. The constraint is the objective shifted, so it is
+        # the objective's own measurement that it has to be built on: an independent
+        # draw here would be a second, disagreeing reading of the same quantity.
+        return self.evaluate_true_objective(X, noisy=noisy) + 0.02

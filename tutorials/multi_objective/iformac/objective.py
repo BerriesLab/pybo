@@ -6,7 +6,7 @@ from pybo.objectives.base_class import MCMultiObjectiveBase
 from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
 
 
-class IFormACConstrained(MCMultiObjectiveBase):
+class IFormAC(MCMultiObjectiveBase):
     """
     2x objectives:
         - Material Removal Rate: to maximize.

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 # the preview and the error messages from dying on a character they are quoting.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from tutorials.multi_objective.iformac.objective import IFormACConstrained
+from tutorials.multi_objective.iformac.objective import IFormAC
 
 # --- mapping ---
 # label -> how to get it out of one step's metadata.json. Written out rather than matched
@@ -37,7 +37,7 @@ OBJ_MAP = {
 }
 
 # The constraint column carries the distance from the feasibility band, not the measured
-# minutes - the same quantity IFormACConstrained.evaluate_true_constraint produces, so a
+# minutes - the same quantity IFormAC.evaluate_true_constraint produces, so a
 # ported row and a simulated one mean the same thing under the same label. The band is
 # read off the objective rather than restated here, so there is one definition of it.
 CON_MAP = {
@@ -81,7 +81,7 @@ if not steps:
 # The objective is the authority on what a label is. Checking against it means an amended
 # problem - a renamed objective, a constraint added or dropped - stops the port rather
 # than writing files that no longer match the problem they claim to belong to.
-objective = IFormACConstrained(device=torch.device("cpu"), dtype=torch.float64)
+objective = IFormAC(device=torch.device("cpu"), dtype=torch.float64)
 groups = [("parameters", PAR_MAP, [c.label for c in objective.par_cfg or []]),
           ("objectives", OBJ_MAP, [c.label for c in objective.obj_cfg or []]),
           ("constraints", CON_MAP, [c.label for c in objective.ineq_Y_con_cfg or []]),
@@ -90,7 +90,7 @@ for name, mapping, labels in groups:
     if set(mapping) != set(labels):
         raise SystemExit(f"{name}: the objective declares {labels}, the mapping covers "
                          f"{sorted(mapping)}. Update the map at the top of this script.")
-print("mapping checks out against IFormACConstrained: "
+print("mapping checks out against IFormAC: "
       + ", ".join(f"{len(m)} {n}" for n, m, _ in groups))
 
 # --- convert ---

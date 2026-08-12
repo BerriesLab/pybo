@@ -13,7 +13,7 @@ from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
-from tutorials.multi_objective.iformac.objective import IFormACConstrained
+from tutorials.multi_objective.iformac.objective import IFormAC
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
@@ -31,7 +31,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     torch.manual_seed(seed)
 
     """ Instantiate true objective """
-    objective = IFormACConstrained(device=device, dtype=DTYPE)
+    objective = IFormAC(device=device, dtype=DTYPE)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(

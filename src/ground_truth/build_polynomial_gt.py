@@ -142,13 +142,23 @@ def main():
         # anything about the process's own variability. It lands in the "noisy"
         # branch of the method emitted below, because the noise belongs to the
         # quantity itself rather than to any attribute of the framework.
-        noise_std, n_groups, dof = _pooled_noise_std(X, Y, args.group_decimals)
-        if noise_std is None:
-            print(f"no setting measured more than once at --group-decimals "
-                  f"{args.group_decimals}, noise std not estimated")
+        # A constraint is computed from measurements, never measured on its own, so
+        # whatever spread its replicates show is the propagated noise of whatever sits
+        # behind it. An objective inherits that by evaluating those quantities noisily;
+        # a draw added to the constraint would be a second, disagreeing reading of the
+        # same measurement. Nothing to report here.
+        noise_std, n_groups, dof = None, 0, 0
+        if block == "constraints":
+            print("computed from measurements rather than measured, so no noise of its "
+                  "own: make\nthe noisy constraint out of the noisy quantities behind it")
         else:
-            print(f"\npooled noise std over {n_groups} repeated settings, {dof} dof:")
-            print(noise_std)
+            noise_std, n_groups, dof = _pooled_noise_std(X, Y, args.group_decimals)
+            if noise_std is None:
+                print(f"no setting measured more than once at --group-decimals "
+                      f"{args.group_decimals}, noise std not estimated")
+            else:
+                print(f"\npooled noise std over {n_groups} repeated settings, {dof} dof:")
+                print(noise_std)
 
         # --positive is an objectives-only assumption. A constraint's sign is its
         # feasibility boundary (f(X) >= 0 is feasible), so log(y) would be
@@ -275,10 +285,16 @@ def main():
         # The noise draws on each quantity separately, before anything derived from
         # it, so a caller that builds a hinge or a deviation out of one of these
         # inherits the noise instead of having a second draw stacked on top.
-        if noise_std is not None:
-            if show: print("        if noisy:")
-            for name, std in zip(names, noise_std):
-                print(f"            {name} = {name} + {std:.4g} * torch.randn_like({name})")
+        if block == "constraints":
+            if show:
+                print("        # noisy is honoured by the quantities this is computed")
+                print("        # from, not here: a draw added to a constraint would be a")
+                print("        # second, disagreeing reading of the same measurement.")
+        elif noise_std is not None:
+            if show:
+                print("        if noisy:")
+                for name, std in zip(names, noise_std):
+                    print(f"            {name} = {name} + {std:.4g} * torch.randn_like({name})")
         else:
             if show: print("        if noisy:")
             if show: print(f'            raise ValueError(f"{{type(self).__name__}} declares no "')
