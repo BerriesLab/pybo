@@ -66,6 +66,8 @@ class MCObjectiveBase(ABC):
         a list of functions representing a constraint of the form `callable(x) <= 0`
         (feasible if non-positive). ATTENTION: the sign convention for Y constraints is
         the opposite of the sign convention for X constraints.
+        Note: the constraint may be a very complicated function of observables. Therefore,
+        it is convenient to set this function as identity.
         """
         super().__init__()
 
