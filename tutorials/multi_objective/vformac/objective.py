@@ -79,7 +79,7 @@ class VFormAC(MCMultiObjectiveBase):
                - 0.0787928 * x2 * x3
                + 3.32285e-05 * x3 ** 2)
         if noisy:
-            mrr = mrr + 0.0385 * torch.randn_like(mrr)
+            mrr = mrr + 0.03381 * torch.randn_like(mrr)
         return mrr
 
     @staticmethod
@@ -104,7 +104,7 @@ class VFormAC(MCMultiObjectiveBase):
               + 1.49911 * x2 * x3
               + 1.60942 * x3 ** 2)
         if noisy:
-            tw = tw + 5.274 * torch.randn_like(tw)
+            tw = tw + 6.74 * torch.randn_like(tw)
         return tw
 
     @staticmethod
@@ -129,7 +129,7 @@ class VFormAC(MCMultiObjectiveBase):
                          + 0.0182557 * x2 * x3
                          - 0.170509 * x3 ** 2)
         if noisy:
-            orbiting_time = orbiting_time + 1.131 * torch.randn_like(orbiting_time)
+            orbiting_time = orbiting_time + 1.082 * torch.randn_like(orbiting_time)
         return orbiting_time
 
     def evaluate_true_objective(self, X: torch.Tensor, noisy: bool = False) -> torch.Tensor:
