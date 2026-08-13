@@ -95,7 +95,8 @@ def _is_constrained(objective) -> bool:
 
 
 def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_METHOD,
-                 samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING):
+                 samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING,
+                 noisy: bool = False):
     """(points, front, constrained) for the two named objectives.
 
     `points` is every feasible sample of the true objective and `front` its non-dominated
@@ -109,6 +110,10 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
     line is dropped outright instead. The cloud still shows where the front runs and where
     it stops, and `constrained` lets the caller drop the observations' own front line on
     the same terms. Input constraints do not trigger any of this - see _is_constrained.
+
+    `noisy` draws every sample the way a run itself would have observed it, noise and
+    all, rather than the noiseless value underneath - so `front` becomes the non-dominated
+    edge of that noisy cloud too, not the problem's true optimum.
     """
     objective = load_objective(objective_path)
     labels = [cfg.label for cfg in objective.obj_cfg or []]
@@ -120,9 +125,9 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
 
     X = _grid_X(objective, spacing) if method == "grid" else _random_X(objective, samples)
 
-    Y_obj = objective.evaluate_true_objective(X)
+    Y_obj = objective.evaluate_true_objective(X, noisy=noisy)
     try:
-        Y_con = objective.evaluate_true_constraint(X)
+        Y_con = objective.evaluate_true_constraint(X, noisy=noisy)
     except Exception:  # noqa: BLE001 - unconstrained problems do not define one
         Y_con = None
 
@@ -147,7 +152,8 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
 
 
 def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DEFAULT_METHOD,
-                        samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING):
+                        samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING,
+                        noisy: bool = False):
     """The true objective over one or two parameters, for drawing under a 1D campaign.
 
     Where `ground_truth` answers "what trade-offs were there to find", this answers "what
@@ -173,6 +179,9 @@ def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DE
     Only one or two parameters can be drawn: beyond that a landscape is a projection,
     which would show a fold in the surface as scatter in the data. `plot_objective`
     refuses that case rather than drawing it.
+
+    `noisy` reads `values` off the objective the way a run itself would have observed
+    it, noise and all, instead of the noiseless surface underneath.
     """
     if not 1 <= len(par_keys) <= 2:
         raise SystemExit(f"A landscape needs one or two parameters, not {len(par_keys)}.")
@@ -209,9 +218,9 @@ def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DE
         X = _random_X(objective, samples)
         shape = None
 
-    Y_obj = objective.evaluate_true_objective(X)
+    Y_obj = objective.evaluate_true_objective(X, noisy=noisy)
     try:
-        Y_con = objective.evaluate_true_constraint(X)
+        Y_con = objective.evaluate_true_constraint(X, noisy=noisy)
     except Exception:  # noqa: BLE001 - unconstrained problems do not define one
         Y_con = None
 

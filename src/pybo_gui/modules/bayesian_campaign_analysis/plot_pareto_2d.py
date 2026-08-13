@@ -55,6 +55,9 @@ parser.add_argument("--gt-samples", type=int, default=4096, dest="gt_samples",
 parser.add_argument("--gt-spacing", type=float, default=0.05, dest="gt_spacing",
                     help="Step on every axis when --gt-method is grid, as a fraction "
                          "of that axis' range: 0.05 is 21 points per parameter.")
+parser.add_argument("--gt-noisy", action="store_true", default=False, dest="gt_noisy",
+                    help="Draw the ground truth the way a run would have observed it, "
+                         "noise and all, instead of the noiseless value underneath.")
 parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
@@ -252,7 +255,7 @@ if args.ground_truth:
     from pybo_gui.modules.bayesian_campaign_analysis._ground_truth import ground_truth
     gt_points, gt_front, gt_constrained = ground_truth(
         args.ground_truth, args.x, args.y,
-        args.gt_method, args.gt_samples, args.gt_spacing)
+        args.gt_method, args.gt_samples, args.gt_spacing, args.gt_noisy)
     if gt_points:
         gt_color = fig_cfg["colors"].get("ground_truth", "#8A8F98")
         ax.scatter([p[0] for p in gt_points], [p[1] for p in gt_points],

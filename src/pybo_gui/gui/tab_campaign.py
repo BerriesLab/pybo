@@ -343,6 +343,9 @@ def build(step_list, settings) -> QWidget:
     gt_spacing.setPrefix("Δ = ")
     gt_spacing.setToolTip("Step along each axis as a fraction of its range: "
                           "0.05 is 21 points per parameter, whatever its units")
+    cb_gt_noisy = QCheckBox("Noisy")
+    cb_gt_noisy.setToolTip("Draw the ground truth the way a run would have observed it, "
+                           "noise and all, instead of the noiseless value underneath")
     for widget in ERRORBAR_TEXT:
         widget.setEnabled(False)
         widget.toggled.connect(
@@ -365,7 +368,7 @@ def build(step_list, settings) -> QWidget:
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
     plot_layout.addWidget(band_help)
     plot_layout.addWidget(errorbar_help)
-    plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing))
+    plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
     plot_layout.addWidget(status)
     layout.addWidget(plot_box)
 
@@ -389,6 +392,7 @@ def build(step_list, settings) -> QWidget:
         gt_method.setEnabled(on)
         gt_samples.setEnabled(on and gt_method.currentText() == "random")
         gt_spacing.setEnabled(on and gt_method.currentText() == "grid")
+        cb_gt_noisy.setEnabled(on)
 
     cb_ground.stateChanged.connect(lambda _s: _sync_ground_truth())
     gt_method.currentTextChanged.connect(lambda _t: _sync_ground_truth())
@@ -397,9 +401,11 @@ def build(step_list, settings) -> QWidget:
         if not (cb_ground.isEnabled() and cb_ground.isChecked()):
             return []
         args = ["--ground-truth", obj_edit.text(), "--gt-method", gt_method.currentText()]
-        if gt_method.currentText() == "grid":
-            return args + ["--gt-spacing", str(gt_spacing.value())]
-        return args + ["--gt-samples", str(gt_samples.value())]
+        args += ["--gt-spacing", str(gt_spacing.value())] if gt_method.currentText() == "grid" \
+            else ["--gt-samples", str(gt_samples.value())]
+        if cb_gt_noisy.isChecked():
+            args.append("--gt-noisy")
+        return args
 
     def _parameters() -> list:
         """The problem's parameters: from the objective when loaded, else from the map."""
