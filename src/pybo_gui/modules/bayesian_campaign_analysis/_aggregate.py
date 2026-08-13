@@ -18,6 +18,8 @@ however many runs reached each step lets n fall away toward the end, and the ban
 widens because the sample shrank rather than because the arm did anything - an artefact
 that reads exactly like a real loss of consistency.
 """
+import warnings
+
 import numpy as np
 from scipy import stats
 
@@ -45,29 +47,42 @@ def mean_band(curves, mode: str = "ci95"):
 
     A single run has no spread to report, so the band collapses onto the mean rather
     than being invented: one curve is still worth drawing, it just carries no interval.
+
+    A run that hasn't reached its first feasible point yet holds nan there (see
+    plot_hypervolume), not a zero - it hasn't attained anything, rather than attaining
+    nothing. Averaged straight, one such nan would blank the whole arm's mean at that
+    step even though its other runs already have a real value. So every reduction here
+    is nan-aware, and "how many runs" for the sem/ci95 half-width is counted per step
+    rather than once for the whole curve, since it can shrink before every run is up.
     """
     if mode not in BAND_MODES:
         raise ValueError(f"band must be one of {', '.join(BAND_MODES)}, got {mode!r}")
     y = align(curves)
-    mean = y.mean(axis=0)
-    n = y.shape[0]
-    if n < 2:
-        return mean, mean.copy(), mean.copy()
+    n = np.sum(~np.isnan(y), axis=0)
+    with warnings.catch_warnings():
+        # Expected at steps no run has reached yet (n == 0, all-nan column) and at
+        # steps only one run has reached (n == 1, zero degrees of freedom for std).
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        mean = np.nanmean(y, axis=0)
+        if mode == "minmax":
+            return mean, np.nanmin(y, axis=0), np.nanmax(y, axis=0)
 
-    if mode == "minmax":
-        return mean, y.min(axis=0), y.max(axis=0)
+        if np.all(n < 2):
+            return mean, mean.copy(), mean.copy()
 
-    # ddof=1: the runs are a sample of the seeds the arm could have been given, not the
-    # whole of them, so the spread has to be the sample's.
-    sd = y.std(axis=0, ddof=1)
-    if mode == "std":
-        half = sd
-    elif mode == "sem":
-        half = sd / np.sqrt(n)
-    else:
-        # Student's t, not 1.96: at the ten or so replicates a study affords, the normal
-        # quantile understates the interval by around 15%.
-        half = stats.t.ppf(0.975, n - 1) * sd / np.sqrt(n)
+        # ddof=1: the runs are a sample of the seeds the arm could have been given, not
+        # the whole of them, so the spread has to be the sample's.
+        sd = np.nanstd(y, axis=0, ddof=1)
+        n_safe = np.maximum(n, 1)
+        if mode == "std":
+            half = sd
+        elif mode == "sem":
+            half = sd / np.sqrt(n_safe)
+        else:
+            # Student's t, not 1.96: at the ten or so replicates a study affords, the
+            # normal quantile understates the interval by around 15%.
+            half = stats.t.ppf(0.975, np.maximum(n - 1, 1)) * sd / np.sqrt(n_safe)
+    half = np.where(n < 2, 0.0, half)
     return mean, mean - half, mean + half
 
 
