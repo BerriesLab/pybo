@@ -45,3 +45,4 @@ __pycache__/
 /bayesian_campaign_analysis/
 /.venv/
 /data/
+*.zip
