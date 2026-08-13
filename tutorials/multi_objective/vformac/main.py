@@ -1,8 +1,8 @@
-import glob
-import json
 import os
+import math
 import time
 import warnings
+import numpy as np
 import torch
 from pathlib import Path
 from tqdm import tqdm
@@ -17,43 +17,6 @@ from tutorials.multi_objective.vformac.objective import VFormAC
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
-
-# The initial population is read from the records. Anchored on __file__ rather than the
-# cwd, because the loop chdirs into each step directory as it goes.
-CAMPAIGN_DIR = Path(__file__).resolve().parents[3] / "data" / "vformac"
-
-
-def load_initial_design(objective, device: torch.device = DEVICE, source: str = "sobol"):
-    """The campaign's measured observations of one provenance, as (X, Y_obj, Y_trk).
-
-    `source` is the provenance to take, matched against each record's own field: "sobol"
-    is the design this campaign started from, and the default for that reason. Every other
-    record - the proposals the run went on to make - is left out.
-
-    Read by label from the ported experiment.json records rather than by column position,
-    so a reordered problem cannot silently transpose the data. These are real measurements:
-    they carry no variance, and none is invented for them.
-    """
-    par_labels = [cfg.label for cfg in objective.par_cfg or []]
-    obj_labels = [cfg.label for cfg in objective.obj_cfg or []]
-    trk_labels = [cfg.label for cfg in objective.trk_cfg or []]
-
-    X, Y_obj, Y_trk = [], [], []
-    for path in sorted(glob.glob(str(CAMPAIGN_DIR / "*" / "experiment.json"))):
-        record = json.loads(Path(path).read_text(encoding="utf-8"))["data"][0]
-        if record["source"] != source:
-            continue
-        X.append([record["parameters"][label] for label in par_labels])
-        Y_obj.append([record["objectives"][label] for label in obj_labels])
-        Y_trk.append([record["trackers"][label] for label in trk_labels])
-    if not X:
-        raise SystemExit(f"No {source!r} observations under {CAMPAIGN_DIR}. "
-                         f"Run convert_metadata.py first.")
-
-    def tensor(rows):
-        return torch.tensor(rows, device=device, dtype=DTYPE)
-
-    return tensor(X), tensor(Y_obj), tensor(Y_trk)
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
@@ -89,11 +52,13 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     )
 
     """ Draw the initial parameter set """
-    X_initial, Y_obj_initial, Y_trk_initial = load_initial_design(objective, device)
-    # Whole batches only, so a partial last batch never mixes measured with proposed rows.
-    n_initial = (len(X_initial) // q) * q
-    X_initial = X_initial[:n_initial]
+    n_initial = n_initial or 5 * (objective.dim + 1)
+    n_initial = math.ceil(n_initial / q) * q
     sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
+    X_initial = sampler.draw_samples(n=n_initial)
+    X_np = X_initial.detach().cpu().numpy()
+    np.savetxt(run_dir / "output.csv", X_np, delimiter=",",
+               header=", ".join(cfg.label for cfg in objective.par_cfg))
 
     """ Instantiate Bayesian optimizer """
     optimizer_class = SobolOptimizer if strategy == "sobol" else BayesianOptimizer
@@ -108,8 +73,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         Y_obj_var=None,
         Y_trk=None,
         batch_size=q,
-        # The initial design was measured, not drawn, so there is no sequence for the
-        # sobol arm to continue - it starts its own.
+        # Reuse the initial design's sampler, so the sobol arm continues that
+        # sequence instead of starting a second one.
         **({"sampler": sampler} if strategy == "sobol" else {}),
     )
 
@@ -125,10 +90,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    # Counts the number of measurements, not proposals: with repeats > 1 a step costs
-    # q * repeats. The initial design is exempt - those cavities were fabricated once,
-    # and repeating a recorded measurement would invent data rather than take it.
-    n_measurements = n_initial + n_evals * repeats
+    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
+    n_measurements = (n_initial + n_evals) * repeats
     pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
 
     for i in range(n_steps):
@@ -152,19 +115,12 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             new_X = X_initial[i * q:(i + 1) * q]
 
         """ Simulate the experiment at new X, once per repetition """
-        for rep in range(repeats if modelling else 1):
+        for rep in range(repeats):
             step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
             step_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(step_dir)
-            if modelling:
-                new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
-                new_Y_trk = objective.evaluate_tracker(new_X, noisy=noisy)
-            else:
-                # The measured values, not the surrogate's opinion of them: the ground
-                # truth was fitted to these rows, so replaying them through it would feed
-                # the campaign a smoothed copy of its own initial design.
-                new_Y_obj = Y_obj_initial[i * q:(i + 1) * q]
-                new_Y_trk = Y_trk_initial[i * q:(i + 1) * q]
+            new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
+            new_Y_trk = objective.evaluate_tracker(new_X, noisy=noisy)
             if verbose:
                 print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
             bo.update_XY(

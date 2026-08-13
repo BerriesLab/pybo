@@ -37,9 +37,15 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     kernel = ScaleKernel(
         base_kernel=RBFKernel(
             ard_num_dims=objective.num_par,
-            lengthscale_constraint=Interval(1e-3, 1e0),
+            lengthscale_constraint=Interval(
+                lower_bound=1e-3,
+                upper_bound=1e0
+            ),
         ),
-        outputscale_constraint=Interval(1e-3, 1e1),
+        outputscale_constraint=Interval(
+            lower_bound=1e-3,
+            upper_bound=1e1
+        ),
     )
 
     """ Draw the initial parameter set """
@@ -65,6 +71,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         Y_con=None,
         Y_con_var=None,
         Y_trk=None,
+        Y_trk_var=None,
         batch_size=q,
         # Reuse the initial design's sampler, so the sobol arm continues that
         # sequence instead of starting a second one.
@@ -113,8 +120,10 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             step_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(step_dir)
             new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
-            new_Y_con = objective.evaluate_true_constraint(new_X, noisy=noisy)
+            # The constraint reads the same orbiting time the tracker records, rather
+            # than drawing its own - the two columns describe one measurement.
             new_Y_trk = objective.evaluate_tracker(new_X, noisy=noisy)
+            new_Y_con = objective.evaluate_true_constraint(new_X, orbiting_time=new_Y_trk.squeeze(-1))
             if verbose:
                 print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
             bo.update_XY(

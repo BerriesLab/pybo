@@ -126,11 +126,18 @@ class IFormAC(MCMultiObjectiveBase):
         # distance from the band rather than the minutes the rig would report.
         return self._orbiting_time(X=X, noisy=noisy).unsqueeze(dim=-1)
 
-    def evaluate_true_constraint(self, X: Tensor, noisy=False) -> Tensor:
+    def evaluate_true_constraint(self, X: Tensor, noisy=False, orbiting_time: Tensor | None = None) -> Tensor:
         """0 while the orbiting time is inside target +/- delta, and the distance
         from the nearer edge outside it - the "<= 0 is feasible" quantity the
-        optimizer consumes directly. At most one of the two terms is non-zero. """
-        orbiting_time = self._orbiting_time(X=X, noisy=noisy)
+        optimizer consumes directly. At most one of the two terms is non-zero.
+
+        `orbiting_time` lets a caller that already measured it (evaluate_tracker)
+        pass that same reading in, rather than this method drawing its own under
+        `noisy` - otherwise the constraint and the tracker would disagree about
+        what the orbiting time actually was for this X.
+        """
+        if orbiting_time is None:
+            orbiting_time = self._orbiting_time(X=X, noisy=noisy)
         below = torch.relu(self._orbiting_target - self._delta - orbiting_time)
         above = torch.relu(orbiting_time - self._orbiting_target - self._delta)
         return (below + above).unsqueeze(dim=-1)
