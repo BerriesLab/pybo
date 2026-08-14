@@ -8,7 +8,7 @@ import torch
 
 # The repo root, so the absolute import below resolves when this is launched as a script
 # from a terminal. An IDE puts the content root on the path already; python does not.
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 # Labels carry units - "Tool Wear (um)" is spelled with a real mu - and a Windows console
 # is cp1252, which cannot encode it. Files are written utf-8 regardless; this only keeps
@@ -26,10 +26,11 @@ PAR_MAP = {"Maximum Current": "I_MAX",
            "Pedestal Current": "I_P",
            "Maximum Ramp Time": "tau_R_max"}
 
-# The rig logs a down time, not a rate. Every step in data/iformac satisfies
-# MRR * down_time_minutes = 144.4 to 3e-15, so that constant is the volume the cycle
-# removes, and the rate is the volume over the time.
-MACHINED_VOLUME = 144.4  # mm^3
+# The rig logs a down time, not a rate. The cavity is the same volume every run, so the
+# two are one measurement: rate = volume / time. The volume is the cavity as designed, a
+# 3.8 x 3.8 mm cross-section over a 10 mm cut - which is where the 144.4 that every step
+# in data/iformac satisfies to 3e-15 comes from.
+MACHINED_VOLUME = 3.8 * 3.8 * 10  # mm^3
 
 OBJ_MAP = {
     "Material Removal Rate": lambda v, o: MACHINED_VOLUME / v["down_time_minutes"],
@@ -60,7 +61,7 @@ SCALE = {}
 
 parser = argparse.ArgumentParser(
     description="Convert IFormAC's metadata.json into pybo's experiment.json, one per step.")
-parser.add_argument("root", help="Run folder holding step_NNN/metadata.json")
+parser.add_argument("root", help="Run folder holding one metadata.json per step folder")
 parser.add_argument("--out", default=None,
                     help="Where the converted tree is written (default: beside each "
                          "metadata.json, leaving it in place)")
@@ -73,9 +74,11 @@ parser.add_argument("--apply", action="store_true",
 args = parser.parse_args()
 
 root = Path(args.root).resolve()
-steps = sorted(root.glob("step_*/metadata.json"))
+# Any folder one layer down, not just step_NNN: collect_metadata can keep the rig's own
+# EXP_* names, and a tree collected either way has to convert the same.
+steps = sorted(root.glob("*/metadata.json"))
 if not steps:
-    raise SystemExit(f"No step_*/metadata.json under {root}.")
+    raise SystemExit(f"No */metadata.json in the folders directly under {root}.")
 
 # --- the mapping must still describe the objective ---
 # The objective is the authority on what a label is. Checking against it means an amended

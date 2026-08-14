@@ -75,7 +75,7 @@ class IFormAC(MCMultiObjectiveBase):
                - 0.0113664 * x1 * x2
                + 0.174277 * x2 ** 2)
         if noisy:
-            mrr = mrr + 0.002773 * torch.randn_like(mrr)
+            mrr = mrr + 0.07806 * torch.randn_like(mrr)
         return torch.clamp(mrr, min=0)
 
     @staticmethod
@@ -94,7 +94,7 @@ class IFormAC(MCMultiObjectiveBase):
               - 5.06397 * x1 * x2
               + 9.49278 * x2 ** 2)
         if noisy:
-            tw = tw + 8.957 * torch.randn_like(tw)
+            tw = tw + 7.311 * torch.randn_like(tw)
         return torch.clamp(tw, min=0)
 
     @staticmethod
@@ -113,7 +113,7 @@ class IFormAC(MCMultiObjectiveBase):
                          - 0.415393 * x1 * x2
                          - 0.217852 * x2 ** 2)
         if noisy:
-            orbiting_time = orbiting_time + 0.6754 * torch.randn_like(orbiting_time)
+            orbiting_time = orbiting_time + 0.8952 * torch.randn_like(orbiting_time)
         return torch.clamp(orbiting_time, min=0)
 
     def evaluate_true_objective(self, X: torch.Tensor, noisy=False) -> torch.Tensor:

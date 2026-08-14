@@ -8,7 +8,7 @@ import torch
 
 # The repo root, so the absolute import below resolves when this is launched as a script
 # from a terminal. An IDE puts the content root on the path already; python does not.
-sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 # Files are written utf-8 regardless; this only keeps the preview and the error messages
 # from dying on a label character a cp1252 Windows console cannot encode.
@@ -20,7 +20,7 @@ from tutorials.multi_objective.vformac.objective import VFormAC
 # label -> the metadata.json key measuring it. Written out rather than matched by position
 # or by case, so renaming a label breaks here, loudly, instead of pairing the wrong column.
 PAR_MAP = {"V0": "U", "dV": "UHPS", "td1": "td1", "td2": "td2"}
-OBJ_MAP = {"Machining Time": "down_time_minutes", "Tool Wear": "wear_microns"}
+OBJ_MAP = {"Material Removal Rate": "material_removal_rate", "Tool Wear": "wear_microns"}
 # Orbiting time was once a two-sided output constraint; that idea was dropped and it is a
 # tracker now - measured and recorded every run, but steering nothing.
 CON_MAP = {}
@@ -29,6 +29,16 @@ TRK_MAP = {"Orbiting Time": "orbiting_time_minutes"}
 # The rig and the problem agree on units here: U and UHPS in volts, td1 and td2 in
 # nanoseconds, all four landing inside the declared bounds unscaled.
 SCALE = {}
+
+# The rig times the cut and the objective wants the rate, but the cavity is the same
+# volume every run, so the two are one measurement: rate = volume / machining time. No
+# metadata key holds the rate, so it is derived below and mapped like any other.
+#
+# The 3.8 x 3.8 mm cross-section over a 10 mm cut is the cavity as designed, not as
+# measured: results carry a cavity_depth_mm that lands within a few hundredths of 10 and
+# takes no part in this. Using the nominal volume reproduces every previously converted
+# Material Removal Rate exactly, on all 94 records.
+CAVITY_VOLUME_MM3 = 3.8 * 3.8 * 10
 
 parser = argparse.ArgumentParser(
     description="Convert the spark accelerator's metadata.json into pybo's "
@@ -92,6 +102,10 @@ for path in steps:
     values = dict(meta.get("parameters") or {}, **(meta.get("results") or {}))
     values = {key: value * SCALE.get(key, 1.0) if isinstance(value, (int, float)) else value
               for key, value in values.items()}
+    # Derived, not measured. Left out when the time is missing or zero, so the step is
+    # skipped for want of a mapped key rather than converted with an invented rate.
+    if values.get("down_time_minutes"):
+        values["material_removal_rate"] = CAVITY_VOLUME_MM3 / values["down_time_minutes"]
 
     # A step that recorded none of the keys it maps to cannot be converted. Skipping is
     # the only option, but it is reported: a silently short campaign is worse than none.
