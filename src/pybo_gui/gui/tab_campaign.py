@@ -17,19 +17,19 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
-    QDoubleSpinBox, QSizePolicy, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
+    QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
 from pybo_gui.configs import settings as configs_settings
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
-from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import (
-    DEFAULT_DECIMALS, build_groups)
+from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import launch_analysis, watch
+from pybo_gui.gui.message_log import post
 from pybo_gui.gui.widgets import (
-    bind_label_entry, make_constraints_widget, make_objective_checklist, make_sense_toggle,
-    repopulate, set_text_async,
+    bind_label_entry, make_constraints_widget, make_objective_checklist,
+    make_parameters_widget, make_sense_toggle, make_trackers_widget, repopulate,
 )
 
 OBJECTIVE_COUNTS = ("1", "2", "3", "4+")
@@ -140,21 +140,6 @@ def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
     dlg.show()
 
 
-def _status_label(text: str = "") -> QLabel:
-    """A grey status line that wraps instead of widening the window.
-
-    These carry whatever the last action had to say - a path, an exception - and a
-    QLabel asks for the width its text wants, so one long message pushes the whole tab
-    wider and it never shrinks back. Ignoring the horizontal hint makes it take the
-    width the layout has and wrap inside it.
-    """
-    label = QLabel(text)
-    label.setStyleSheet("color: grey;")
-    label.setWordWrap(True)
-    label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-    return label
-
-
 def _row(*widgets) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -207,20 +192,11 @@ def build(step_list, settings) -> QWidget:
     btn_view_grp = QPushButton("View group map")
     btn_save_map = QPushButton("Save map")
     btn_load_map = QPushButton("Load map")
-    map_status = _status_label()
-    # What counts as the same setting: parameters are compared rounded to this many
-    # decimals. The default compares them as measured, which splits a setting whose
-    # repeats were logged at the rig's rounded setpoint and at the raw proposal; lowering
-    # it is what makes those one group. Negative values round to tens and upwards.
-    decimals_spin = QSpinBox()
-    decimals_spin.setRange(-3, 9)
-    decimals_spin.setValue(DEFAULT_DECIMALS)
-    decimals_spin.setToolTip("Decimals a parameter is rounded to before two observations "
-                             "count as the same setting.")
+    # What counts as the same setting is the resolution in the Parameters box, and only
+    # that: a second knob here would be a second answer to one question, free to disagree
+    # with the objective's own. A parameter with no resolution is compared as measured.
     map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map,
                               btn_load_map))
-    map_layout.addWidget(_row(QLabel("Grouping decimals:"), decimals_spin))
-    map_layout.addWidget(map_status)
     layout.addWidget(map_box)
 
     # ---- Objective -----------------------------------------------------------
@@ -228,14 +204,12 @@ def build(step_list, settings) -> QWidget:
     obj_layout = QVBoxLayout(obj_box)
     obj_edit = QLineEdit()
     obj_edit.setPlaceholderText("path to the run's objective.py")
-    obj_status = _status_label(_NO_OBJECTIVE)
     browse = QPushButton("Browse")
     load_btn = QPushButton("Load objective")
     unload_btn = QPushButton("Unload")
     unload_btn.setToolTip("Go back to the keys the selected steps carry, with no senses")
     unload_btn.setEnabled(False)
     obj_layout.addWidget(_row(obj_edit, browse, load_btn, unload_btn))
-    obj_layout.addWidget(obj_status)
     layout.addWidget(obj_box)
 
     # ---- Objective count -------------------------------------------------------
@@ -262,6 +236,16 @@ def build(step_list, settings) -> QWidget:
         button = count_group.checkedButton()
         return button.text() if button else "2"
 
+    # ---- Parameters ----------------------------------------------------------
+    # Above the objectives because the parameters are what a setting *is*: the resolution
+    # here decides which observations count as repeats of one, which the grouped error
+    # bars and every group-aware plot then rest on.
+    # Deferred on purpose: _regroup is defined further down, and the lambda only looks it
+    # up when an edit is actually committed.
+    par_box, par_collect, par_set_keys = make_parameters_widget(
+        on_change=lambda: _regroup())
+    layout.addWidget(par_box)
+
     # ---- Axes ----------------------------------------------------------------
     axes_box = QGroupBox("Objectives")
     axes_layout = QVBoxLayout(axes_box)
@@ -281,6 +265,9 @@ def build(step_list, settings) -> QWidget:
 
     con_box, con_collect, con_set_keys = make_constraints_widget()
     layout.addWidget(con_box)
+
+    trk_box, trk_set_keys = make_trackers_widget()
+    layout.addWidget(trk_box)
 
     # ---- Plots ---------------------------------------------------------------
     plot_box = QGroupBox("Plots")
@@ -303,7 +290,6 @@ def build(step_list, settings) -> QWidget:
         rb_std: "Std. dev. — how much a single measurement scatters. Repeats do not shrink it.",
         rb_minmax: "Min/max — the plain range of the group's measurements.",
     }
-    errorbar_help = _status_label()
     # A different axis from Grouped: that averages the repeats of one setting within a
     # step, this averages whole runs of an arm against each other. They compose, so both
     # can be on at once.
@@ -316,7 +302,6 @@ def build(step_list, settings) -> QWidget:
         "std": "Std. dev. - where a single run lands. Does not shrink with more runs.",
         "minmax": "Min/max - the plain range across the runs.",
     }
-    band_help = _status_label()
     cb_numbers = QCheckBox("Show numbers")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
@@ -346,30 +331,31 @@ def build(step_list, settings) -> QWidget:
     cb_gt_noisy = QCheckBox("Noisy")
     cb_gt_noisy.setToolTip("Draw the ground truth the way a run would have observed it, "
                            "noise and all, instead of the noiseless value underneath")
-    for widget in ERRORBAR_TEXT:
+    # The explanations live on the controls themselves rather than in a line underneath.
+    # They describe what a control means, not what an action did, so the log is the wrong
+    # place for them - and a tooltip is always available instead of only after a click.
+    for widget, text in ERRORBAR_TEXT.items():
         widget.setEnabled(False)
-        widget.toggled.connect(
-            lambda checked, w=widget: checked and errorbar_help.setText(ERRORBAR_TEXT[w]))
+        widget.setToolTip(text)
     cb_grouped.stateChanged.connect(
         lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in ERRORBAR_TEXT])
+    for position, key in enumerate(BAND_TEXT):
+        band_combo.setItemData(position, BAND_TEXT[key], Qt.ItemDataRole.ToolTipRole)
 
     def _on_band_change() -> None:
         on = cb_aggregate.isChecked()
         band_combo.setEnabled(on)
-        band_help.setText(BAND_TEXT[band_combo.currentText()] if on else "")
+        # The combo shows one entry at a time, so its own tooltip has to follow it: the
+        # per-item tooltips are only reachable once the list is open.
+        band_combo.setToolTip(BAND_TEXT[band_combo.currentText()] if on else "")
 
     cb_aggregate.stateChanged.connect(lambda _s: _on_band_change())
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
-    errorbar_help.setText(ERRORBAR_TEXT[rb_sem])
-    status = _status_label()
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
-    plot_layout.addWidget(band_help)
-    plot_layout.addWidget(errorbar_help)
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
-    plot_layout.addWidget(status)
     layout.addWidget(plot_box)
 
     # ---- Diagnostics ---------------------------------------------------------
@@ -480,6 +466,12 @@ def build(step_list, settings) -> QWidget:
                 toggle.setChecked(not senses[key])
         nd_set_keys(objectives, senses)
         con_set_keys(everything)
+        # Only the objective knows the bounds, units and resolutions; with none loaded the
+        # rows still appear, bare, so a resolution can be typed in before one is picked.
+        par_set_keys(_parameters(),
+                     {p["label"]: p for p in problem["parameters"]}
+                     if problem is not None else {})
+        trk_set_keys(problem["trackers"] if problem is not None else [])
         _sync_landscape()
 
     def _load_objective(path: str) -> None:
@@ -492,7 +484,7 @@ def build(step_list, settings) -> QWidget:
         # only that let an empty or misspelled path take the application down.
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - a bad path must not kill the tab
             state["problem"] = None
-            obj_status.setText(f"Could not load: {exc}")
+            post(f"Could not load: {exc}")
             unload_btn.setEnabled(False)
             _sync_ground_truth()
             return
@@ -503,7 +495,7 @@ def build(step_list, settings) -> QWidget:
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
                            for o in problem["objectives"])
         n_obj = len(problem["objectives"])
-        obj_status.setText(f"{n_obj} objective{'' if n_obj == 1 else 's'}: {senses}. "
+        post(f"{n_obj} objective{'' if n_obj == 1 else 's'}: {senses}. "
                            f"ref_point={problem['ref_point']}")
 
     def _unload_objective() -> None:
@@ -514,7 +506,7 @@ def build(step_list, settings) -> QWidget:
         """
         state["problem"] = None
         obj_edit.clear()
-        obj_status.setText(_NO_OBJECTIVE)
+        post(_NO_OBJECTIVE)
         unload_btn.setEnabled(False)
         _refresh_keys()
         _sync_ground_truth()
@@ -590,14 +582,13 @@ def build(step_list, settings) -> QWidget:
         # the backdrop and no series. Without one it is just an empty plot, so that still
         # asks for a selection rather than opening a blank figure.
         if not steps and not cb_ground.isChecked():
-            status.setText("Select at least one step in the Steps window.")
+            post("Select at least one step in the Steps window.")
             return False
         try:
             exp_map = build_map(steps)
-            groups = build_groups(exp_map, decimals_spin.value())
+            groups = build_groups(exp_map, par_collect())
         except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
-            status.setText(f"Map build failed: {exc}")
-            map_status.setText(f"Map build failed: {exc}")
+            post(f"Map build failed: {exc}")
             return False
 
         state["map"], state["groups"] = exp_map, groups
@@ -608,11 +599,11 @@ def build(step_list, settings) -> QWidget:
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
         if not steps:
-            map_status.setText("No steps selected — the ground truth will be drawn "
+            post("No steps selected — the ground truth will be drawn "
                                "on its own")
             return True
         series = len({e["experiment_type"] for e in exp_map["experiments"]})
-        map_status.setText(f"{len(exp_map['experiments'])} observations from "
+        post(f"{len(exp_map['experiments'])} observations from "
                            f"{len(steps)} selected director"
                            f"{'y' if len(steps) == 1 else 'ies'}, {series} series, "
                            f"held in memory")
@@ -629,24 +620,25 @@ def build(step_list, settings) -> QWidget:
         return out_dir
 
     def _regroup() -> None:
-        """Re-group the map held in memory at the current decimals.
+        """Re-group the map held in memory at the current resolutions.
 
         Applied to whatever is in memory, loaded map included: the saved grouping was made
-        at whatever decimals were set then, and leaving it in place would mean the spinbox
-        reads one thing while the plots group by another. Only the grouping is redone - the
-        observations themselves do not depend on it.
+        at whatever resolutions were set then, and leaving it in place would mean the
+        Parameters box reads one thing while the plots group by another. Only the grouping
+        is redone - the observations themselves do not depend on it.
         """
         if not state["map"]:
             return
-        state["groups"] = build_groups(state["map"], decimals_spin.value())
+        resolutions = par_collect()
+        state["groups"] = build_groups(state["map"], resolutions)
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
-        # Just that the spinbox took effect. The counts said little, and listing every
-        # group's size ran to hundreds of numbers on a study-sized map, which is what
-        # stretched the window: a status line has to fit on one.
-        map_status.setText(f"regrouped at {decimals_spin.value()} decimals")
-
-    decimals_spin.valueChanged.connect(lambda _v: _regroup())
+        # Just that the box took effect. The counts said little, and listing every group's
+        # size ran to hundreds of numbers on a study-sized map, which is what stretched the
+        # window: a status line has to fit on one.
+        n = len(state["groups"])
+        post(f"regrouped into {n} groups, "
+                           f"{len(resolutions)} parameters by resolution")
 
     def _ensure_map() -> bool:
         """The map to work from: a loaded one as it is, else rebuilt from the selection.
@@ -670,10 +662,10 @@ def build(step_list, settings) -> QWidget:
             exp_map = json.loads(
                 (source / "experiment_map.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            map_status.setText(f"Could not read experiment_map.json there: {exc}")
+            post(f"Could not read experiment_map.json there: {exc}")
             return
         if not isinstance(exp_map, dict) or "experiments" not in exp_map:
-            map_status.setText(f"{source / 'experiment_map.json'} is not an experiment map.")
+            post(f"{source / 'experiment_map.json'} is not an experiment map.")
             return
         try:
             groups = json.loads((source / "group_map.json").read_text(encoding="utf-8"))
@@ -683,20 +675,20 @@ def build(step_list, settings) -> QWidget:
         # each entry, is still usable: the grouping is derivable from the map itself.
         if groups is None or any("group_id" not in e
                                  for e in exp_map.get("experiments", [])):
-            groups = build_groups(exp_map, decimals_spin.value())
+            groups = build_groups(exp_map, par_collect())
 
         state["map"], state["groups"] = exp_map, groups
         state["source"] = "loaded"
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
         _refresh_keys()
-        map_status.setText(f"Loaded {len(exp_map['experiments'])} observations from "
+        post(f"Loaded {len(exp_map['experiments'])} observations from "
                            f"{source} — plots use this until you rebuild")
 
     def _save_map() -> None:
         """Ask where to keep a copy of the map, and write it there."""
         if not state["map"]:
-            map_status.setText("Nothing to save — click “Rebuild map now” first.")
+            post("Nothing to save — click “Rebuild map now” first.")
             return
         chosen = QFileDialog.getExistingDirectory(page, "Save the map to",
                                                   step_list.root or "")
@@ -705,9 +697,9 @@ def build(step_list, settings) -> QWidget:
         try:
             _write_map(chosen)
         except OSError as exc:
-            map_status.setText(f"Could not save: {exc}")
+            post(f"Could not save: {exc}")
             return
-        map_status.setText(f"Saved experiment_map.json and group_map.json to {chosen}")
+        post(f"Saved experiment_map.json and group_map.json to {chosen}")
 
     def _sense_args(*pairs) -> list:
         """--maximize for each axis whose toggle is on.
@@ -734,10 +726,10 @@ def build(step_list, settings) -> QWidget:
         module = f"{MODULES}.{script}"
         proc = launch_analysis(module, *extra)
         watch([proc],
-              on_start=lambda: set_text_async(status, f"Running {script}..."),
-              on_done=lambda: set_text_async(status, "Done."),
-              on_fail=lambda codes: set_text_async(
-                  status, f"{script} exited with {codes[0]} — see its console. "
+              on_start=lambda: post(f"Running {script}..."),
+              on_done=lambda: post("Done."),
+              on_fail=lambda codes: post(
+                  f"{script} exited with {codes[0]} — see its console. "
                           f"Exit 2 is a constraint that would not parse."))
 
     def _aggregate_args() -> list:
@@ -757,12 +749,12 @@ def build(step_list, settings) -> QWidget:
         chosen."""
         obj = x_combo.currentText()
         if not obj:
-            status.setText("Choose the objective.")
+            post("Choose the objective.")
             return
         pairs = [(combo, entry) for combo, entry in ((y_combo, y_entry), (z_combo, z_entry))
                  if combo.currentText()]
         if not pairs:
-            status.setText("Choose a parameter to draw the objective against.")
+            post("Choose a parameter to draw the objective against.")
             return
         extra = _constraint_args() + ["--objective", obj,
                                       "--objective-label", x_entry.text()]
@@ -783,12 +775,12 @@ def build(step_list, settings) -> QWidget:
             return
         x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()
         if not x or not y:
-            status.setText("Choose an x and a y objective.")
+            post("Choose an x and a y objective.")
             return
         extra = _constraint_args()
         if _n_objectives() == "3":
             if not z:
-                status.setText("Three objectives needs a z objective.")
+                post("Three objectives needs a z objective.")
                 return
             extra += _grouped_args()
             if cb_numbers.isChecked():
@@ -819,13 +811,13 @@ def build(step_list, settings) -> QWidget:
             # goes in on its own and the parameter rows have no part in it.
             x = x_combo.currentText()
             if not x:
-                status.setText("Choose the objective.")
+                post("Choose the objective.")
                 return
             extra += ["--objective", x] + _sense_args((x, x_sense))
         elif _n_objectives() == "4+":
             chosen = nd_collect()
             if len(chosen) < 2:
-                status.setText("Tick at least two objectives for the hypervolume.")
+                post("Tick at least two objectives for the hypervolume.")
                 return
             for key, _is_max in chosen:
                 extra += ["--objective", key]
@@ -834,7 +826,7 @@ def build(step_list, settings) -> QWidget:
         else:
             x, y, z = x_combo.currentText(), y_combo.currentText(), z_combo.currentText()
             if not x or not y:
-                status.setText("Choose an x and a y objective.")
+                post("Choose an x and a y objective.")
                 return
             pairs = [(x, x_sense), (y, y_sense)]
             extra += ["--x", x, "--y", y]

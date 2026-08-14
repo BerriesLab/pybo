@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QStatusBar
 
 from pybo_gui.gui import tab_campaign, tab_settings
 from pybo_gui.gui.launchers import stop_all
+from pybo_gui.gui.message_log import show_log
 from pybo_gui.gui.settings import Settings
 from pybo_gui.gui.step_list import StepListWindow
 
@@ -42,6 +43,12 @@ class MainWindow(QMainWindow):
 
         bar = QStatusBar()
         self.setStatusBar(bar)
+        # Where every message the tabs produce ends up. Nothing is printed next to the
+        # button that produced it any more, so this is the only way to read them.
+        log = QPushButton("Log")
+        log.setToolTip("Everything the GUI has reported, newest last")
+        log.clicked.connect(lambda: show_log(self))
+        bar.addPermanentWidget(log)
         stop = QPushButton("Stop plots")
         stop.clicked.connect(stop_all)
         bar.addPermanentWidget(stop)
