@@ -105,6 +105,15 @@ def main():
                              "this on when the objectives can never be zero or negative. "
                              "Applies to the objectives only, never to constraints or "
                              "trackers.")
+    parser.add_argument("--source", default="all", choices=["all", "initial", "proposed"],
+                        help="Which observations to fit on, by their own recorded "
+                             "'source' field (default: %(default)s). 'initial' fits only "
+                             "the seed design a campaign started from - useful for a "
+                             "ground truth meant to stand in for the real process before "
+                             "any optimizer-proposed point could bias it towards a region "
+                             "already explored. Observations with no 'source' field, or a "
+                             "value other than 'initial'/'proposed', never match either "
+                             "filter.")
     args = parser.parse_args()
 
     root_dir = args.root_dir
@@ -117,16 +126,25 @@ def main():
     objective_records = []
     constraint_records = []
     tracker_records = []
+    n_skipped_source = 0
     for path in paths:
         # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
         # like "Tool Wear (μm)" on the way in.
         with open(path, encoding="utf-8") as f:
             json_file = json.load(f)
         for observation in json_file["data"]:
+            if args.source != "all" and observation.get("source") != args.source:
+                n_skipped_source += 1
+                continue
             parameter_records.append(observation["parameters"])
             objective_records.append(observation["objectives"])
             constraint_records.append(observation["constraints"])
             tracker_records.append(observation["trackers"])
+    if args.source != "all":
+        print(f"--source {args.source}: fitting on {len(parameter_records)} observation(s), "
+              f"{n_skipped_source} excluded")
+    if not parameter_records:
+        raise SystemExit(f"No observation matched --source {args.source} under {root_dir}")
 
     X = _records_to_frame(parameter_records)
     Y_obj = _records_to_frame(objective_records)

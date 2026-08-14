@@ -66,8 +66,14 @@ parser.add_argument("--out", default=None,
                     help="Where the converted tree is written (default: beside each "
                          "metadata.json, leaving it in place)")
 parser.add_argument("--source", default=None,
-                    help="Provenance recorded on every observation. Default: each step's "
-                         "own experiment_type, lowercased.")
+                    help="Provenance recorded on every observation. Default: \"initial\" for "
+                         "the earliest steps by start_time (see --n-initial), "
+                         "\"proposed\" for the rest - the rig's experiment_type doesn't "
+                         "carry that distinction.")
+parser.add_argument("--n-initial", type=int, default=None,
+                    help="How many of the earliest steps (by start_time) count as the "
+                         "initial design and get source=\"initial\". Default: main.py's own "
+                         "initial-design size, 5 * (dim + 1).")
 parser.add_argument("--apply", action="store_true",
                     help="Actually write. Without it, the first record is previewed and "
                          "nothing is written.")
@@ -96,10 +102,13 @@ for name, mapping, labels in groups:
 print("mapping checks out against IFormAC: "
       + ", ".join(f"{len(m)} {n}" for n, m, _ in groups))
 
-# --- convert ---
-# observation_n counts across the whole run, the way to_json numbers a batch: these are
-# single-observation steps, so it is the step's position among those that converted.
-records, skipped = [], []
+# --- parse ---
+# Two passes: the rig's experiment_type says how a step was triggered ("bayesian",
+# "manual"), not whether it belongs to the initial design or to what the optimizer
+# proposed afterward - that split only shows up in wall-clock order, so it can't be
+# decided step by step. Parse everything first, skipping what can't be converted, then
+# rank the survivors by start_time before assigning source below.
+parsed, skipped = [], []
 for path in steps:
     meta = json.loads(path.read_text(encoding="utf-8"))
     # Inputs and outputs sit in two dicts; nothing downstream cares which one a value came
@@ -114,7 +123,20 @@ for path in steps:
     if missing:
         skipped.append((path.parent.name, missing))
         continue
+    parsed.append((path, meta, values))
 
+# main.py sizes its own initial design at 5 * (dim + 1) parameter sets before it starts
+# proposing; the earliest steps here by start_time are that same design, whichever rig
+# session or EXP_NNN folder they happen to sit in.
+N_INITIAL = args.n_initial if args.n_initial is not None else 5 * (objective.num_par + 1)
+initial_paths = {path for path, _, _ in
+                 sorted(parsed, key=lambda p: p[1]["start_time"])[:N_INITIAL]}
+
+# --- convert ---
+# observation_n counts across the whole run, the way to_json numbers a batch: these are
+# single-observation steps, so it is the step's position among those that converted.
+records = []
+for path, meta, values in parsed:
     # Every _var is null. Nothing here was measured twice, and noise estimated from
     # replicate fabrications belongs to the ground truth, not to an observation.
     named = {}
@@ -124,12 +146,13 @@ for path in steps:
             named[name][label] = mapping[label](values, objective)
             named[name][f"{label}_var"] = None
 
-    source = args.source or (meta.get("experiment_type") or "unknown").lower()
+    experiment_type = (meta.get("experiment_type") or "unknown").lower()
+    source = args.source or ("initial" if path in initial_paths else "proposed")
     records.append((
         (Path(args.out).resolve() / path.parent.name if args.out else path.parent) / "experiment.json",
         {
             "datetime": datetime.fromtimestamp(meta["start_time"]).isoformat(),
-            "experiment_type": source,
+            "experiment_type": experiment_type,
             "batch_size": 1,
             "data": [{
                 "observation_n": len(records),
@@ -151,7 +174,8 @@ if not records:
 
 sources = {}
 for _, payload in records:
-    sources[payload["experiment_type"]] = sources.get(payload["experiment_type"], 0) + 1
+    source = payload["data"][0]["source"]
+    sources[source] = sources.get(source, 0) + 1
 print(f"\n{len(records)} step(s) converted, source: "
       + ", ".join(f"{name} x{count}" for name, count in sorted(sources.items())))
 print("\nFirst record:\n")
