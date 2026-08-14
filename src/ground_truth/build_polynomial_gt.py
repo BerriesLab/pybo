@@ -31,10 +31,12 @@ def _pooled_noise_std(X, Y, decimals):
     an objective as gt_*_noise_std. The fit's own residuals would confound that
     noise with the polynomial being the wrong shape.
 
-    Parameters are range-normalised before rounding because they carry wildly
-    different magnitudes (volts alongside nanoseconds), and one decimal count
-    cannot serve both. Repeated runs normally record identical setpoints anyway,
-    so the rounding is a guard against float formatting rather than real binning.
+    Parameters are rounded in their own raw units, because what makes two runs
+    the same setting is the rig's resolution — whole volts, whole nanoseconds —
+    not a fraction of whatever range the campaign happened to cover. A repeat is
+    often recorded once as the rounded setpoint and once as the unrounded
+    proposal that produced it, so the rounding has to land on the rig's grid to
+    put them back together.
 
     Pooled, not averaged: group sizes are uneven, and dividing the total squared
     deviation by the total degrees of freedom weights each group by what it
@@ -42,10 +44,7 @@ def _pooled_noise_std(X, Y, decimals):
     rather than counting as a variance of zero, which would pull a plain average
     of per-group variances toward nothing.
     """
-    span = X.max() - X.min()
-    # A parameter held constant across the campaign has no scale to normalise by.
-    span = span.where(span > 0, 1.0)
-    key = ((X - X.min()) / span).round(decimals)
+    key = X.round(decimals)
     key = pd.Series(list(key.itertuples(index=False, name=None)), index=Y.index)
 
     squares = pd.Series(0.0, index=Y.columns)
@@ -88,17 +87,17 @@ def main():
                              "expression, one block per quantity, with no def and no "
                              "return. That is the shape a per-quantity method in an "
                              "objective takes, so a block goes straight into one.")
-    parser.add_argument("--group-decimals", type=int, default=6,
-                        help="Decimals to round the range-normalised parameters to when "
-                             "deciding which observations repeat the same setting, for "
-                             "the pooled noise std (default: %(default)s). The default is "
-                             "high on purpose: it only absorbs float formatting, since "
-                             "true repeats normally share identical setpoints. Lower it "
-                             "only if repeats were recorded with drifting setpoints, and "
-                             "check the group count against the repeats you know you ran "
-                             "- once it exceeds them, distinct settings are being pooled "
-                             "and their spread is counted as noise, which is exactly what "
-                             "pure error must exclude.")
+    parser.add_argument("--group-decimals", type=int, default=0,
+                        help="Decimals to round the parameters to, in their own raw "
+                             "units, when deciding which observations repeat the same "
+                             "setting, for the pooled noise std (default: %(default)s). "
+                             "The default matches a rig that takes whole-unit setpoints, "
+                             "which reunites a repeat recorded once rounded and once as "
+                             "the raw proposal. Raise it if the rig accepts finer "
+                             "setpoints, and check the group count against the repeats "
+                             "you know you ran - once it exceeds them, distinct settings "
+                             "are being pooled and their spread is counted as noise, "
+                             "which is exactly what pure error must exclude.")
     parser.add_argument("--positive", action="store_true",
                         help="Assume every observed objective value is physically "
                              "non-negative and fit log(y) instead of y, guaranteeing "

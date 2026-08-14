@@ -28,7 +28,7 @@ python -m ground_truth.build_polynomial_gt --root-dir data/vformac --degree 2
   files (default: `data/vformac`).
 - `--positive` — off by default. Turn on only when every observed objective
   value is physically guaranteed to be non-negative. Fits `log(y)` and predicts `exp(...)`, so predictions are
-  strictly positive everywhere — including outside the observed parameter
+  strictly positive objectives everywhere — including outside the observed parameter
   range. Enabling it on a dataset with any zero or negative objective value
   breaks the fit (`log` of a non-positive number is `NaN`/undefined), so
   leave it off unless you know the sign is guaranteed. It applies to the
@@ -41,14 +41,29 @@ python -m ground_truth.build_polynomial_gt --root-dir data/vformac --degree 2
   training data more closely but overfit fast on small datasets; there is no
   built-in cross-validation here, so sweep `--degree` by hand and compare the
   printed `R2` across runs if you need to pick one.
-- `--group-decimals` — decimals to round the range-normalized parameters to
-  when deciding which observations repeat the same setting (default: `6`).
-  Only affects the pooled noise std, never the fit. Parameters are normalised
-  to their own observed range first, so one value works across parameters of
-  very different magnitude (volts alongside nanoseconds). Repeats normally
-  record identical setpoints, making this a guard against float formatting
-  rather than real binning — lower it if repeated runs drifted and land in
-  groups of one.
+- `--group-decimals` — decimals to round the parameters to, **in their own raw
+  units**, when deciding which observations repeat the same setting (default:
+  `0`, whole units). Only affects the pooled noise std, never the fit.
+
+  What makes two runs the same setting is the rig's resolution: the smallest
+  step it can actually take. The records do not show it, because a record holds
+  the parameters the optimizer *asked for*, not the ones the rig *executed* —
+  so one setting run three times can appear as three different rows. vformac's
+  `step_000`/`step_001` sit at exactly `(60, 83, 23898, 32030)` while their
+  third run `step_036` reads `(60.0, 82.853, 23898.36, 32029.97)`: the same
+  experiment, recorded once as executed and once as requested. Rounding to the
+  rig's own grid puts the three back together, and rounding finer than the rig
+  leaves the triple as a pair plus an orphan — 8 degrees of freedom instead of
+  14, on a campaign that measured 14.
+
+  The default matches vformac and iformac, whose rigs take whole-unit
+  setpoints. The authority on this is the objective, whose `ParCfg` carries a
+  `resolution` per parameter; this flag is one number for all of them, which
+  agrees with both campaigns today but cannot express a rig that resolves
+  differently on different parameters. Check the group count against the
+  repeats you know you ran: once it exceeds them, distinct settings are being
+  pooled and their spread is counted as noise, which is exactly what pure error
+  must exclude.
 
 Run the module with `--help` for the full, current flag list.
 
@@ -88,8 +103,8 @@ sigma = sqrt( ------------------------------------- )
 
 The denominator is the reported `dof`, the number of terms in the outer sums the
 reported group count. Settings with `n_g = 1` contribute nothing to either sum.
-Two settings count as the same one when their parameters, normalised to their
-own observed range, agree to `--group-decimals` decimals.
+Two settings count as the same one when their raw parameters agree to
+`--group-decimals` decimals.
 
 ## The paste-ready method
 
@@ -98,14 +113,14 @@ into an objective over whatever it holds today:
 
 ```python
     def evaluate_true_objective(self, X: Tensor, noisy: bool = False) -> Tensor:
-        x0 = (X[..., 0] - 10.863) / 2.12656
-        ...
-        tool_wear = (37.156
-                     + 8.7068 * x0
-                     ...)
-        if noisy:
-            tool_wear = tool_wear + 8.957 * torch.randn_like(tool_wear)
-        return torch.stack([tool_wear, ...], dim=-1)
+    x0 = (X[..., 0] - 10.863) / 2.12656
+    ...
+    tool_wear = (37.156
+                 + 8.7068 * x0
+                 ...)
+    if noisy:
+        tool_wear = tool_wear + 8.957 * torch.randn_like(tool_wear)
+    return torch.stack([tool_wear, ...], dim=-1)
 ```
 
 The ground truth lives in the objective, not in a file the objective loads, and
