@@ -41,9 +41,9 @@ class IFormAC(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="Maximum Current", unit="A", bounds=(7.5, 15.0)),
-                ParCfg(label="Pedestal Current", unit="A", bounds=(3.0, 7.5)),
-                ParCfg(label="Maximum Ramp Time", unit="ns", bounds=(0.1 * self._t_on, self._t_on))
+                ParCfg(label="Maximum Current", unit="A", bounds=(7.5, 15.0), resolution=0.1),
+                ParCfg(label="Pedestal Current", unit="A", bounds=(3.0, 7.5), resolution=0.1),
+                ParCfg(label="Maximum Ramp Time", unit="ns", bounds=(0.1 * self._t_on, self._t_on), resolution=1)
             ],
             obj_cfg=[
                 ObjCfg(label="Material Removal Rate", unit="mm^3/min", to_minimize=False, ref_point=0),

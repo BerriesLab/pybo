@@ -55,11 +55,14 @@ def problem_definition(objective: MCObjectiveBase) -> dict:
         for cfg in objective.obj_cfg or []
     ]
     return {
-        "parameters": [{"label": cfg.label, "bounds": list(cfg.bounds)}
+        "parameters": [{"label": cfg.label, "bounds": list(cfg.bounds),
+                        "unit": cfg.unit, "resolution": getattr(cfg, "resolution", None)}
                        for cfg in objective.par_cfg or []],
         "objectives": objectives,
         "constraints": [{"label": cfg.label} for cfg in objective.ineq_Y_con_cfg or []],
-        "trackers": [{"label": cfg.label} for cfg in objective.trk_cfg or []],
+        "trackers": [{"label": cfg.label, "unit": cfg.unit,
+                      "bounds": list(cfg.bounds) if cfg.bounds is not None else None}
+                     for cfg in objective.trk_cfg or []],
         # Where the hypervolume is measured from, in the objectives' own order.
         "ref_point": [o["ref_point"] for o in objectives],
         "minimized": {o["label"]: o["to_minimize"] for o in objectives},

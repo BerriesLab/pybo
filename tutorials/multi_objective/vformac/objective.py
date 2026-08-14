@@ -38,10 +38,10 @@ class VFormAC(MCMultiObjectiveBase):
             device=device,
             dtype=dtype,
             par_cfg=[
-                ParCfg(label="V0", unit="V", bounds=(60, 120)),
-                ParCfg(label="dV", unit="V", bounds=(60, 85)),
-                ParCfg(label="td1", unit="ns", bounds=(0.5 * self._t_r, 0.8 * self._t_r)),
-                ParCfg(label="td2", unit="ns", bounds=(0.4 * self._t_r, 1.3 * self._t_r)),
+                ParCfg(label="V0", unit="V", bounds=(60, 120), resolution=1),
+                ParCfg(label="dV", unit="V", bounds=(60, 85), resolution=1),
+                ParCfg(label="td1", unit="ns", bounds=(0.5 * self._t_r, 0.8 * self._t_r), resolution=1),
+                ParCfg(label="td2", unit="ns", bounds=(0.4 * self._t_r, 1.3 * self._t_r), resolution=1),
             ],
             obj_cfg=[
                 ObjCfg(label="Material Removal Rate", unit="mm^3/min", to_minimize=False, ref_point=0),

@@ -30,8 +30,18 @@ class ObjCfg(CfgBase):
 
 @dataclass(kw_only=True)
 class ParCfg(CfgBase):
-    """Configuration for parameters"""
+    """Configuration for parameters. """
     bounds: tuple[float, float]
+    resolution: float | None = None  # rig's smallest step, in this parameter's own units
+
+    def __post_init__(self):
+        # A step of zero is not a step. It reads as "whole units" but would silently mean
+        # "unknown" everywhere downstream, so it is rejected rather than guessed at: write
+        # 1 for whole units, None for unknown.
+        if self.resolution is not None and self.resolution <= 0:
+            raise ValueError(
+                f"{self.label or 'parameter'}: resolution must be positive or None, got "
+                f"{self.resolution}. Use 1 for whole units, None when it is unknown.")  # E.g. 0.001 V. None means unknown.
 
 
 @dataclass(kw_only=True)
