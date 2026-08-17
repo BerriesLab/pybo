@@ -29,6 +29,24 @@ def is_initial(label) -> bool:
     return bool(label) and (label == "initial" or label.endswith(INITIAL_SUFFIX))
 
 
+def arm_label(exp: dict, fallback: str) -> str:
+    """What --aggregate-runs pools a run's curve into.
+
+    Both axes together, not technology (the optimizer: bayesian/sobol/manual) alone -
+    otherwise a real rig's bayesian-proposed runs and a simulated study's bayesian runs
+    would average into one curve just because they share an optimizer, which is exactly
+    the mix-up experiment_type (experimental/synthetic) exists to keep apart. `fallback`
+    is what the caller already falls back to when neither is set - typically the
+    per-observation label, since an unlabelled run still deserves a series of its own
+    rather than being silently lumped in with everything else unlabelled.
+    """
+    tech = str(exp.get("technology") or "").strip().lower()
+    prov = str(exp.get("provenance") or "").strip().lower()
+    if tech and prov:
+        return f"{tech} ({prov})"
+    return tech or prov or fallback
+
+
 def base_label(label):
     """The label without its initial-design suffix.
 

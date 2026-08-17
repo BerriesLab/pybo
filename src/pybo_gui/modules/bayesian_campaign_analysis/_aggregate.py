@@ -94,6 +94,15 @@ def band_label(mode: str, n: int) -> str:
             "minmax": f"mean, min-max (n={n})"}[mode]
 
 
+def arm_legend_label(name: str, mode: str, n: int) -> str:
+    """An aggregated arm's legend entry: `name` alone when there is only one run to
+    plot - "mean" and a confidence interval are not meaningful statements about a
+    single curve, and mean_band already draws it with a zero-width band rather than
+    inventing one - else `name` with the band descriptor attached.
+    """
+    return name if n <= 1 else f"{name} - {band_label(mode, n)}"
+
+
 def attainment_grid(fronts, n_points: int = 200):
     """A shared x grid over the range any front covers, for averaging 2-D fronts.
 

@@ -11,9 +11,9 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
-from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_initial, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, base_label, is_initial, styler
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
-    BAND_MODES, mean_band, band_label)
+    BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
@@ -126,10 +126,10 @@ for exp in load_experiments_from_map(MAP_PATH):
     rows.append({
         "label":    _label(exp),
         # The arm the run belongs to, which is what several runs get averaged within.
-        # Read from technology rather than from the label: the label is whatever the map
+        # Both technology and provenance, not the label: the label is whatever the map
         # was built by, and under the default it names the run, so it tells the runs of
         # one arm apart instead of holding them together.
-        "arm":      str(exp.get("technology", "")).lower() or _label(exp),
+        "arm":      arm_label(exp, _label(exp)),
         "group_id": exp["group_id"],
         "feasible": is_feasible(r, constraints),
         "point":    point,
@@ -360,7 +360,7 @@ elif args.aggregate_runs:
         ax.plot(steps, mean, color=_color(arm), linewidth=1.6, zorder=3)
         legend_handles.append(mlines.Line2D(
             [], [], color=_color(arm), linewidth=1.6,
-            label=f"{arm.capitalize()} - {band_label(args.band, len(arm_curves[arm]))}"))
+            label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
     # Where the initial design ends, common to every run of every arm plotted - the
     # smallest across all of them, so a run with a longer design just loses a step or
     # two of shading rather than the span claiming a run is still initial past the

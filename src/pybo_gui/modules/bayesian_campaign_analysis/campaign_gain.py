@@ -56,7 +56,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._constraints import (
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
-from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial
+from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, is_initial
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 
@@ -122,7 +122,10 @@ for exp in load_experiments_from_map(MAP_PATH):
     runs.setdefault(exp["run"], []).append({
         "point": tuple(s * v for s, v in zip(signs, raw)),
         "initial": is_initial(exp["experiment_type"]),
-        "technology": exp.get("technology"),
+        # Both technology (optimizer) and provenance (experimental/synthetic), so the
+        # per-arm summary below never pools a real run in with a simulated one just
+        # because they happen to share an optimizer.
+        "arm": arm_label(exp, exp["run"]),
     })
 
 if not runs:
@@ -209,7 +212,7 @@ for run, items in runs.items():
             break
 
     gap = optimum - m0
-    row = {"run": run, "arm": items[0]["technology"], "n_initial": int(n0),
+    row = {"run": run, "arm": items[0]["arm"], "n_initial": int(n0),
            "m_initial": m0, "m_final": m_final,
            "gamma": 100.0 * (m_final - m0) / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
            "gamma_norm": (m_final - m0) / gap if np.isfinite(gap) and gap > 0 else np.nan,

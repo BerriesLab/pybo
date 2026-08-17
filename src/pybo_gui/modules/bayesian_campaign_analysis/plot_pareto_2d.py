@@ -12,10 +12,10 @@ from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
-from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, base_label, styler
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
-    BAND_MODES, mean_band, band_label, attainment_grid, step_interpolate)
+    BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
@@ -133,10 +133,10 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
-        # The arm whose runs get averaged together. From technology, not the label:
-        # under the default labelling the label names the run, which separates the very
-        # runs that have to be pooled.
-        "arm":      str(exp.get("technology", "")).lower() or _label(exp),
+        # The arm whose runs get averaged together. From technology and provenance,
+        # not the label: under the default labelling the label names the run, which
+        # separates the very runs that have to be pooled.
+        "arm":      arm_label(exp, _label(exp)),
         # Kept alongside the label so pooling by arm still separates the runs when the
         # map was built by strategy, where the label no longer names them.
         "run":      exp.get("run"),
@@ -452,7 +452,7 @@ if args.aggregate_runs:
                 color=color, linewidth=1.4, zorder=3)
         legend_handles.append(mlines.Line2D(
             [], [], color=color, linewidth=1.4,
-            label=f"{arm.capitalize()} - {band_label(args.band, len(fronts))}"))
+            label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
 for base in [] if args.aggregate_runs else sorted({base_label(lbl) for lbl in FRONT_LABELS}):
     members = [r for r in valid if base_label(r["label"]) == base and r["feasible"]]
