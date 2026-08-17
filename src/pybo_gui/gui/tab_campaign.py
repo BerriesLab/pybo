@@ -851,6 +851,13 @@ def build(step_list, settings) -> QWidget:
         # two together, so the flags are only added to the cumulative one.
         if not improvement:
             extra += _aggregate_args()
+        # Where the hypervolume is measured from. Sent whenever an objective is loaded,
+        # regardless of the Ground truth checkbox - that one is about drawing the
+        # sampled surface, a separate question from having a fixed reference point, and
+        # a moving one would make a run's own hypervolume depend on which other runs
+        # happen to be selected alongside it.
+        if state["problem"] is not None:
+            extra += ["--ground-truth", obj_edit.text()]
         _launch("plot_hypervolume", *extra)
 
     # The viewers rebuild first, so what they show is the current selection rather than

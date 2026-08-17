@@ -16,6 +16,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, band_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
+from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", default="down_time_minutes", help="Result key for first objective")
@@ -49,6 +50,13 @@ parser.add_argument("--band", default="ci95", choices=BAND_MODES,
 parser.add_argument("--improvement", action="store_true", default=False,
                     help="Plot per-step hypervolume improvement (ΔHV) instead of the "
                          "cumulative hypervolume.")
+parser.add_argument("--ground-truth", default="", dest="ground_truth",
+                    help="Path to the run's objective.py. When given, the hypervolume "
+                         "is measured from each objective's own declared ref_point "
+                         "instead of a corner padded past whatever is currently "
+                         "selected - the latter moves every trace's value each time a "
+                         "run is added to or dropped from the plot, which makes them "
+                         "incomparable between one plot and the next.")
 args = parser.parse_args()
 try:
     constraints = parse_constraints(args.constraint)
@@ -158,8 +166,6 @@ if args.grouped:
     } for gid in order]
 
 # ---- FIXED REFERENCE POINT ----
-# Range-based margin so the reference stays "worse" than every point in
-# minimization space, valid for both positive and negated (maximized) axes.
 # From the feasible points alone: the reference exists to bound the volume the front
 # encloses, and a point that violates a constraint is not on any front. Letting one push
 # the corner out would inflate every arm's hypervolume by the same wasted evaluation.
@@ -168,14 +174,40 @@ if not feasible_rows:
     print("Every observation violates the constraints - nothing to measure a volume "
           "against.")
     sys.exit(1)
-ref = []
-for d in range(len(objective_keys)):
-    lo = min(row["point"][d] for row in feasible_rows)
-    hi = max(row["point"][d] for row in feasible_rows)
-    span = hi - lo
-    pad = REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)
-    ref.append(hi + pad)
-ref = tuple(ref)
+
+# The objective's own ref_point, when available - fixed regardless of what is
+# currently selected, unlike a corner padded past the loaded data's own range (below).
+# A run's hypervolume read off two different selections has to be the same number, or
+# it is not measuring the run - it is measuring the selection.
+ref = None
+if args.ground_truth:
+    problem = problem_definition(load_objective(args.ground_truth))
+    ref_by_label = {o["label"]: o["ref_point"] for o in problem["objectives"]}
+    missing = [k for k in objective_keys if k not in ref_by_label]
+    unset = [k for k in objective_keys
+             if k in ref_by_label and ref_by_label[k] is None]
+    if missing or unset:
+        print(f"! --ground-truth {args.ground_truth}: "
+              + (f"no objective named {missing} - " if missing else "")
+              + (f"no ref_point declared for {unset} - " if unset else "")
+              + "falling back to a reference point derived from the loaded data, "
+                "which will move if the selection changes.")
+    else:
+        ref = tuple(s * ref_by_label[k] for s, k in zip(signs, objective_keys))
+
+if ref is None:
+    # Range-based margin so the reference stays "worse" than every point in
+    # minimization space, valid for both positive and negated (maximized) axes. Depends
+    # on whatever is currently loaded - see the ground_truth branch above for why that
+    # makes a run's own value shift as other runs join or leave the selection.
+    ref = []
+    for d in range(len(objective_keys)):
+        lo = min(row["point"][d] for row in feasible_rows)
+        hi = max(row["point"][d] for row in feasible_rows)
+        span = hi - lo
+        pad = REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)
+        ref.append(hi + pad)
+    ref = tuple(ref)
 
 # ---- INCREMENTAL HYPERVOLUME, ONE TRACE PER SERIES ----
 # Each run is its own campaign, so its hypervolume starts from its own first observation
