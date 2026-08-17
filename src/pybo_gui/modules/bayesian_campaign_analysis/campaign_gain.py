@@ -58,6 +58,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
+from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 
 REF_MARGIN = 0.10  # reference point sits this fraction of the data range beyond the worst
 
@@ -80,6 +81,13 @@ parser.add_argument("--tau", action="append", default=[], type=float,
 parser.add_argument("--optimum", type=float, default=None,
                     help="Reference optimum m*. Needed for gamma_norm and the it columns "
                          "to mean anything across campaigns.")
+parser.add_argument("--ground-truth", default="", dest="ground_truth",
+                    help="Path to the run's objective.py. When given, the hypervolume "
+                         "metric is measured from each objective's own declared "
+                         "ref_point instead of a corner padded past whatever runs are "
+                         "in this report - the latter moves every run's score if the "
+                         "selection changes, which makes gamma/eta incomparable "
+                         "between one run of this script and the next.")
 parser.add_argument("--patience", type=int, default=10,
                     help="Iterations of improvement below --tol that mark convergence "
                          "(default: %(default)s, as OptimizerBase.is_converged).")
@@ -121,14 +129,38 @@ if not runs:
     print("No data with the requested keys.")
     sys.exit(1)
 
-# ---- FIXED REFERENCE POINT, over every run so the metrics share a scale ----
-ref = []
-for d in range(len(objective_keys)):
-    values = [r["point"][d] for items in runs.values() for r in items]
-    lo, hi = min(values), max(values)
-    span = hi - lo
-    ref.append(hi + (REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)))
-ref = tuple(ref)
+# ---- REFERENCE POINT ----
+# The objective's own ref_point, when available - fixed regardless of which runs are in
+# this report, unlike a corner padded past the loaded data's own range (below). A run's
+# score read from two different --constraint/selection combinations has to be the same
+# number, or it is not measuring the run - it is measuring the report.
+ref = None
+if args.ground_truth:
+    problem = problem_definition(load_objective(args.ground_truth))
+    ref_by_label = {o["label"]: o["ref_point"] for o in problem["objectives"]}
+    missing = [k for k in objective_keys if k not in ref_by_label]
+    unset = [k for k in objective_keys
+             if k in ref_by_label and ref_by_label[k] is None]
+    if missing or unset:
+        print(f"! --ground-truth {args.ground_truth}: "
+              + (f"no objective named {missing} - " if missing else "")
+              + (f"no ref_point declared for {unset} - " if unset else "")
+              + "falling back to a reference point derived from the loaded data, "
+                "which will move if the selection changes.")
+    else:
+        ref = tuple(s * ref_by_label[k] for s, k in zip(signs, objective_keys))
+
+if ref is None:
+    # Over every run currently loaded, so at least this report is internally
+    # consistent - but see the ground_truth branch above for why that is not enough to
+    # make its numbers comparable with another run of this script.
+    ref = []
+    for d in range(len(objective_keys)):
+        values = [r["point"][d] for items in runs.values() for r in items]
+        lo, hi = min(values), max(values)
+        span = hi - lo
+        ref.append(hi + (REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)))
+    ref = tuple(ref)
 
 
 def metric_trace(items):
