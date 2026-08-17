@@ -145,7 +145,12 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             os.chdir(step_dir)
             if loaded_initial:
                 sl = slice(i * q, (i + 1) * q)
-                updates = slice_initial_batch(initial, sl, device=device, dtype=DTYPE)
+                updates = slice_initial_batch(
+                    initial=initial,
+                    rows=sl,
+                    device=device,
+                    dtype=DTYPE
+                )
             else:
                 new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
                 # The constraint reads the same orbiting time the tracker records, rather
