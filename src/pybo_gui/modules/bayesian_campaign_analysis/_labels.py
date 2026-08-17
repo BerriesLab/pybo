@@ -18,8 +18,21 @@ copied into each script.
 # build_experiment_map.INITIAL_SUFFIX, which is what writes it.
 INITIAL_SUFFIX = " (initial)"
 
+# Marks an aggregated arm's label with its experiment_type - mirrors arm_label's own
+# "{optimizer} ({experiment_type})" format. Stripped for colour the same way
+# INITIAL_SUFFIX is: a real rig's bayesian runs and a simulated study's bayesian runs
+# share bayesian's colour, not a second one a named palette was never designed to
+# hold - told apart instead by line style (see arm_line_style) and the legend text.
+PROVENANCE_SUFFIXES = (" (experimental)", " (synthetic)")
+
+QUALIFIER_SUFFIXES = (INITIAL_SUFFIX, *PROVENANCE_SUFFIXES)
+
 # Dash patterns for the two kinds of front, before a per-series phase is applied.
 DASHES = {"initial": (1, 3), "proposed": (6, 2)}
+
+# Solid for a real run, dashed for a simulated one - an aggregated arm's own line
+# style, keyed by the same qualifier PROVENANCE_SUFFIXES strips for colour.
+ARM_LINESTYLES = {"experimental": "-", "synthetic": "--"}
 
 FALLBACK_COLOR = "#888888"
 
@@ -47,14 +60,32 @@ def arm_label(exp: dict, fallback: str) -> str:
     return tech or prov or fallback
 
 
+def arm_line_style(label: str) -> str:
+    """An aggregated arm's line style: solid for a real run, dashed for a simulated
+    one, matplotlib linestyle notation. Two arms that share a colour because they
+    share an optimizer (see base_label) still need to read apart on the curve itself,
+    not only in the legend text, when both sit on one plot."""
+    if label:
+        for suffix in PROVENANCE_SUFFIXES:
+            if label.endswith(suffix):
+                return ARM_LINESTYLES[suffix.strip(" ()")]
+    return "-"
+
+
 def base_label(label):
-    """The label without its initial-design suffix.
+    """The label without its initial-design or experiment_type qualifier, whichever it
+    carries.
 
     A design series and the proposals it belongs to share a base, so they share a colour
-    and sit together in a legend; marker and dash tell them apart.
+    and sit together in a legend; marker and dash tell them apart. Likewise a real and a
+    simulated run of the same arm: the qualifier arm_label appends is exactly what
+    distinguishes them in the legend text, so it must not also fork the colour they
+    share.
     """
-    if label and label.endswith(INITIAL_SUFFIX):
-        return label[:-len(INITIAL_SUFFIX)]
+    if label:
+        for suffix in QUALIFIER_SUFFIXES:
+            if label.endswith(suffix):
+                return label[:-len(suffix)]
     return label
 
 

@@ -11,7 +11,8 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
-from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, base_label, is_initial, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import (
+    arm_label, arm_line_style, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -357,9 +358,10 @@ elif args.aggregate_runs:
         steps = range(1, len(mean) + 1)
         ax.fill_between(steps, low, high, color=_color(arm), alpha=0.18,
                         linewidth=0, zorder=2)
-        ax.plot(steps, mean, color=_color(arm), linewidth=1.6, zorder=3)
+        ax.plot(steps, mean, color=_color(arm), linewidth=1.6,
+                linestyle=arm_line_style(arm), zorder=3)
         legend_handles.append(mlines.Line2D(
-            [], [], color=_color(arm), linewidth=1.6,
+            [], [], color=_color(arm), linewidth=1.6, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
     # Where the initial design ends, common to every run of every arm plotted - the
     # smallest across all of them, so a run with a longer design just loses a step or

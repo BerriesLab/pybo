@@ -12,7 +12,8 @@ from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
-from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, base_label, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import (
+    arm_label, arm_line_style, base_label, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -449,9 +450,9 @@ if args.aggregate_runs:
         # Drawn as the staircase it is: a straight line between two front points would
         # claim pairs no run achieved.
         ax.step(gx, sy * mean, where="post" if sx > 0 else "pre",
-                color=color, linewidth=1.4, zorder=3)
+                color=color, linewidth=1.4, linestyle=arm_line_style(arm), zorder=3)
         legend_handles.append(mlines.Line2D(
-            [], [], color=color, linewidth=1.4,
+            [], [], color=color, linewidth=1.4, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
 for base in [] if args.aggregate_runs else sorted({base_label(lbl) for lbl in FRONT_LABELS}):
