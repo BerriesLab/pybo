@@ -3,14 +3,31 @@ import math
 from pathlib import Path
 
 
-def find_experiments(root: str | Path) -> list[Path]:
-    """Every experiment.json at or under root. Recursive, so one step folder and a
-    whole campaign are the same command, and any step_NNN/ or step_NNN_repYY/
-    layout works — the same glob build_polynomial_gt uses."""
-    paths = sorted(Path(root).glob("**/*experiment.json"))
-    if not paths:
-        raise SystemExit(f"No experiment.json found under {root} (searched recursively)")
-    return paths
+def find_experiments(roots: str | Path | list[str | Path]) -> list[Path]:
+    """Every experiment.json at or under one root or several, deduplicated and sorted.
+
+    Recursive per root, so one step folder and a whole campaign are the same command,
+    and any step_NNN/ or step_NNN_repYY/ layout works — the same glob
+    build_polynomial_gt uses. A single root is accepted directly, not just a
+    one-element list, so existing single-root callers pass what they always have.
+    """
+    if isinstance(roots, (str, Path)):
+        roots = [roots]
+    found = {path for root in roots for path in Path(root).glob("**/*experiment.json")}
+    if not found:
+        where = roots[0] if len(roots) == 1 else roots
+        raise SystemExit(f"No experiment.json found under {where} (searched recursively)")
+    return sorted(found)
+
+
+def split_roots(value: str) -> list[str]:
+    """One CLI argument, comma-separated, as the list find_experiments wants.
+
+    A bare path with no comma is a one-element list, so a single root needs no
+    special-casing at the call site - "data/iformac" and "data/iformac,data/vformac"
+    are the same code path.
+    """
+    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def resolve(node, parts: list[str], scope: dict, create: bool, strict: bool = False):

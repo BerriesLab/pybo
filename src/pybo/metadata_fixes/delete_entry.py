@@ -14,6 +14,9 @@ Usage:
     python -m pybo.metadata_fixes.delete_entry data/iformac "data.*.trackers.Orbiting Time (min)" \\
         "data.*.trackers.Orbiting Time (min)_var" --apply
 
+    <root> takes several folders too, comma-separated in the one argument:
+    python -m pybo.metadata_fixes.delete_entry data/iformac,data/vformac data.*.source --apply
+
 A label and its _var companion are two separate entries: pass both to drop a channel
 whole, or pybo reads a column that is half there.
 
@@ -22,7 +25,7 @@ Nothing is written without --apply: the run is previewed and the files are left 
 import argparse
 import sys
 
-from pybo.metadata_fixes._common import find_experiments, resolve, load, save
+from pybo.metadata_fixes._common import find_experiments, resolve, load, save, split_roots
 
 # Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
 # Windows, which cannot encode them.
@@ -32,7 +35,8 @@ parser = argparse.ArgumentParser(
     description="Delete entries from every experiment.json under a root.",
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
-parser.add_argument("root", help="Folder searched recursively for experiment.json files")
+parser.add_argument("root", help="Folder(s) searched recursively for experiment.json "
+                                 "files - comma-separated for more than one.")
 parser.add_argument("paths", nargs="+",
                     help="Dot-notation path(s) to delete, '*' fanning out over a list")
 parser.add_argument("--apply", action="store_true",
@@ -42,7 +46,7 @@ args = parser.parse_args()
 
 updated = untouched = 0
 
-for path in find_experiments(args.root):
+for path in find_experiments(split_roots(args.root)):
     doc = load(path)
     removed = {}
     for dotted in args.paths:

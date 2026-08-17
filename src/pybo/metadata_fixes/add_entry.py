@@ -12,6 +12,10 @@ Usage — literal value:
     python -m pybo.metadata_fixes.add_entry <root> <path> <value> --apply
     python -m pybo.metadata_fixes.add_entry data/iformac data.*.source manual --apply
 
+    <root> takes several folders too, comma-separated in the one argument - not a
+    second positional, which a trailing <value> would make ambiguous to parse:
+    python -m pybo.metadata_fixes.add_entry data/iformac,data/vformac data.*.source manual --apply
+
 Usage — derived expression:
     python -m pybo.metadata_fixes.add_entry <root> <path> --expr EXPR --apply
     python -m pybo.metadata_fixes.add_entry data/iformac "data.*.trackers.Orbiting Time Deviation (min)" \\
@@ -33,7 +37,7 @@ import argparse
 import sys
 
 from pybo.metadata_fixes._common import (
-    find_experiments, resolve, coerce, evaluate, load, save,
+    find_experiments, resolve, coerce, evaluate, load, save, split_roots,
 )
 
 # Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
@@ -44,7 +48,8 @@ parser = argparse.ArgumentParser(
     description="Add or update an entry in every experiment.json under a root.",
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
-parser.add_argument("root", help="Folder searched recursively for experiment.json files")
+parser.add_argument("root", help="Folder(s) searched recursively for experiment.json "
+                                 "files - comma-separated for more than one.")
 parser.add_argument("path", help="Dot-notation path to set, '*' fanning out over a list")
 parser.add_argument("value", nargs="?", default=None, help="Literal value to write")
 parser.add_argument("--expr", metavar="EXPR",
@@ -68,7 +73,7 @@ if args.value is not None and args.expr is not None:
 parts = args.path.split(".")
 updated = skipped = errors = 0
 
-for path in find_experiments(args.root):
+for path in find_experiments(split_roots(args.root)):
     doc = load(path)
     written = []
     # create=True: a path that does not exist yet is what this script is for. It only
