@@ -20,8 +20,10 @@ class OptimizerBase(ABC):
     # Attributes dropped on pickling because they do not survive it.
     _unpicklable_attrs: tuple[str, ...] = ()
 
-    # What proposed the observations, written into every record this optimizer saves.
-    experiment_type: str = "base"
+    # What proposed the observations - the arm, not whether it was simulated or run for
+    # real (see to_json's "experiment_type", a separate axis). Written into every record
+    # this optimizer saves.
+    optimizer_type: str = "base"
 
     def __init__(
             self,
@@ -250,7 +252,7 @@ class OptimizerBase(ABC):
     def source(self) -> list[str]:
         """What produced each observation, one entry per row of X: "initial" for the
         initial design, else whatever the caller named the batch (the tutorials use
-        "proposed"), falling back to this optimizer's experiment_type. A copy, so the
+        "proposed"), falling back to this optimizer's optimizer_type. A copy, so the
         history cannot be rewritten from outside."""
         return list(self._source)
 
@@ -742,7 +744,7 @@ class OptimizerBase(ABC):
             # Unnamed batches are the arm's own proposals, so only the initial design has
             # to say what it is.
             n_new = new_X.shape[0]
-            self._source[len(self._source) - n_new:] = [source or self.experiment_type] * n_new
+            self._source[len(self._source) - n_new:] = [source or self.optimizer_type] * n_new
 
     def update_Y_obj(self, new_Y_obj: torch.Tensor, new_Y_obj_var: torch.Tensor | None = None):
         if new_Y_obj is not None:
@@ -842,7 +844,7 @@ class OptimizerBase(ABC):
 
         payload = {
             "datetime": self._datetime.isoformat(),
-            "experiment_type": self.experiment_type,
+            "experiment_type": self.optimizer_type,
             "observation_n": list(range(n_observations - q, n_observations)),
             "batch_size": q,
             "data": {
@@ -910,7 +912,13 @@ class OptimizerBase(ABC):
 
         payload = {
             "datetime": self._datetime.isoformat(),
-            "experiment_type": self.experiment_type,
+            # Real rig data vs a simulated trial. Anything to_json writes is a
+            # simulated trial by construction - a real rig's own record is built by
+            # convert_metadata.py instead, which marks it "experimental".
+            "experiment_type": "synthetic",
+            # Which arm proposed the point - orthogonal to experiment_type above, and
+            # to a data row's own source (initial/proposed).
+            "optimizer": self.optimizer_type,
             "batch_size": q,
             "data": data,
         }

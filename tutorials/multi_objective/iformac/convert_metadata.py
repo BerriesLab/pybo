@@ -146,13 +146,20 @@ for path, meta, values in parsed:
             named[name][label] = mapping[label](values, objective)
             named[name][f"{label}_var"] = None
 
-    experiment_type = (meta.get("experiment_type") or "unknown").lower()
+    # The rig's own "experiment_type" field names the arm ("bayesian", "manual"); pybo's
+    # schema uses that key for something else (see below), so it lands under "optimizer".
+    optimizer = (meta.get("experiment_type") or "unknown").lower()
     source = args.source or ("initial" if path in initial_paths else "proposed")
     records.append((
         (Path(args.out).resolve() / path.parent.name if args.out else path.parent) / "experiment.json",
         {
             "datetime": datetime.fromtimestamp(meta["start_time"]).isoformat(),
-            "experiment_type": experiment_type,
+            # Real rig data vs a simulated trial - orthogonal to "optimizer" (which arm
+            # proposed the point): this row came off the real rig, not a simulated
+            # trial - see OptimizerBase.to_json, which marks its own output "synthetic"
+            # for the same reason.
+            "experiment_type": "experimental",
+            "optimizer": optimizer,
             "batch_size": 1,
             "data": [{
                 "observation_n": len(records),

@@ -49,6 +49,10 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             "experiment_id":          entry["experiment_id"],
             "experiment_type":        entry["experiment_type"],
             "technology":             entry.get("technology"),
+            # "experimental" (real rig) or "synthetic" (a pybo trial) - orthogonal to
+            # technology and to a row's own source. None on a record from before this
+            # field existed.
+            "provenance":             entry.get("provenance"),
             # Which run produced it. The rig had no equivalent - one machine, one
             # sequence - but a campaign here spans several independent runs.
             "run":                    entry.get("run"),

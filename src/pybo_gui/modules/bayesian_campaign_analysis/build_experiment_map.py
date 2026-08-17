@@ -13,6 +13,11 @@ original made about a repeated setting.
 `experiment_type` is what the scripts label, colour and draw a separate Pareto front by,
 so what goes into it decides what a front is drawn per - see LABEL_BY. `technology`
 carries the arm ("bayesian" / "sobol") whatever the labelling, so nothing else loses it.
+
+That "experiment_type" is a map-level field this module computes, not to be confused
+with the step record's own "experiment_type" key, which means something else again -
+real rig data vs a simulated trial. The record's arm lives under "optimizer" instead.
+Both of the record's fields survive into the map, as `technology` and `provenance`.
 """
 import argparse
 import json
@@ -92,7 +97,10 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
         step_dir = path.parent
         record = json.loads(path.read_text(encoding="utf-8"))
         run = step_dir.parent.name
-        technology = record.get("experiment_type")
+        # The step record's own "experiment_type" means something else entirely (real
+        # rig data vs a simulated trial - see "provenance" below); the arm comes from
+        # "optimizer" instead.
+        technology = record.get("optimizer")
         for observation in record.get("data", []):
             # Values only. A record always carries a <label>_var partner and leaves it
             # null when the run measured no noise, and an unmeasured column is not
@@ -112,6 +120,12 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
                 "experiment_type": _label_for(observation, technology, run, label_by),
                 "source":          observation.get("source"),
                 "technology":      technology,
+                # Real rig data vs a simulated trial - the step record's own
+                # "experiment_type", orthogonal to technology (which arm proposed the
+                # point) and to source (initial vs proposed). Missing on a record
+                # written before this field existed; callers that care read that as
+                # unknown rather than assuming either.
+                "provenance":      record.get("experiment_type"),
                 "start_time":      _epoch(record.get("datetime")),
                 "run":             run,
                 "path":            str(step_dir),

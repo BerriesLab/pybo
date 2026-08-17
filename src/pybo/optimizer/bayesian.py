@@ -30,7 +30,7 @@ class BayesianOptimizer(OptimizerBase):
     single-objective and multi-objective optimization.
     """
 
-    experiment_type = "bayesian"
+    optimizer_type = "bayesian"
 
     # The MC sampler and the acquisition function instances do not survive pickling.
     _unpicklable_attrs = ("_acquisition_function", "_sampler", "_acq_func_list")
