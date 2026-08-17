@@ -250,9 +250,14 @@ for name, items in series.items():
 all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
 
 # The runs of each arm, in the order their traces were built, ready to be averaged.
+# n_initial travels alongside each curve so the aggregated view can shade its own
+# initial-design span, the same distinction the single-campaign view draws.
 arm_curves = {}
-for name, (_s_steps, s_hvs, _s_labels) in traces.items():
-    arm_curves.setdefault(series_arm[name], []).append(s_hvs)
+arm_n_initial = {}
+for name, (_s_steps, s_hvs, s_labels) in traces.items():
+    arm = series_arm[name]
+    arm_curves.setdefault(arm, []).append(s_hvs)
+    arm_n_initial.setdefault(arm, []).append(sum(1 for lbl in s_labels if is_initial(lbl)))
 
 if args.aggregate_runs and args.improvement:
     # Both rewrite what a point on the curve means, and stacking them would average
@@ -356,6 +361,24 @@ elif args.aggregate_runs:
         legend_handles.append(mlines.Line2D(
             [], [], color=_color(arm), linewidth=1.6,
             label=f"{arm.capitalize()} - {band_label(args.band, len(arm_curves[arm]))}"))
+    # Where the initial design ends, common to every run of every arm plotted - the
+    # smallest across all of them, so a run with a longer design just loses a step or
+    # two of shading rather than the span claiming a run is still initial past the
+    # point it moved on. One neutral grey span behind everything - not an arm's own
+    # colour, since the design is shared by every arm, not particular to one - and not
+    # one per arm either: arms share the same design window, so a second hatch on top
+    # of the first would only double the ink over the one region, not add information.
+    all_n_init = [n for lengths in arm_n_initial.values() for n in lengths]
+    if all_n_init:
+        n_init = min(all_n_init)
+        if len(set(all_n_init)) > 1:
+            print(f"! runs disagree on the initial design's length "
+                  f"({min(all_n_init)}-{max(all_n_init)} steps) - shading only the "
+                  f"first {n_init}, common to all of them.")
+        if n_init > 0:
+            neutral = fig_cfg["colors"].get("ground_truth", "#8A8F98")
+            ax.axvspan(0.5, n_init + 0.5, color=neutral, alpha=0.14,
+                      hatch="//", linewidth=0, zorder=1)
     # Runs of one arm rarely stop at the same step; the shortest is what they were
     # truncated to, and saying so keeps a curve that ends early from reading as a run
     # that stalled. Reported per arm, since each is truncated to its own shortest and
