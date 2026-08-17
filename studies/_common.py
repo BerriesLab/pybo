@@ -46,7 +46,13 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="q-batch size per trial.")
     parser.add_argument("--n-initial", type=int_list, default=None,
                         help="Initial sample count(s) per trial, comma-separated for a sweep (e.g. 5,10,20). "
-                             "Each value is a separate setting, replicated. Defaults to the target CLI's own default.")
+                             "Each value is a separate setting, replicated. Defaults to the target CLI's own default. "
+                             "With --init-data, each value keeps only the first that many recorded initial points.")
+    parser.add_argument("--init-data", type=Path, default=None,
+                        help="Load every trial's initial design from a previous run's step records "
+                             "instead of drawing a fresh one, so every replicate - and, run twice with "
+                             "--strategy bo and --strategy sobol, both arms - starts from the exact same "
+                             "dataset. Forwarded unchanged to every trial.")
     parser.add_argument("--base-seed", type=int, default=2063,
                         help="First seed; trials increment from here.")
     parser.add_argument("--n-replicates", type=int, default=5,

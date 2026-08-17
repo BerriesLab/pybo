@@ -13,6 +13,7 @@ from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
+from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
 from tutorials.multi_objective.vformac.objective import VFormAC
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,7 +22,7 @@ DTYPE = torch.float64
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
-         repeats: int = 1, noise: bool = False):
+         repeats: int = 1, noise: bool = False, init_data: Path = None):
     """ Make directory """""
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -51,11 +52,24 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
         ),
     )
 
-    """ Draw the initial parameter set """
-    n_initial = n_initial or 5 * (objective.dim + 1)
-    n_initial = math.ceil(n_initial / q) * q
+    """ Draw or load the initial parameter set """
     sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
-    X_initial = sampler.draw_samples(n=n_initial)
+    initial = None
+    if init_data is not None:
+        # A recorded warm start, not a fresh draw: --n-initial then means "keep only
+        # the first this many", so the sampler below is unused for X but is still built,
+        # since the sobol arm reuses it to continue that sequence for its proposals.
+        initial = load_initial_dataset(init_data, objective, n_initial=n_initial)
+        X_initial = initial["X"].to(device=device, dtype=DTYPE)
+        n_initial = X_initial.shape[0]
+        print(f"Loaded {n_initial} initial point{'' if n_initial == 1 else 's'} from {init_data}")
+    else:
+        n_initial = n_initial or 5 * (objective.dim + 1)
+        n_initial = math.ceil(n_initial / q) * q
+        X_initial = sampler.draw_samples(n=n_initial)
+    # Nothing here reads this back - it is the hand-off to whoever (or whatever machine
+    # control software) actually sets these points on the rig: a flat table in the
+    # parameters' real units, rather than the nested, machine-oriented experiment.json.
     X_np = X_initial.detach().cpu().numpy()
     np.savetxt(run_dir / "output.csv", X_np, delimiter=",",
                header=", ".join(cfg.label for cfg in objective.par_cfg))
@@ -85,13 +99,17 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
               f"returns the same values, so the extra rows carry no information.")
 
     """ Main optimization loop """
-    n_initial_steps = n_initial // q
+    # ceil, not //: a loaded initial dataset need not divide evenly by q, and the last
+    # batch is then just smaller rather than dropping a recorded point.
+    n_initial_steps = math.ceil(n_initial / q)
     n_steps = n_initial_steps + int(n_evals / q)
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
-    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
-    n_measurements = (n_initial + n_evals) * repeats
+    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats.
+    # A loaded initial design is already-measured data - it is read once, not repeated.
+    n_measurements = n_initial + n_evals * repeats if init_data is not None \
+        else (n_initial + n_evals) * repeats
     pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
 
     for i in range(n_steps):
@@ -114,21 +132,27 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             """ Take the next batch of the initial design """
             new_X = X_initial[i * q:(i + 1) * q]
 
-        """ Simulate the experiment at new X, once per repetition """
-        for rep in range(repeats):
+        # A loaded initial row is already-measured data - read once, not repeated the
+        # way a fresh simulated measurement is.
+        loaded_initial = not modelling and init_data is not None
+        reps = 1 if loaded_initial else repeats
+
+        """ Simulate the experiment at new X, once per repetition - or read it back, for
+        a loaded initial row """
+        for rep in range(reps):
             step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
             step_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(step_dir)
-            new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
-            new_Y_trk = objective.evaluate_tracker(new_X, noisy=noisy)
+            if loaded_initial:
+                sl = slice(i * q, (i + 1) * q)
+                updates = slice_initial_batch(initial, sl, device=device, dtype=DTYPE)
+            else:
+                new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
+                new_Y_trk = objective.evaluate_tracker(new_X, noisy=noisy)
+                updates = {"new_Y_obj": new_Y_obj, "new_Y_trk": new_Y_trk}
             if verbose:
-                print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
-            bo.update_XY(
-                new_X=new_X,
-                new_Y_obj=new_Y_obj,
-                new_Y_trk=new_Y_trk,
-                source=source
-            )
+                print(f"New Y_obj: {updates['new_Y_obj'].detach().cpu().numpy()}")
+            bo.update_XY(new_X=new_X, source=source, **updates)
 
             """ Save the running summary (run root) and this measurement's record """
             bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
@@ -162,4 +186,5 @@ if __name__ == "__main__":
         strategy=args.strategy,
         repeats=args.repeats,
         noise=args.noise,
+        init_data=args.init_data,
     )

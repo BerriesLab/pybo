@@ -111,7 +111,15 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "Acted on by the tutorials wired for it; the rest ignore it.")
     parser.add_argument("--n-initial", type=int, default=None,
                         help="Number of initial samples, measured inside the loop before the first "
-                             "proposal (defaults to 5*(dim+1), rounded up to a multiple of q).")
+                             "proposal (defaults to 5*(dim+1), rounded up to a multiple of q). With "
+                             "--init-data, keeps only the first this many recorded initial points "
+                             "instead of sizing a fresh draw.")
+    parser.add_argument("--init-data", type=Path, default=None,
+                        help="Load the initial design from a previous run's step records instead "
+                             "of drawing one with Sobol: every observation with source == "
+                             "'initial' found under this path (a run, or a whole study), in the "
+                             "order it was measured. --n-initial then keeps only the first that "
+                             "many, and is an error if fewer were recorded.")
     parser.add_argument("--seed", type=int, default=2063, help="Seeds the global torch RNG.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
@@ -125,7 +133,8 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "function, or sobol by a constrained random draw - the baseline "
                              "the optimizer is measured against. The initial design is drawn "
                              "the same way for both, so with the same --seed the two arms "
-                             "start from an identical dataset.")
+                             "start from an identical dataset - or pass --init-data to start "
+                             "them from a recorded one instead.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     return parser
 

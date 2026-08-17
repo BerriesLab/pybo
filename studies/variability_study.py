@@ -44,6 +44,7 @@ def main():
                     "--n-evals": args.n_evals,
                     "--q-batch": args.q_batch,
                     "--n-initial": n_initial,
+                    "--init-data": args.init_data,
                     "--seed": seed,
                     "--strategy": args.strategy,
                     "--noise": args.noise,
