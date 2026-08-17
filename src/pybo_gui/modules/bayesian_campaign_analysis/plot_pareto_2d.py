@@ -34,8 +34,11 @@ parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem
 parser.add_argument("--show-numbers", action="store_true", default=False)
 parser.add_argument("--aggregate-runs", action="store_true", default=False,
                     help="Replace the per-run fronts with one mean front per arm, read "
-                         "onto a shared grid, plus a band. 2-D only, and only over the "
-                         "range every run of the arm covers.")
+                         "onto a shared grid, plus a band. 2-D only. The grid spans "
+                         "every run's range; where a run hasn't reached a given point "
+                         "it drops out of that point's mean instead of the whole arm "
+                         "being skipped, so the band widens - or the line thins to a "
+                         "single run - toward the edges.")
 parser.add_argument("--band", default="ci95", choices=BAND_MODES,
                     help="What the band around the aggregated front shows (default: "
                          "%(default)s).")

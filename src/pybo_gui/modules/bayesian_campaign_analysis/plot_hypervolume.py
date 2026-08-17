@@ -11,7 +11,7 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
-from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
+from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_initial, styler
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, band_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -240,15 +240,22 @@ fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
 
 if len(traces) == 1 and not args.aggregate_runs:
     # One campaign: shade where each phase of it ran, as the single-sequence view did.
+    # Initial and proposed share a colour by design (_labels.styler pairs a design with
+    # the proposals it belongs to, so marker and dash are what tell them apart there) -
+    # two same-coloured spans side by side would just read as one continuous background,
+    # so the initial span also gets a hatch and a touch more alpha to stay a region of
+    # its own rather than blending into the one after it.
     steps, _hvs, labels = next(iter(traces.values()))
     prev_lbl     = labels[0]
     region_start = steps[0]
     for i in range(1, len(steps) + 1):
         lbl = labels[i] if i < len(labels) else None
         if lbl != prev_lbl or i == len(steps):
+            initial = is_initial(prev_lbl)
             ax.axvspan(
                 region_start - 0.5, steps[i - 1] + 0.5,
-                color=_color(prev_lbl), alpha=0.08,
+                color=_color(prev_lbl), alpha=0.14 if initial else 0.08,
+                hatch="//" if initial else None, linewidth=0,
             )
             if i < len(steps):
                 region_start = steps[i]

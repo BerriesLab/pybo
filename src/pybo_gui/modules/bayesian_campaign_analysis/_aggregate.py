@@ -95,37 +95,46 @@ def band_label(mode: str, n: int) -> str:
 
 
 def attainment_grid(fronts, n_points: int = 200):
-    """A shared x grid over the range every front covers, for averaging 2-D fronts.
+    """A shared x grid over the range any front covers, for averaging 2-D fronts.
 
     `fronts` are (x, y) sequences, each already sorted by x. A Pareto front is a curve in
     objective space rather than a series over steps, so runs cannot be averaged position
     by position: their points sit at x values none of the others visited. They are read
     onto a common grid instead.
 
-    The grid spans the *overlap* of the runs, not their union: outside it at least one
-    run has no front, and averaging there would either extrapolate it or quietly drop it
-    and change what n means partway along the curve.
+    The grid spans the *union* of the runs, not their overlap: a run that never reached a
+    given x has not attained it, the same way a run that hasn't reached a given step in
+    mean_band hasn't attained anything there yet - both are left NaN by step_interpolate
+    rather than extrapolated, and mean_band already averages only over the runs that have
+    a real value at each point, so n is honest at every x rather than forcing every run to
+    share one range.
     """
     spans = [(min(x), max(x)) for x, _ in fronts if len(x)]
     if not spans:
         raise ValueError("no fronts to aggregate")
-    lo = max(s[0] for s in spans)
-    hi = min(s[1] for s in spans)
+    lo = min(s[0] for s in spans)
+    hi = max(s[1] for s in spans)
     if not hi > lo:
-        raise ValueError("the fronts share no common range to average over")
+        raise ValueError("every front is a single point - nothing to grid over")
     return np.linspace(lo, hi, n_points)
 
 
 def step_interpolate(x, y, grid):
     """`y` read onto `grid` as a staircase: at each grid point, the y of the last front
-    point at or before it.
+    point at or before it - or NaN where the grid point falls outside [x[0], x[-1]],
+    since that run never evaluated anything that far out.
 
-    Deliberately not linear. A front built from finitely many evaluations is an
-    attainment staircase - between two of its points the run achieved the earlier one and
-    nothing better. Interpolating linearly would draw a front through points no run ever
-    reached, and would flatter every arm equally without saying so.
+    Deliberately not linear between two of a front's own points either: a front built
+    from finitely many evaluations is an attainment staircase - between two of its points
+    the run achieved the earlier one and nothing better. Interpolating linearly would draw
+    a front through points no run ever reached, and would flatter every arm equally
+    without saying so.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
-    idx = np.searchsorted(x, np.asarray(grid, dtype=float), side="right") - 1
-    return y[np.clip(idx, 0, len(y) - 1)]
+    grid = np.asarray(grid, dtype=float)
+    idx = np.searchsorted(x, grid, side="right") - 1
+    out = np.full(grid.shape, np.nan)
+    covered = (idx >= 0) & (grid <= x[-1])
+    out[covered] = y[idx[covered]]
+    return out

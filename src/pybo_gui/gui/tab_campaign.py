@@ -737,7 +737,11 @@ def build(step_list, settings) -> QWidget:
               on_done=lambda: post("Done."),
               on_fail=lambda codes: post(
                   f"{script} exited with {codes[0]} — see its console. "
-                          f"Exit 2 is a constraint that would not parse."))
+                          f"Exit 2 is a constraint that would not parse."),
+              # The script's own console, which nothing else here shows - a plot that
+              # still exits 0 (an arm skipped for lack of a common range, say) has no
+              # other way to say so.
+              on_output=lambda line: post(f"{script}: {line}"))
 
     def _aggregate_args() -> list:
         """The flags for collapsing an arm's runs into one curve, or nothing when off."""
