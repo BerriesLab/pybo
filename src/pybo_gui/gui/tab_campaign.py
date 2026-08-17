@@ -490,6 +490,10 @@ def build(step_list, settings) -> QWidget:
             return
         state["problem"] = problem
         _refresh_keys()
+        # The Parameters box now shows the objective's own resolutions; a map already
+        # built from before was grouped at whatever was there previously (typically
+        # blank, i.e. compared as measured), so it has to be regrouped to match.
+        _regroup()
         _sync_ground_truth()
         unload_btn.setEnabled(True)
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
@@ -509,6 +513,9 @@ def build(step_list, settings) -> QWidget:
         post(_NO_OBJECTIVE)
         unload_btn.setEnabled(False)
         _refresh_keys()
+        # Same reasoning as loading: whatever resolutions the boxes show now may differ
+        # from what the map was last grouped at, so a map already built has to catch up.
+        _regroup()
         _sync_ground_truth()
 
     def _browse_objective() -> None:

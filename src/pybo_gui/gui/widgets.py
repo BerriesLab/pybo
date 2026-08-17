@@ -196,7 +196,11 @@ def make_parameters_widget(on_change=None):
         rows.clear()
         for key in keys:
             spec = (specs or {}).get(key) or {}
-            if key in previous:
+            if previous.get(key):
+                # A blank box is not an override - it is what a row looks like before
+                # any objective has spoken for it, and letting it win would mean the
+                # objective's own resolution can never reach the box once the map has
+                # been built once.
                 text = previous[key]
             else:
                 value = spec.get("resolution")
