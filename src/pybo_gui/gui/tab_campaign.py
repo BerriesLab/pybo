@@ -1,8 +1,13 @@
-"""The campaign-analysis tab.
+"""The campaign-analysis tabs: the constructor, and the plots.
 
 Turns a step selection plus a problem definition into a pybo_gui.modules.bayesian_campaign_analysis command line.
-The tab draws nothing itself: every button launches the matching analysis module, which
+The tabs draw nothing themselves: every button launches the matching analysis module, which
 stays runnable from a terminal with the same flags.
+
+Two pages, one `build`: the constructor assembles the campaign - the experiment map, the
+objective behind it, the resolutions that decide what counts as one setting - and the plot
+page turns it into figures. They share every bit of that, so they are built in one closure
+and returned as a pair rather than each holding half of it.
 
 Load objective is what fills the tab in - the step records name their values but carry no
 problem definition, so the axis keys, the min/max senses and the hypervolume reference
@@ -191,15 +196,23 @@ def _axis_row(prefix: str, combo: QComboBox, entry: QLineEdit):
     return row, lead, toggle
 
 
-def build(step_list, settings) -> QWidget:
-    """Construct the tab.
+def build(step_list, settings) -> tuple[QWidget, QWidget]:
+    """Construct the two pages, constructor first: what assembles a campaign, and what
+    plots it.
 
     `step_list` is the selector window it reads the selection from; `settings` is the
     shared object the Settings tab writes, read at launch so a style change applies to
     the next plot without rebuilding anything.
     """
+    # Two pages, one closure. The tab is split in two - assembling the campaign, and
+    # plotting it - but the halves share one state, one map and one set of key lists:
+    # loading an objective repopulates the axis combos, and a plot click rebuilds the map
+    # from the current selection. Built together and handed back as a pair, so neither of
+    # those has to reach across a module boundary to find the other.
     page = QWidget()
     layout = QVBoxLayout(page)
+    plot_page = QWidget()
+    plot_page_layout = QVBoxLayout(plot_page)
     # "source" records where the map came from: a selection rebuild, or a file the
     # user loaded. A loaded map must survive the next plot click rather than being
     # silently rebuilt from a selection it has nothing to do with.
@@ -255,7 +268,7 @@ def build(step_list, settings) -> QWidget:
     count_buttons["1"].setToolTip("A single-objective campaign: the objective over its "
                                   "parameters, and the best value it reached")
     count_buttons["2"].setChecked(True)
-    layout.addWidget(count_row)
+    plot_page_layout.addWidget(count_row)
 
     def _n_objectives() -> str:
         button = count_group.checkedButton()
@@ -283,13 +296,15 @@ def build(step_list, settings) -> QWidget:
         axes_layout.addWidget(row)
     for combo, entry in ((x_combo, x_entry), (y_combo, y_entry), (z_combo, z_entry)):
         bind_label_entry(combo, entry)
-    layout.addWidget(axes_box)
+    plot_page_layout.addWidget(axes_box)
 
     nd_box, nd_collect, nd_set_keys = make_objective_checklist()
-    layout.addWidget(nd_box)
+    plot_page_layout.addWidget(nd_box)
 
+    # With the plots: a constraint decides which observations count towards a front or a
+    # hypervolume, which is a question about the figure rather than about the campaign.
     con_box, con_collect, con_set_keys = make_constraints_widget()
-    layout.addWidget(con_box)
+    plot_page_layout.addWidget(con_box)
 
     trk_box, trk_set_keys = make_trackers_widget()
     layout.addWidget(trk_box)
@@ -398,15 +413,16 @@ def build(step_list, settings) -> QWidget:
                                cb_front, cb_design_front))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
-    layout.addWidget(plot_box)
+    plot_page_layout.addWidget(plot_box)
 
     # ---- Diagnostics ---------------------------------------------------------
     # The campaign-wide plots that take no axis selection: one row each, as in the
     # original tab's diagnostic frame.
     diag_box = QGroupBox("Diagnostic tools")
     diag_layout = QVBoxLayout(diag_box)
-    layout.addWidget(diag_box)
+    plot_page_layout.addWidget(diag_box)
     layout.addStretch()
+    plot_page_layout.addStretch()
 
     # ---- Key discovery -------------------------------------------------------
 
@@ -951,4 +967,4 @@ def build(step_list, settings) -> QWidget:
 
     _on_objective_count_change()
     _sync_ground_truth()
-    return page
+    return page, plot_page

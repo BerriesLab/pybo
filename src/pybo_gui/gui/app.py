@@ -2,8 +2,7 @@
 
     python -m pybo_gui.gui.app [data directory]
 
-Owns the tab and the Steps selector window it reads from. One tab for now; the
-QTabWidget is kept so a second one costs an addTab.
+Owns the tabs and the Steps selector window they read from.
 """
 import sys
 from pathlib import Path
@@ -36,8 +35,11 @@ class MainWindow(QMainWindow):
         self.settings = Settings()
 
         tabs = QTabWidget()
-        tabs.addTab(tab_campaign.build(self.step_list, self.settings),
-                    "Bayesian campaign analysis")
+        # One call, two pages: assembling a campaign and plotting it are separate tabs but
+        # not separate state - see tab_campaign.build.
+        constructor, plots = tab_campaign.build(self.step_list, self.settings)
+        tabs.addTab(constructor, "Bayesian campaign constructor")
+        tabs.addTab(plots, "Plot")
         tabs.addTab(tab_settings.build(self.settings), "Settings")
         self.setCentralWidget(tabs)
 
