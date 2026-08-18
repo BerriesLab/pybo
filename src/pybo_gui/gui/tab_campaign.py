@@ -82,6 +82,25 @@ def _view_json_dialog(parent: QWidget, payload, title: str) -> None:
     dlg.show()
 
 
+class _GroupItem(QTreeWidgetItem):
+    """A group map row that sorts a column by number when it holds numbers.
+
+    Qt compares the cell text, which reads wrong down a parameter column: 10 lands before
+    9, and a group with no value there ("None") sorts wherever the alphabet puts it.
+    Numbers are compared as numbers, and anything else falls back to the text - so the
+    cells with no number gather at one end instead of interleaving.
+    """
+
+    def __lt__(self, other):
+        tree = self.treeWidget()
+        column = tree.sortColumn() if tree is not None else 0
+        mine, theirs = self.text(column), other.text(column)
+        try:
+            return float(mine) < float(theirs)
+        except ValueError:
+            return mine < theirs
+
+
 def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
     dlg = QDialog(parent)
     dlg.setWindowTitle("Group map")
@@ -108,9 +127,15 @@ def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
     tree.setHeaderLabels(cols)
     tree.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     for g in groups:
-        item = QTreeWidgetItem([str(g.get(c, "")) for c in cols])
+        item = _GroupItem([str(g.get(c, "")) for c in cols])
+        # The group_id travels with the row rather than being read back out of a cell, so
+        # the detail pane keeps working however the rows are ordered.
         item.setData(0, Qt.ItemDataRole.UserRole, g.get("group_id"))
         tree.addTopLevelItem(item)
+    # After the rows are in: sorting while inserting re-sorts on every append.
+    tree.header().setSortIndicatorShown(True)
+    tree.setSortingEnabled(True)
+    tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
     splitter.addWidget(tree)
 
     detail_box = QWidget()
