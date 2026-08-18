@@ -85,10 +85,11 @@ signs = [-1.0 if k in maximize else 1.0 for k in objective_keys]
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
 OUTPUT_DIR = data_path
 REF_MARGIN = 0.10  # reference point sits this fraction of the data range beyond the worst
-# Baseline groups (by `optimizer`, which on a run no optimizer proposed carries the
-# technology that did) excluded from the hypervolume improvement curve: they are
-# reference points, not part of the optimisation campaign.
-EXCLUDED_OPTIMIZERS = {"standard", "reference"}
+# Technologies excluded from the hypervolume curve: they are reference points, not part
+# of the optimisation campaign. Keyed on what produced the measurement rather than on the
+# arm that chose it, because a reference run has no arm to be keyed on - the machine's own
+# technology, measured as a baseline, records no optimizer at all.
+EXCLUDED_TECHNOLOGIES = {"standard", "reference"}
 
 MARKERS      = fig_cfg["markers"]["label"]
 LABEL_COLORS = fig_cfg["colors"]["label"]
@@ -111,7 +112,7 @@ rows = []
 for exp in load_experiments_from_map(MAP_PATH):
     # Skip baseline/reference groups — they are not part of the optimisation
     # campaign and must not contribute to the hypervolume improvement curve.
-    if str(exp.get("optimizer", "")).lower() in EXCLUDED_OPTIMIZERS:
+    if str(exp.get("technology") or "").lower() in EXCLUDED_TECHNOLOGIES:
         continue
     r = exp.get("results", {})
     raw = tuple(r.get(k) for k in objective_keys)
