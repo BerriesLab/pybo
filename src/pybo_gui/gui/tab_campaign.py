@@ -301,10 +301,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     nd_box, nd_collect, nd_set_keys = make_objective_checklist()
     plot_page_layout.addWidget(nd_box)
 
-    # With the plots: a constraint decides which observations count towards a front or a
-    # hypervolume, which is a question about the figure rather than about the campaign.
+    # With the campaign, not with the plots: what is feasible is a property of the problem,
+    # and the plots only read it. Typed in here for now - the objective already declares
+    # its constraints, and deducing them from it is what should eventually fill this box.
     con_box, con_collect, con_set_keys = make_constraints_widget()
-    plot_page_layout.addWidget(con_box)
+    layout.addWidget(con_box)
 
     trk_box, trk_set_keys = make_trackers_widget()
     layout.addWidget(trk_box)
