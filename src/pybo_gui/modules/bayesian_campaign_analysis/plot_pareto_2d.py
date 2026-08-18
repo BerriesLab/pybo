@@ -13,7 +13,7 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    DASHES, arm_label, arm_line_style, base_label, styler)
+    DASHES, arm_label, arm_line_style, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -66,6 +66,15 @@ parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
                          "infeasible ones are shown dimmed.")
+parser.add_argument("--front-scope", choices=["label", "initial-vs-all"], default="label",
+                    dest="front_scope",
+                    help="What each front is drawn over. label (default) draws one per "
+                         "series, which under --label-by run or strategy is already the "
+                         "whole campaign, design points included. initial-vs-all draws "
+                         "two whatever the labelling: the initial design's own front, "
+                         "and the front over everything - so the pair says what proposing "
+                         "added to the dataset the run started from. Not applied when "
+                         "averaging runs, which draws one mean front per arm instead.")
 parser.add_argument("--front-line", choices=["auto", "always", "never"], default="auto",
                     dest="front_line",
                     help="Whether the non-dominated points are joined into a front line. "
@@ -468,37 +477,70 @@ if args.aggregate_runs:
             [], [], color=color, linewidth=1.4, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
-any_front = False
-for base in [] if args.aggregate_runs else sorted({base_label(lbl) for lbl in FRONT_LABELS}):
-    members = [r for r in valid if base_label(r["label"]) == base and r["feasible"]]
+if args.aggregate_runs:
+    front_groups = []
+elif args.front_scope == "initial-vs-all":
+    # The design and the campaign, not a series each: together they say what proposing
+    # added to the dataset the run started from. The second is the union, design points
+    # included - a front over the proposals alone draws a curve through points the design
+    # had already beaten, so it is not a front of anything the campaign attained.
+    front_groups = [
+        ("design", [r for r in valid if r["feasible"] and is_initial(r["label"])]),
+        ("overall", [r for r in valid if r["feasible"]]),
+    ]
+else:
+    # One front per *base* label, so a run's design and its proposals - one campaign,
+    # two series for styling - already share a front. Under --label-by provenance the
+    # bases are "initial" and "proposed" in their own right, which is the one labelling
+    # where asking for them apart draws the proposals alone.
+    front_groups = [
+        (base, [r for r in valid if base_label(r["label"]) == base and r["feasible"]])
+        for base in sorted({base_label(lbl) for lbl in FRONT_LABELS})
+    ]
+
+front_handles = {}
+for kind, members in front_groups:
     front = pareto_front([(r["x"], r["y"]) for r in members], sx, sy)
     if not front:
         continue
-    any_front = True
+    # The design's own front is the lighter statement of the two: where the run started,
+    # under the front it ended with.
+    design = kind == "design"
+    color = FRONT["design_color"] if design else FRONT["color"]
+    width = FRONT["design_linewidth"] if design else FRONT["linewidth"]
+    edge_width = FRONT["design_edge_width"] if design else FRONT["edge_width"]
+    dashes = DASHES["initial"] if design else DASHES["proposed"]
+    # Phased per series in the per-label mode, where several fronts share one style and
+    # coincident ones would otherwise hide each other; fixed in the two-front mode, where
+    # the dash is what tells the design from the campaign.
+    style = (0, dashes) if kind in ("design", "overall") else _front_style(kind)
+
     xs, ys = [p[0] for p in front], [p[1] for p in front]
     if draw_front:
-        ax.plot(xs, ys, color=FRONT["color"], linewidth=FRONT["linewidth"],
-                linestyle=_front_style(base), zorder=2)
+        ax.plot(xs, ys, color=color, linewidth=width, linestyle=style,
+                zorder=2 if design else 3)
     # Circle each point with the marker of the series it actually came from, so a surviving
     # design point still reads as exploration rather than as a proposal. Edged like the
     # line, so a front point and the front it lies on read as the same statement.
     markers_at = {(r["x"], r["y"]): _label_marker(r["label"]) for r in members}
     for x, y in front:
         ax.scatter([x], [y], s=SCATTER["marker_size"], marker=markers_at.get((x, y), "o"),
-                   facecolors="none", edgecolors=FRONT["edge_color"],
-                   linewidths=FRONT["edge_width"], zorder=4)
+                   facecolors="none", edgecolors=color, linewidths=edge_width,
+                   zorder=4 if design else 5)
 
-# One handle for the front, not one per series: every front is drawn in the same style
-# now, so naming it once says what it is without repeating a run's name per front - which
-# is what used to make the legend swallow the plot.
-if any_front:
-    legend_handles.append(mlines.Line2D(
-        [], [], color=FRONT["color"],
-        linewidth=FRONT["linewidth"] if draw_front else 0.0,
-        linestyle=(0, DASHES["proposed"]) if draw_front else "None",
-        marker="o", markerfacecolor="none", markeredgecolor=FRONT["edge_color"],
-        markeredgewidth=FRONT["edge_width"], markersize=SCATTER["marker_size"] ** 0.5,
-        label="Pareto front"))
+    # One handle per kind of front, not one per series: the fronts of several runs are
+    # drawn alike, so naming that once says what it is without repeating a run's name per
+    # front - which is what used to make the legend swallow the plot.
+    name = "Initial design front" if design else "Pareto front"
+    front_handles[name] = mlines.Line2D(
+        [], [], color=color,
+        linewidth=width if draw_front else 0.0,
+        linestyle=(0, dashes) if draw_front else "None",
+        marker="o", markerfacecolor="none", markeredgecolor=color,
+        markeredgewidth=edge_width, markersize=SCATTER["marker_size"] ** 0.5,
+        label=name)
+
+legend_handles.extend(front_handles.values())
 
 xlabel = args.xlabel if args.xlabel else PRETTY_NAMES.get(args.x, args.x)
 ylabel = args.ylabel if args.ylabel else PRETTY_NAMES.get(args.y, args.y)

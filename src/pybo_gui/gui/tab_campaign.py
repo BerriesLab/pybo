@@ -338,6 +338,12 @@ def build(step_list, settings) -> QWidget:
                         "constrained problem as well as an unconstrained one. There the "
                         "line is a guide: a trade-off between two front points is not "
                         "necessarily attainable.")
+    # 2-D only. The second front is the union, design points included - a front over the
+    # proposals alone would run through points the design had already beaten.
+    cb_design_front = QCheckBox("Design front")
+    cb_design_front.setToolTip("Also draw the initial design's own front, in grey under "
+                               "the campaign's. The pair says what proposing added to "
+                               "the dataset the run started from.")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
     cb_ground = QCheckBox("Ground truth")
@@ -388,7 +394,8 @@ def build(step_list, settings) -> QWidget:
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
-    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers, cb_front))
+    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers,
+                               cb_front, cb_design_front))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
     layout.addWidget(plot_box)
@@ -849,6 +856,8 @@ def build(step_list, settings) -> QWidget:
         # Said either way rather than left to the plot's own judgement: the checkbox is
         # the answer, constrained problem or not.
         extra += ["--front-line", "always" if cb_front.isChecked() else "never"]
+        if cb_design_front.isChecked():
+            extra += ["--front-scope", "initial-vs-all"]
         _launch("plot_pareto_2d", *extra)
 
     def _plot_hypervolume(improvement: bool) -> None:

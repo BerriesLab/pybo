@@ -72,6 +72,11 @@ pareto_front:
   linewidth: 2.0
   edge_color: black
   edge_width: 2.0
+  # The initial design's own front, drawn under the other one by --front-scope
+  # initial-vs-all. Grey and lighter: where the run started, not what it reached.
+  design_color: "#8A8F98"
+  design_linewidth: 1.4
+  design_edge_width: 1.4
 
 # --- Reference / threshold lines ---
 refline:
