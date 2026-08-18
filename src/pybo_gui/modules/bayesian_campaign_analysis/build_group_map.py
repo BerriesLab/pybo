@@ -68,6 +68,14 @@ def build_groups(exp_map: dict, resolutions: dict | None = None) -> list:
     seen = {}
     next_gid = 1
 
+    # Every parameter any observation in the map records, not just the ones a given group
+    # has: a selection spanning runs of different problems - or a reference run with no
+    # parameters at all - is one table, and a column missing from a row means that row
+    # never took a value there. Written as None rather than dropped, so the rows line up
+    # and the gap is visible instead of implied by a shorter row.
+    all_labels = sorted({label for entry in exp_map.get("experiments", [])
+                         for label in (entry.get("parameters") or {})})
+
     for entry in exp_map.get("experiments", []):
         key = _setting_key(entry, resolutions)
         if key not in key_to_gid:
@@ -88,9 +96,10 @@ def build_groups(exp_map: dict, resolutions: dict | None = None) -> list:
                 # pass is over.
                 "source": None,
                 # The parameters spread across the row, on the same grid the key used, so
-                # a group reads as the setting it stands for.
-                **{label: _snap(parameters[label], resolutions.get(label))
-                   for label in sorted(parameters)},
+                # a group reads as the setting it stands for. Every label in the map, so
+                # every group has the same columns; None where this one has no value.
+                **{label: _snap(parameters.get(label), resolutions.get(label))
+                   for label in all_labels},
                 "replicates": 0,
             }
             seen[next_gid] = {"experiment_type": set(), "source": set()}
