@@ -13,7 +13,7 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    arm_label, arm_line_style, base_label, styler)
+    DASHES, arm_label, arm_line_style, base_label, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -66,6 +66,13 @@ parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
                          "infeasible ones are shown dimmed.")
+parser.add_argument("--front-line", choices=["auto", "always", "never"], default="auto",
+                    dest="front_line",
+                    help="Whether the non-dominated points are joined into a front line. "
+                         "auto (default) draws one only on an unconstrained problem, "
+                         "where every trade-off between two front points is attainable; "
+                         "always and never make it the caller's decision instead, "
+                         "constrained or not.")
 args = parser.parse_args()
 try:
     constraints = parse_constraints(args.constraint)
@@ -80,6 +87,7 @@ OUTPUT_DIR = data_path
 MARKERS      = fig_cfg["markers"]["label"]
 LABEL_COLORS = fig_cfg["colors"]["label"]
 SCATTER      = fig_cfg["scatter"]
+FRONT        = fig_cfg["pareto_front"]
 
 FONT_LABEL  = fig_cfg["font"]["label"]
 FONT_LEGEND = fig_cfg["font"]["legend"]
@@ -287,6 +295,11 @@ else:
 # the problem declares constraints, or the plot was given some to enforce itself.
 constrained = gt_constrained or bool(constraints)
 
+# ...unless the caller has decided for itself. "auto" is the judgement above; always and
+# never answer the same question without consulting it, which is what lets a constrained
+# problem show its front line and an unconstrained one hide it.
+draw_front = {"auto": not constrained, "always": True, "never": False}[args.front_line]
+
 all_labels     = sorted({r["label"] for r in valid})
 legend_handles = [legend_handles_gt] if legend_handles_gt is not None else []
 _last_sc       = None
@@ -354,10 +367,10 @@ for lbl in [] if args.aggregate_runs else all_labels:
 
     legend_face = "gray" if use_z else _label_color(lbl)
     legend_handles.append(
-        # No dash in the handle when no front line is drawn, or it advertises one.
+        # Marker only: the front line is one style shared by every series, so it is named
+        # once by its own handle below rather than advertised on each of these.
         mlines.Line2D([], [], color=_label_color(lbl),
-                      linewidth=0.0 if constrained else 1.0,
-                      linestyle="None" if constrained else _front_style(lbl), marker=marker,
+                      linewidth=0.0, linestyle="None", marker=marker,
                       markerfacecolor=legend_face, markeredgecolor=SCATTER["edge_color"],
                       markeredgewidth=0.8, markersize=SCATTER["marker_size"] ** 0.5,
                       label=lbl.capitalize())
@@ -455,23 +468,37 @@ if args.aggregate_runs:
             [], [], color=color, linewidth=1.4, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
+any_front = False
 for base in [] if args.aggregate_runs else sorted({base_label(lbl) for lbl in FRONT_LABELS}):
     members = [r for r in valid if base_label(r["label"]) == base and r["feasible"]]
     front = pareto_front([(r["x"], r["y"]) for r in members], sx, sy)
     if not front:
         continue
-    color  = _label_color(base)
+    any_front = True
     xs, ys = [p[0] for p in front], [p[1] for p in front]
-    if not constrained:
-        ax.plot(xs, ys, color=color, linewidth=1.0, linestyle=_front_style(base), zorder=2)
+    if draw_front:
+        ax.plot(xs, ys, color=FRONT["color"], linewidth=FRONT["linewidth"],
+                linestyle=_front_style(base), zorder=2)
     # Circle each point with the marker of the series it actually came from, so a surviving
-    # design point still reads as exploration rather than as a proposal.
+    # design point still reads as exploration rather than as a proposal. Edged like the
+    # line, so a front point and the front it lies on read as the same statement.
     markers_at = {(r["x"], r["y"]): _label_marker(r["label"]) for r in members}
     for x, y in front:
         ax.scatter([x], [y], s=SCATTER["marker_size"], marker=markers_at.get((x, y), "o"),
-                   facecolors="none", edgecolors=color, linewidths=1.0, zorder=4)
-    # No handle here: the series' own entry already carries this front's colour and dash,
-    # and repeating the run's name once per front is what made the legend swallow the plot.
+                   facecolors="none", edgecolors=FRONT["edge_color"],
+                   linewidths=FRONT["edge_width"], zorder=4)
+
+# One handle for the front, not one per series: every front is drawn in the same style
+# now, so naming it once says what it is without repeating a run's name per front - which
+# is what used to make the legend swallow the plot.
+if any_front:
+    legend_handles.append(mlines.Line2D(
+        [], [], color=FRONT["color"],
+        linewidth=FRONT["linewidth"] if draw_front else 0.0,
+        linestyle=(0, DASHES["proposed"]) if draw_front else "None",
+        marker="o", markerfacecolor="none", markeredgecolor=FRONT["edge_color"],
+        markeredgewidth=FRONT["edge_width"], markersize=SCATTER["marker_size"] ** 0.5,
+        label="Pareto front"))
 
 xlabel = args.xlabel if args.xlabel else PRETTY_NAMES.get(args.x, args.x)
 ylabel = args.ylabel if args.ylabel else PRETTY_NAMES.get(args.y, args.y)

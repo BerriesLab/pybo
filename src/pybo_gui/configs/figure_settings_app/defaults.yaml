@@ -62,6 +62,17 @@ markers:
     random: "s"
     standard: "D"
 
+# --- Pareto front ---
+# The line joining the non-dominated points, and the ring drawn around each of them.
+# Black and heavy, so the front reads as the result over the observations it sits on;
+# which points are joined at all is a per-plot decision (plot_pareto_2d --front-line),
+# and the dash pattern still comes from the series, so coincident fronts stay apart.
+pareto_front:
+  color: black
+  linewidth: 2.0
+  edge_color: black
+  edge_width: 2.0
+
 # --- Reference / threshold lines ---
 refline:
   # plot_evolution draws the end of the initial design with this key. Named "delay" from

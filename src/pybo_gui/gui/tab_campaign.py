@@ -303,6 +303,16 @@ def build(step_list, settings) -> QWidget:
         "minmax": "Min/max - the plain range across the runs.",
     }
     cb_numbers = QCheckBox("Show numbers")
+    # 2-D only. Whether the non-dominated points are joined is not a judgement the plot
+    # can make for the user: on a constrained problem the line claims trade-offs a
+    # constraint may forbid, which is still worth drawing when the front is what the
+    # figure is about.
+    cb_front = QCheckBox("Front line")
+    cb_front.setChecked(True)
+    cb_front.setToolTip("Join the non-dominated points into a dashed front line, on a "
+                        "constrained problem as well as an unconstrained one. There the "
+                        "line is a guide: a trade-off between two front points is not "
+                        "necessarily attainable.")
     # The true objective behind the campaign. Only the objective knows it, so this stays
     # disabled until one is loaded.
     cb_ground = QCheckBox("Ground truth")
@@ -353,7 +363,7 @@ def build(step_list, settings) -> QWidget:
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
-    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers))
+    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers, cb_front))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
     plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
     layout.addWidget(plot_box)
@@ -811,6 +821,9 @@ def build(step_list, settings) -> QWidget:
             extra += ["--z", z, "--zlabel", z_entry.text()]
         extra += _sense_args((x, x_sense), (y, y_sense)) + _ground_truth_args()
         extra += _aggregate_args()
+        # Said either way rather than left to the plot's own judgement: the checkbox is
+        # the answer, constrained problem or not.
+        extra += ["--front-line", "always" if cb_front.isChecked() else "never"]
         _launch("plot_pareto_2d", *extra)
 
     def _plot_hypervolume(improvement: bool) -> None:
