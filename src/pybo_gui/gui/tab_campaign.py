@@ -291,7 +291,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout.addWidget(par_box)
 
     # ---- Axes ----------------------------------------------------------------
-    axes_box = QGroupBox("Objectives")
+    # "Axes", not "Objectives": what the rows pick is what the figure is drawn against,
+    # which with one objective is that objective over its parameters. The constructor tab
+    # has the box that says what the objectives are.
+    axes_box = QGroupBox("Axes")
     axes_layout = QVBoxLayout(axes_box)
     x_combo, y_combo, z_combo = QComboBox(), QComboBox(), QComboBox()
     x_entry, y_entry, z_entry = QLineEdit(), QLineEdit(), QLineEdit()
@@ -614,7 +617,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # One objective reads the same three rows as a landscape - the one objective, and
         # the one or two parameters it is drawn over - so only the objective's sense is
         # left live.
-        axes_box.setTitle("Objective and parameters" if is_single else "Objectives")
+        axes_box.setTitle("Axes: objective and parameters" if is_single else "Axes")
         x_lead.setText("objective:" if is_single else "x:")
         y_lead.setText("parameter:" if is_single else "y:")
         z_lead.setText("parameter 2:" if is_single else ("z:" if is_three else "z (colour):"))
