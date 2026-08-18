@@ -29,7 +29,7 @@ def main():
     # it, so a folder and the experiment_type inside it agree. Falling back to the trial
     # CLI's own default (pybo/utils/cli.py) means every run says which arm it was, not
     # only the ones that passed --strategy.
-    strategy = {"bo": "bayesian", "sobol": "sobol"}[args.strategy or "bo"]
+    strategy = {"bo": "bayesian", "sobol": "sobol", "random": "random"}[args.strategy or "bo"]
 
     n_initials = args.n_initial if args.n_initial is not None else [None]
     trials = []
