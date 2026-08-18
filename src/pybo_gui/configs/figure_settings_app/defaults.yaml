@@ -33,6 +33,7 @@ colors:
     bayesian: "#EE7733"
     sobol: "#0077BB"
     lhs: "#0077BB"          # same colour as sobol; distinguished by marker
+    random: "#009988"       # its own colour: the arm sobol itself is measured against
   # The true objective drawn under a campaign. Neutral and light, so it reads as the
   # backdrop the observations sit on rather than as another series.
   ground_truth: "#8A8F98"
@@ -57,6 +58,7 @@ markers:
     bayesian: "o"
     sobol: "^"
     lhs: "v"
+    random: "s"
 
 # --- Reference / threshold lines ---
 refline:

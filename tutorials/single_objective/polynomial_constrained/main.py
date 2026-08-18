@@ -8,6 +8,7 @@ from botorch.acquisition import *
 from gpytorch.constraints import Interval
 from gpytorch.kernels import *
 from pybo.optimizer.sobol import SobolOptimizer
+from pybo.optimizer.random import RandomOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from tutorials.single_objective.polynomial_constrained.objective import PolynomialConstrained
@@ -46,7 +47,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     X_initial = sampler.draw_samples(n=n_initial)
 
     """ Instantiate Bayesian optimizer """
-    optimizer_class = SobolOptimizer if strategy == "sobol" else BayesianOptimizer
+    optimizer_class = {"sobol": SobolOptimizer,
+                       "random": RandomOptimizer}.get(strategy, BayesianOptimizer)
     bo = optimizer_class(
         device=device,
         dtype=DTYPE,

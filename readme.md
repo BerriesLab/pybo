@@ -36,7 +36,7 @@ Version 0.3.0 currently supports:
 - The following analytical acquisition functions: EI, LogEI,
 - The following Monte Carlo based acquisition functions: qEHVI, qLogEHVI,
   qNEHVI, qLogNEHVI, qDWNEHVI, qEWNEHVI, qNParEGO.
-- The following samplers: UniformGrid, Sobol, LatinHypercube.
+- The following samplers: UniformGrid, Sobol, LatinHypercube, Random.
 - Easy-to-write custom objectives, including trackers and penalization.
 - A plotter library for objectives, optimization results and metrics.
 - CUDA, Apple Metal Framework, and CPU.
@@ -78,7 +78,7 @@ pyBO consists of the following packages (in alphabetical order):
   optimization loop.
 - [plotters](plotters): Includes classes for visualizing optimization results,
   trackers, metrics, and parameters evolution.
-- [samplers](samplers): Includes Uniform Grid, Sobol and Latin Hypercube
+- [samplers](samplers): Includes Uniform Grid, Sobol, Latin Hypercube and Random
   Samplers. Provides functionality for constrained sampling.
 - [utils](utils): Includes utility functions used across the package.
 

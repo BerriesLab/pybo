@@ -128,13 +128,16 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "cpu, cuda, or cuda:N. Force cpu when a run collapses on GPU "
                              "memory. mps (Apple Metal) works only if the tutorial is "
                              "dropped to float32, so auto never picks it.")
-    parser.add_argument("--strategy", default="bo", choices=["bo", "sobol"],
+    parser.add_argument("--strategy", default="bo", choices=["bo", "sobol", "random"],
                         help="How each new point is chosen: bo (default) by the acquisition "
-                             "function, or sobol by a constrained random draw - the baseline "
-                             "the optimizer is measured against. The initial design is drawn "
-                             "the same way for both, so with the same --seed the two arms "
-                             "start from an identical dataset - or pass --init-data to start "
-                             "them from a recorded one instead.")
+                             "function, sobol by a constrained draw from a low-discrepancy "
+                             "sequence, or random by an independent uniform one - the two "
+                             "baselines the optimizer is measured against, differing in "
+                             "whether the draws are spread by construction. The initial "
+                             "design is drawn the same way (Sobol) whichever is chosen, so "
+                             "with the same --seed every arm starts from an identical "
+                             "dataset - or pass --init-data to start them from a recorded "
+                             "one instead.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
     return parser
 

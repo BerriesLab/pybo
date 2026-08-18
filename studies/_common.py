@@ -50,19 +50,19 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                              "With --init-data, each value keeps only the first that many recorded initial points.")
     parser.add_argument("--init-data", type=Path, default=None,
                         help="Load every trial's initial design from a previous run's step records "
-                             "instead of drawing a fresh one, so every replicate - and, run twice with "
-                             "--strategy bo and --strategy sobol, both arms - starts from the exact same "
-                             "dataset. Forwarded unchanged to every trial.")
+                             "instead of drawing a fresh one, so every replicate - and, run once per "
+                             "--strategy, every arm - starts from the exact same dataset. Forwarded "
+                             "unchanged to every trial.")
     parser.add_argument("--base-seed", type=int, default=2063,
                         help="First seed; trials increment from here.")
     parser.add_argument("--n-replicates", type=int, default=5,
                         help="Independent repeats per setting, each with its own seed counted up from --base-seed.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to ./data/<experiment>/<timestamp>).")
-    parser.add_argument("--strategy", default=None, choices=["bo", "sobol"],
-                        help="Search strategy for every trial: bo, or sobol for the random "
-                             "baseline. Run the sweep twice, once each, with the same "
-                             "--base-seed, and the campaign analysis compares the two.")
+    parser.add_argument("--strategy", default=None, choices=["bo", "sobol", "random"],
+                        help="Search strategy for every trial: bo, or sobol / random for the "
+                             "two sampling baselines. Run the sweep once per arm with the "
+                             "same --base-seed, and the campaign analysis compares them.")
     parser.add_argument("--noise", type=str2bool, default=None,
                         help="Whether each trial measures through its objective's declared "
                              "noise. Left to the trial CLI's own default when not given.")
