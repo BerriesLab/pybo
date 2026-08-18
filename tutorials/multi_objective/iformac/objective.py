@@ -33,8 +33,8 @@ class IFormAC(MCMultiObjectiveBase):
     """
 
     _t_on = 78000  # ns
-    _orbiting_target = (21.28 + 20.88 + 23.28) / 3  # min
-    _delta = _orbiting_target / 100 * 10  # min
+    _orbiting_target = (21.28 + 20.88 + 23.28) / 3  # 21.81 min
+    _delta = _orbiting_target / 100 * 10  # 2.18 min
 
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(

@@ -69,7 +69,18 @@ parser.add_argument("--source", default=None,
                     help="Provenance recorded on every observation. Default: \"initial\" for "
                          "the earliest steps by start_time (see --n-initial), "
                          "\"proposed\" for the rest - the rig's experiment_type doesn't "
-                         "carry that distinction.")
+                         "carry that distinction. Under --no-parameters the default is "
+                         "\"manual\" instead, those runs being neither a design nor a "
+                         "proposal.")
+parser.add_argument("--no-parameters", action="store_true",
+                    help="Convert runs that record no parameters at all - the machine's "
+                         "own technology run as a baseline, which exposes none of the "
+                         "knobs the campaign searches over. Their records carry an empty "
+                         "parameters block, which is also what pools them: a group is "
+                         "keyed on (run, parameters), so every such run in one tree lands "
+                         "in one group and --grouped reports mean +- std over the repeats. "
+                         "Without this flag a step missing a parameter is a broken step, "
+                         "and is skipped and reported.")
 parser.add_argument("--n-initial", type=int, default=None,
                     help="How many of the earliest steps (by start_time) count as the "
                          "initial design and get source=\"initial\". Default: main.py's own "
@@ -78,6 +89,11 @@ parser.add_argument("--apply", action="store_true",
                     help="Actually write. Without it, the first record is previewed and "
                          "nothing is written.")
 args = parser.parse_args()
+
+# A baseline run is not expected to carry the parameter keys; everything the result maps
+# read is still required of it.
+required_keys = [key for key in REQUIRED_KEYS
+                 if not (args.no_parameters and key in PAR_MAP.values())]
 
 root = Path(args.root).resolve()
 # Any folder one layer down, not just step_NNN: collect_metadata can keep the rig's own
@@ -119,7 +135,8 @@ for path in steps:
 
     # Three steps record no parameters at all. They cannot be converted, and skipping is
     # the only option - but it is reported: a silently short campaign is worse than none.
-    missing = sorted(key for key in REQUIRED_KEYS if key not in values)
+    # Runs that carry none by design are converted instead, under --no-parameters.
+    missing = sorted(key for key in required_keys if key not in values)
     if missing:
         skipped.append((path.parent.name, missing))
         continue
@@ -148,8 +165,13 @@ for path, meta, values in parsed:
 
     # The rig's own "experiment_type" field names the arm ("bayesian", "manual"); pybo's
     # schema uses that key for something else (see below), so it lands under "optimizer".
-    optimizer = (meta.get("experiment_type") or "unknown").lower()
-    source = args.source or ("initial" if path in initial_paths else "proposed")
+    # A baseline run leaves it null and names its technology instead ("standard"), which
+    # is the arm in exactly the same sense - it is what produced the point.
+    optimizer = (meta.get("experiment_type") or meta.get("technology") or "unknown").lower()
+    # Ranking by start_time says which steps were the initial design; runs with no
+    # parameters are not a campaign at all, so there is no design among them to find.
+    source = args.source or ("manual" if args.no_parameters else
+                             "initial" if path in initial_paths else "proposed")
     records.append((
         (Path(args.out).resolve() / path.parent.name if args.out else path.parent) / "experiment.json",
         {
@@ -164,8 +186,10 @@ for path, meta, values in parsed:
             "data": [{
                 "observation_n": len(records),
                 "source": source,
-                # In the objective's own parameter order, which is the order to_json writes.
-                "parameters": {label: values[PAR_MAP[label]] for label in groups[0][2]},
+                # In the objective's own parameter order, which is the order to_json
+                # writes - or empty, for a run that has no parameters to record.
+                "parameters": {} if args.no_parameters else
+                              {label: values[PAR_MAP[label]] for label in groups[0][2]},
                 "objectives": named["objectives"],
                 "constraints": named["constraints"],
                 "trackers": named["trackers"],
