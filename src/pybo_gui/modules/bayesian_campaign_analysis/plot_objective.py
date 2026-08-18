@@ -101,7 +101,7 @@ sense = -1.0 if args.objective in set(args.maximize) else 1.0
 
 
 def _label(exp):
-    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+    return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
 def column(exp, key):

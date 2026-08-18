@@ -65,6 +65,7 @@ def build_groups(exp_map: dict, resolutions: dict | None = None) -> list:
     resolutions = resolutions or {}
     key_to_gid = {}
     groups = {}
+    seen = {}
     next_gid = 1
 
     for entry in exp_map.get("experiments", []):
@@ -75,17 +76,35 @@ def build_groups(exp_map: dict, resolutions: dict | None = None) -> list:
             groups[next_gid] = {
                 "group_id": next_gid,
                 "run": entry.get("run"),
-                "technology": entry.get("technology"),
+                "optimizer": entry.get("optimizer"),
+                # How the rows were made: the step record's own experiment_type (real rig
+                # data or a simulated trial - the map carries it as `provenance`) and the
+                # rows' source (the initial design, an optimizer's proposal, ...). Filled
+                # in below rather than here: a group's rows are only all known once the
+                # pass is over.
+                "experiment_type": None,
+                "source": None,
                 # The parameters spread across the row, on the same grid the key used, so
                 # a group reads as the setting it stands for.
                 **{label: _snap(parameters[label], resolutions.get(label))
                    for label in sorted(parameters)},
                 "replicates": 0,
             }
+            seen[next_gid] = {"experiment_type": set(), "source": set()}
             next_gid += 1
         gid = key_to_gid[key]
         entry["group_id"] = gid
         groups[gid]["replicates"] += 1
+        seen[gid]["experiment_type"].add(entry.get("provenance"))
+        seen[gid]["source"].add(entry.get("source"))
+
+    # One value each, normally - a group is one setting within one run. Joined rather than
+    # picked from when it is not, so a group holding both (a design point an optimizer
+    # later proposed again) says so instead of hiding half of itself behind the other.
+    for gid, fields in seen.items():
+        for field, values in fields.items():
+            present = sorted(value for value in values if value)
+            groups[gid][field] = "/".join(present) if present else None
 
     return [groups[gid] for gid in sorted(groups)]
 

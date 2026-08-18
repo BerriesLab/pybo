@@ -45,7 +45,7 @@ def is_initial(label) -> bool:
 def arm_label(exp: dict, fallback: str) -> str:
     """What --aggregate-runs pools a run's curve into.
 
-    Both axes together, not technology (the optimizer: bayesian/sobol/manual) alone -
+    Both axes together, not the optimizer (the arm: bayesian/sobol/random/manual) alone -
     otherwise a real rig's bayesian-proposed runs and a simulated study's bayesian runs
     would average into one curve just because they share an optimizer, which is exactly
     the mix-up experiment_type (experimental/synthetic) exists to keep apart. `fallback`
@@ -53,7 +53,7 @@ def arm_label(exp: dict, fallback: str) -> str:
     per-observation label, since an unlabelled run still deserves a series of its own
     rather than being silently lumped in with everything else unlabelled.
     """
-    tech = str(exp.get("technology") or "").strip().lower()
+    tech = str(exp.get("optimizer") or "").strip().lower()
     prov = str(exp.get("provenance") or "").strip().lower()
     if tech and prov:
         return f"{tech} ({prov})"

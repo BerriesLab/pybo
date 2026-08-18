@@ -40,7 +40,7 @@ PRETTY_NAMES = {}
 
 
 def _label(exp):
-    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+    return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
 # ---- LOAD ----

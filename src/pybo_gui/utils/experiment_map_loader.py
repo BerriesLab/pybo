@@ -11,6 +11,11 @@ import os
 import warnings
 from pathlib import Path
 
+# What a group_map entry carries besides the parameters it stands for. Mirrors the keys
+# build_group_map writes around them.
+GROUP_IDENTITY_KEYS = frozenset(
+    ("group_id", "run", "optimizer", "experiment_type", "source", "replicates"))
+
 
 def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[dict]:
     """Return experiments in chronological order.
@@ -33,7 +38,14 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
     if Path(group_map_path).exists():
         with open(group_map_path, encoding="utf-8") as file:
             group_list = json.load(file)
-        group_params = {g["group_id"]: {k: v for k, v in g.items() if k != "group_id"}
+        # The parameters a group stands for, and only those: a group also carries what
+        # identifies it (the run, the arm, how the rows were made) and how many rows it
+        # holds, none of which is a parameter. Those ride along harmlessly for a row that
+        # records its own parameters - the join below never reaches for them - but a row
+        # with none, a fixed technology measured as a baseline, would otherwise come out
+        # of here with "replicates" among its parameters.
+        group_params = {g["group_id"]: {k: v for k, v in g.items()
+                                        if k not in GROUP_IDENTITY_KEYS}
                         for g in group_list}
     else:
         warnings.warn(f"group_map.json not found next to {map_path}; "
@@ -48,9 +60,9 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             "group_id":               entry["group_id"],
             "experiment_id":          entry["experiment_id"],
             "experiment_type":        entry["experiment_type"],
-            "technology":             entry.get("technology"),
+            "optimizer":              entry.get("optimizer"),
             # "experimental" (real rig) or "synthetic" (a pybo trial) - orthogonal to
-            # technology and to a row's own source. None on a record from before this
+            # the optimizer and to a row's own source. None on a record from before this
             # field existed.
             "provenance":             entry.get("provenance"),
             # Which run produced it. The rig had no equivalent - one machine, one

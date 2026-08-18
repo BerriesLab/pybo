@@ -92,7 +92,7 @@ PRETTY_NAMES = {}
 
 
 def _label(exp):
-    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+    return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
 def pareto_front(points, sx=1.0, sy=1.0):
@@ -134,7 +134,7 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
-        # The arm whose runs get averaged together. From technology and provenance,
+        # The arm whose runs get averaged together. From optimizer and provenance,
         # not the label: under the default labelling the label names the run, which
         # separates the very runs that have to be pooled.
         "arm":      arm_label(exp, _label(exp)),

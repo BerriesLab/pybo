@@ -85,9 +85,10 @@ signs = [-1.0 if k in maximize else 1.0 for k in objective_keys]
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
 OUTPUT_DIR = data_path
 REF_MARGIN = 0.10  # reference point sits this fraction of the data range beyond the worst
-# Baseline groups (by `technology`) excluded from the hypervolume improvement
-# curve: they are reference points, not part of the optimisation campaign.
-EXCLUDED_TECHNOLOGIES = {"standard", "reference"}
+# Baseline groups (by `optimizer`, which on a run no optimizer proposed carries the
+# technology that did) excluded from the hypervolume improvement curve: they are
+# reference points, not part of the optimisation campaign.
+EXCLUDED_OPTIMIZERS = {"standard", "reference"}
 
 MARKERS      = fig_cfg["markers"]["label"]
 LABEL_COLORS = fig_cfg["colors"]["label"]
@@ -102,7 +103,7 @@ DPI         = fig_cfg["dpi"]
 PRETTY_NAMES = {}
 
 def _label(exp):
-    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+    return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
 # ---- LOAD ----
@@ -110,7 +111,7 @@ rows = []
 for exp in load_experiments_from_map(MAP_PATH):
     # Skip baseline/reference groups — they are not part of the optimisation
     # campaign and must not contribute to the hypervolume improvement curve.
-    if str(exp.get("technology", "")).lower() in EXCLUDED_TECHNOLOGIES:
+    if str(exp.get("optimizer", "")).lower() in EXCLUDED_OPTIMIZERS:
         continue
     r = exp.get("results", {})
     raw = tuple(r.get(k) for k in objective_keys)
@@ -127,7 +128,7 @@ for exp in load_experiments_from_map(MAP_PATH):
     rows.append({
         "label":    _label(exp),
         # The arm the run belongs to, which is what several runs get averaged within.
-        # Both technology and provenance, not the label: the label is whatever the map
+        # Both optimizer and provenance, not the label: the label is whatever the map
         # was built by, and under the default it names the run, so it tells the runs of
         # one arm apart instead of holding them together.
         "arm":      arm_label(exp, _label(exp)),

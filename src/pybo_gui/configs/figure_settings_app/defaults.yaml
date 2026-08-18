@@ -21,19 +21,20 @@ aspect:
   correlation_matrix: 1.0                      # 1/1   square matrix of Pearson coefficients
   results_boxplot: 1.5                         # 3/2   per-group distribution of a result
 
-# --- Per-label colours (edge colour; label = experiment_type or technology) ---
+# --- Per-label colours (edge colour; label = experiment_type or optimizer) ---
 # An observation's label is its provenance: "initial" for the design a run starts from,
 # "proposed" for everything the optimizer picked. The arm that did the picking is carried
-# separately as `technology`, so a campaign comparing arms can key on that instead.
+# separately as `optimizer`, so a campaign comparing arms can key on that instead.
 colors:
   label:
     initial: "#0077BB"
     proposed: "#EE7733"
-    # The arms, for a campaign labelled by technology rather than provenance.
+    # The arms, for a campaign labelled by the optimizer rather than by provenance.
     bayesian: "#EE7733"
     sobol: "#0077BB"
     lhs: "#0077BB"          # same colour as sobol; distinguished by marker
     random: "#009988"       # its own colour: the arm sobol itself is measured against
+    standard: "#AA3377"     # the machine's own technology, run as a fixed baseline
   # The true objective drawn under a campaign. Neutral and light, so it reads as the
   # backdrop the observations sit on rather than as another series.
   ground_truth: "#8A8F98"
@@ -59,6 +60,7 @@ markers:
     sobol: "^"
     lhs: "v"
     random: "s"
+    standard: "D"
 
 # --- Reference / threshold lines ---
 refline:

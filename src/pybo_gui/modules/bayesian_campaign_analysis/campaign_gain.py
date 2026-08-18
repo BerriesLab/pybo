@@ -122,7 +122,7 @@ for exp in load_experiments_from_map(MAP_PATH):
     runs.setdefault(exp["run"], []).append({
         "point": tuple(s * v for s, v in zip(signs, raw)),
         "initial": is_initial(exp["experiment_type"]),
-        # Both technology (optimizer) and provenance (experimental/synthetic), so the
+        # Both optimizer (the arm) and provenance (experimental/synthetic), so the
         # per-arm summary below never pools a real run in with a simulated one just
         # because they happen to share an optimizer.
         "arm": arm_label(exp, exp["run"]),

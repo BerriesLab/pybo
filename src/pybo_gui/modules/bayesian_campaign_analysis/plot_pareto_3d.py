@@ -63,7 +63,7 @@ PRETTY_NAMES = {}
 
 
 def _label(exp):
-    return (exp.get("experiment_type") or exp.get("technology") or "unknown").lower()
+    return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
 def pareto_front_3d_mask(pts, signs=(1.0, 1.0, 1.0)):

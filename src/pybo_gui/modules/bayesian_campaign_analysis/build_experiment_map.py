@@ -11,13 +11,14 @@ evaluation count of the same arm across replicate runs. That is what makes --gro
 original made about a repeated setting.
 
 `experiment_type` is what the scripts label, colour and draw a separate Pareto front by,
-so what goes into it decides what a front is drawn per - see LABEL_BY. `technology`
-carries the arm ("bayesian" / "sobol") whatever the labelling, so nothing else loses it.
+so what goes into it decides what a front is drawn per - see LABEL_BY. `optimizer`
+carries the arm ("bayesian" / "sobol" / "random", or the technology name on a baseline
+run that no optimizer proposed) whatever the labelling, so nothing else loses it.
 
 That "experiment_type" is a map-level field this module computes, not to be confused
 with the step record's own "experiment_type" key, which means something else again -
 real rig data vs a simulated trial. The record's arm lives under "optimizer" instead.
-Both of the record's fields survive into the map, as `technology` and `provenance`.
+Both of the record's fields survive into the map, as `optimizer` and `provenance`.
 """
 import argparse
 import json
@@ -35,7 +36,7 @@ DEFAULT_LABEL_BY = "run"
 INITIAL_SUFFIX = " (initial)"
 
 
-def _label_for(observation: dict, technology, run: str, label_by: str) -> str:
+def _label_for(observation: dict, optimizer, run: str, label_by: str) -> str:
     """The label an observation carries, under the chosen dimension.
 
     The initial design is a series of its own *within* the dimension, not across it: a
@@ -48,9 +49,9 @@ def _label_for(observation: dict, technology, run: str, label_by: str) -> str:
         # The dimension already is the provenance, so there is nothing to qualify.
         return source
     if label_by == "strategy":
-        base = technology
+        base = optimizer
     elif label_by == "strategy+run":
-        base = f"{technology}/{run}"
+        base = f"{optimizer}/{run}"
     else:
         base = run
     return f"{base}{INITIAL_SUFFIX}" if source == "initial" else base
@@ -100,7 +101,7 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
         # The step record's own "experiment_type" means something else entirely (real
         # rig data vs a simulated trial - see "provenance" below); the arm comes from
         # "optimizer" instead.
-        technology = record.get("optimizer")
+        optimizer = record.get("optimizer")
         for observation in record.get("data", []):
             # Values only. A record always carries a <label>_var partner and leaves it
             # null when the run measured no noise, and an unmeasured column is not
@@ -117,11 +118,11 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
                 "observation":     observation.get("observation_n"),
                 "experiment_id":   f"{step_dir.parent.name}/{step_dir.name}"
                                    f"#{observation.get('observation_n')}",
-                "experiment_type": _label_for(observation, technology, run, label_by),
+                "experiment_type": _label_for(observation, optimizer, run, label_by),
                 "source":          observation.get("source"),
-                "technology":      technology,
+                "optimizer":       optimizer,
                 # Real rig data vs a simulated trial - the step record's own
-                # "experiment_type", orthogonal to technology (which arm proposed the
+                # "experiment_type", orthogonal to optimizer (which arm proposed the
                 # point) and to source (initial vs proposed). Missing on a record
                 # written before this field existed; callers that care read that as
                 # unknown rather than assuming either.
