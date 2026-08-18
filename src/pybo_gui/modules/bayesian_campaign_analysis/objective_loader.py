@@ -51,6 +51,7 @@ def problem_definition(objective: MCObjectiveBase) -> dict:
         {"label": cfg.label,
          "to_minimize": bool(cfg.to_minimize),
          "ref_point": getattr(cfg, "ref_point", None),
+         "unit": cfg.unit,
          "bounds": list(cfg.bounds) if getattr(cfg, "bounds", None) is not None else None}
         for cfg in objective.obj_cfg or []
     ]

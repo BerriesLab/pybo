@@ -243,6 +243,56 @@ def make_parameters_widget(on_change=None):
     return box, collect, set_keys
 
 
+def make_objectives_widget():
+    """An 'Objectives' box listing what the campaign is actually optimising.
+
+    Read-only, and deliberately so: which way an objective runs, what it is measured in
+    and where its hypervolume is measured from are the objective's own statements, not
+    settings. The senses next to the axes on the plot tab are seeded from these and stay
+    editable there, for a figure that wants to read an axis the other way round; this box
+    is what they were seeded from.
+
+    A bound is shown where the objective declares one - most do not, an objective being a
+    measured outcome rather than something dialled in - and the reference point is what a
+    hypervolume is measured against.
+
+    Empty until an objective is loaded: the step records name their columns but say
+    nothing about direction, units or reference points.
+
+    Returns (box, set_keys), where set_keys(specs) takes the objectives as
+    [{"label", "to_minimize", "unit", "bounds", "ref_point"}], all but the label optional.
+    """
+    box = QGroupBox("Objectives")
+    outer = QVBoxLayout(box)
+    tree = _variable_tree(["Objective", "Direction", "Bounds", "Ref. point", "Unit"], 110)
+    outer.addWidget(tree)
+
+    def set_keys(specs) -> None:
+        tree.clear()
+        if not specs:
+            # A row rather than a hidden table: an empty grid with headers reads as
+            # "there are none", which is a different claim from "none are knowable yet".
+            note = QTreeWidgetItem(["No objective loaded — direction, units and reference "
+                                    "point are only nameable from one."])
+            note.setFirstColumnSpanned(True)
+            note.setDisabled(True)
+            tree.addTopLevelItem(note)
+            return
+        for spec in specs:
+            bounds = spec.get("bounds")
+            ref = spec.get("ref_point")
+            tree.addTopLevelItem(QTreeWidgetItem([
+                spec.get("label") or "",
+                "minimize" if spec.get("to_minimize") else "maximize",
+                f"{bounds[0]:g} – {bounds[1]:g}" if bounds else "",
+                f"{ref:g}" if isinstance(ref, (int, float)) else "",
+                spec.get("unit") or "",
+            ]))
+
+    set_keys([])
+    return box, set_keys
+
+
 def make_trackers_widget():
     """A 'Trackers' box listing what the objective measures without optimising it.
 

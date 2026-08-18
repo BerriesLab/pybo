@@ -34,7 +34,8 @@ from pybo_gui.gui.launchers import launch_analysis, watch
 from pybo_gui.gui.message_log import post
 from pybo_gui.gui.widgets import (
     bind_label_entry, make_constraints_widget, make_objective_checklist,
-    make_parameters_widget, make_sense_toggle, make_trackers_widget, repopulate,
+    make_objectives_widget, make_parameters_widget, make_sense_toggle,
+    make_trackers_widget, repopulate,
 )
 
 OBJECTIVE_COUNTS = ("1", "2", "3", "4+")
@@ -249,6 +250,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     unload_btn.setEnabled(False)
     obj_layout.addWidget(_row(obj_edit, browse, load_btn, unload_btn))
     layout.addWidget(obj_box)
+
+    # What the objective just loaded above actually declares, so the campaign says what it
+    # is optimising and which way, next to the file it read that from.
+    objectives_box, objectives_set_keys = make_objectives_widget()
+    layout.addWidget(objectives_box)
 
     # ---- Objective count -------------------------------------------------------
     count_group = QButtonGroup(page)
@@ -531,6 +537,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                      {p["label"]: p for p in problem["parameters"]}
                      if problem is not None else {})
         trk_set_keys(problem["trackers"] if problem is not None else [])
+        objectives_set_keys(problem["objectives"] if problem is not None else [])
         _sync_landscape()
 
     def _load_objective(path: str) -> None:
