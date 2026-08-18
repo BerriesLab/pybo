@@ -99,7 +99,10 @@ def styler(fig_cfg: dict, labels):
     named = fig_cfg["colors"]["label"]
     markers = fig_cfg["markers"]["label"]
     cycle = fig_cfg["colors"].get("cycle") or [FALLBACK_COLOR]
-    labels = sorted(set(labels))
+    # By str, so a map that carries an unlabelled series - one written before
+    # build_experiment_map named those "unknown" - orders instead of raising on the
+    # comparison. Such a label still gets FALLBACK_COLOR, as any unnamed one does.
+    labels = sorted(set(labels), key=str)
     unnamed = sorted({base_label(l) for l in labels} - set(named))
 
     def color(label):

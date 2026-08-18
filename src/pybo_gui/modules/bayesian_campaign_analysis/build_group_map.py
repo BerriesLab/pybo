@@ -76,13 +76,16 @@ def build_groups(exp_map: dict, resolutions: dict | None = None) -> list:
             groups[next_gid] = {
                 "group_id": next_gid,
                 "run": entry.get("run"),
+                # What produced the measurements, as opposed to what chose where to take
+                # them. One value per group, a group being one setting within one run.
+                "technology": entry.get("technology"),
+                "experiment_type": None,
                 "optimizer": entry.get("optimizer"),
                 # How the rows were made: the step record's own experiment_type (real rig
                 # data or a simulated trial - the map carries it as `provenance`) and the
                 # rows' source (the initial design, an optimizer's proposal, ...). Filled
                 # in below rather than here: a group's rows are only all known once the
                 # pass is over.
-                "experiment_type": None,
                 "source": None,
                 # The parameters spread across the row, on the same grid the key used, so
                 # a group reads as the setting it stands for.

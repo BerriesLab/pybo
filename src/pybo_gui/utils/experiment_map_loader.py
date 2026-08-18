@@ -14,7 +14,8 @@ from pathlib import Path
 # What a group_map entry carries besides the parameters it stands for. Mirrors the keys
 # build_group_map writes around them.
 GROUP_IDENTITY_KEYS = frozenset(
-    ("group_id", "run", "optimizer", "experiment_type", "source", "replicates"))
+    ("group_id", "run", "technology", "optimizer", "experiment_type", "source",
+     "replicates"))
 
 
 def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[dict]:
@@ -61,6 +62,9 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             "experiment_id":          entry["experiment_id"],
             "experiment_type":        entry["experiment_type"],
             "optimizer":              entry.get("optimizer"),
+            # What produced the measurement (the rig, the problem), as opposed to the
+            # optimizer that chose where to take it. None on a record that names none.
+            "technology":             entry.get("technology"),
             # "experimental" (real rig) or "synthetic" (a pybo trial) - orthogonal to
             # the optimizer and to a row's own source. None on a record from before this
             # field existed.

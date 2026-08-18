@@ -35,6 +35,10 @@ DEFAULT_LABEL_BY = "run"
 # with the proposals they belong to.
 INITIAL_SUFFIX = " (initial)"
 
+# What a label falls back to when the dimension it is drawn from is not recorded. The
+# plot scripts already spell an unrecorded arm this way when they read one themselves.
+UNKNOWN_LABEL = "unknown"
+
 
 def _label_for(observation: dict, optimizer, run: str, label_by: str) -> str:
     """The label an observation carries, under the chosen dimension.
@@ -43,15 +47,20 @@ def _label_for(observation: dict, optimizer, run: str, label_by: str) -> str:
     run's design is labelled separately from that run's proposals, but two runs never
     share one design series. That is what lets a plot show, per run, what its design
     alone reached against what the arm found afterwards.
+
+    A record may leave the chosen dimension unset - a row no optimizer proposed and no
+    campaign designed carries neither, honestly - and it is named UNKNOWN_LABEL rather
+    than None: a label is what a series is keyed, sorted and coloured by, and none of
+    that works on a null.
     """
     source = observation.get("source")
     if label_by == "provenance":
         # The dimension already is the provenance, so there is nothing to qualify.
-        return source
+        return source or UNKNOWN_LABEL
     if label_by == "strategy":
-        base = optimizer
+        base = optimizer or UNKNOWN_LABEL
     elif label_by == "strategy+run":
-        base = f"{optimizer}/{run}"
+        base = f"{optimizer or UNKNOWN_LABEL}/{run}"
     else:
         base = run
     return f"{base}{INITIAL_SUFFIX}" if source == "initial" else base
@@ -121,6 +130,9 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
                 "experiment_type": _label_for(observation, optimizer, run, label_by),
                 "source":          observation.get("source"),
                 "optimizer":       optimizer,
+                # What produced the measurement - the rig, the problem - as opposed to
+                # what chose where to measure. None on a record that does not name one.
+                "technology":      record.get("technology"),
                 # Real rig data vs a simulated trial - the step record's own
                 # "experiment_type", orthogonal to optimizer (which arm proposed the
                 # point) and to source (initial vs proposed). Missing on a record
