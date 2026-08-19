@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTreeWidget,
+    QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -34,6 +34,10 @@ class _DragSelectTree(QTreeWidget):
     add and remove: a sweep across a mixed list ticks what was clear and clears what was
     ticked, instead of flattening the range to whatever the first row happened to be.
 
+    Two columns are checkable - Include (0) and Reference (1) - each swept
+    independently: a press picks up whichever column it landed in and the sweep stays
+    on that column, so one gesture never touches both.
+
     The expand arrows keep their own press: it opens a node, it does not choose one.
 
     Qt itself ticks a box on the *release*, not the press, which is no use to a gesture
@@ -41,21 +45,24 @@ class _DragSelectTree(QTreeWidget):
     gesture over: this class sets every row it touches, and the release is not forwarded,
     or the delegate would toggle the pressed row a second time and cancel it out.
 
-    `on_drag` is called with True when a sweep starts and False when it ends, so the
-    window can hold off recounting the selection until the gesture is over - the count
-    walks the filesystem, which is not something to do once per row.
+    `on_drag` is called with (True, column) when a sweep starts and (False, column) when
+    it ends, so the window can hold off recounting the selection until the gesture is
+    over - the count walks the filesystem, which is not something to do once per row.
     """
+
+    _CHECKABLE_COLUMNS = (0, 1)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._sweeping = False
         self._applied = set()
+        self._column = 0
         self.on_drag = None
 
     @staticmethod
-    def _invert(item) -> None:
-        item.setCheckState(0, Qt.CheckState.Unchecked
-                           if item.checkState(0) == Qt.CheckState.Checked
+    def _invert(item, column) -> None:
+        item.setCheckState(column, Qt.CheckState.Unchecked
+                           if item.checkState(column) == Qt.CheckState.Checked
                            else Qt.CheckState.Checked)
 
     def mousePressEvent(self, event):
@@ -70,9 +77,13 @@ class _DragSelectTree(QTreeWidget):
         # indicator, whose press belongs to expanding the node.
         if pos.x() < self.visualItemRect(item).left():
             return
+        column = self.columnAt(pos.x())
+        if column not in self._CHECKABLE_COLUMNS:
+            return
         self._sweeping = True
         self._applied = {id(item)}
-        self._invert(item)
+        self._column = column
+        self._invert(item, column)
 
     def mouseMoveEvent(self, event):
         if not self._sweeping or not (event.buttons() & Qt.MouseButton.LeftButton):
@@ -82,9 +93,9 @@ class _DragSelectTree(QTreeWidget):
         if item is None or item.data(0, _PATH_ROLE) is None or id(item) in self._applied:
             return
         if len(self._applied) == 1 and self.on_drag is not None:
-            self.on_drag(True)  # the press alone was a click; this is now a sweep
+            self.on_drag(True, self._column)  # the press alone was a click; now a sweep
         self._applied.add(id(item))
-        self._invert(item)
+        self._invert(item, self._column)
 
     def mouseReleaseEvent(self, event):
         if not self._sweeping:
@@ -94,7 +105,7 @@ class _DragSelectTree(QTreeWidget):
         self._sweeping, self._applied = False, set()
         event.accept()  # withhold the release: see the note on Qt's toggle above
         if swept and self.on_drag is not None:
-            self.on_drag(False)
+            self.on_drag(False, self._column)
 
 
 class StepListWindow(QWidget):
@@ -128,7 +139,10 @@ class StepListWindow(QWidget):
 
         self._tree = _DragSelectTree()
         self._tree.on_drag = self._on_drag
-        self._tree.setHeaderLabels(["Directory"])
+        self._tree.setHeaderLabels(["Directory", "Reference"])
+        self._tree.header().setStretchLastSection(False)
+        self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._tree.setColumnWidth(1, 80)
         # Drag across rows to sweep their checkboxes; the press still toggles one.
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
         self._tree.itemChanged.connect(self._on_item_changed)
@@ -157,22 +171,33 @@ class StepListWindow(QWidget):
 
     @property
     def checked_paths(self) -> list:
-        """The ticked directories, with any nested under another ticked one dropped.
+        """The ticked (Include) directories, with any nested under another ticked one
+        dropped.
 
         Without that pruning a study and one of its own steps could both be ticked, and
         the builder would read that step twice - the same observation twice over in the
         map.
         """
-        ticked = []
-        for item in self._walk():
-            path = item.data(0, _PATH_ROLE)
-            if path and item.checkState(0) == Qt.CheckState.Checked:
-                ticked.append(Path(path))
-        pruned = []
-        for path in ticked:
-            if not any(other != path and other in path.parents for other in ticked):
-                pruned.append(str(path))
-        return pruned
+        return self._ticked(0)
+
+    @property
+    def reference_paths(self) -> list:
+        """The directories ticked Reference, pruned the same way as checked_paths.
+
+        Independent of Include: a reference marks the benchmark a plot is read
+        against regardless of which candidate runs happen to be included alongside
+        it, so it survives Clear selection and is unioned into the map's roots by
+        whoever builds it (tab_campaign._rebuild_map), not folded into
+        checked_paths here.
+        """
+        return self._ticked(1)
+
+    def _ticked(self, column: int) -> list:
+        ticked = [Path(item.data(0, _PATH_ROLE)) for item in self._walk()
+                  if item.data(0, _PATH_ROLE) is not None
+                  and item.checkState(column) == Qt.CheckState.Checked]
+        return [str(path) for path in ticked
+                if not any(other != path and other in path.parents for other in ticked)]
 
     def _walk(self, parent: QTreeWidgetItem = None):
         """Every item currently in the tree, depth first."""
@@ -185,27 +210,31 @@ class StepListWindow(QWidget):
             yield from self._walk(parent.child(i))
 
     def _clear(self) -> None:
+        # Include only: Reference marks the benchmark a plot is read against, which
+        # stays meaningful across re-picking a fresh set of candidate runs to compare
+        # it with, so a plain "start over" on the selection leaves it alone.
         self._tree.blockSignals(True)
         for item in self._walk():
             item.setCheckState(0, Qt.CheckState.Unchecked)
         self._tree.blockSignals(False)
         self._update_status()
 
-    def _cascade(self, item: QTreeWidgetItem, state) -> None:
-        """Give every already-listed descendant the same state.
+    def _cascade(self, item: QTreeWidgetItem, column: int, state) -> None:
+        """Give every already-listed descendant the same state, in `column`.
 
         Nodes not opened yet have no children to set; _fill passes the state down when
-        it lists them, so an unopened subtree ends up matching too.
+        it lists them, so an unopened subtree ends up matching too. Include and
+        Reference cascade independently - ticking one says nothing about the other.
         """
         for i in range(item.childCount()):
             child = item.child(i)
             if child.data(0, _PATH_ROLE) is None:  # the "..." placeholder
                 continue
-            child.setCheckState(0, state)
-            self._cascade(child, state)
+            child.setCheckState(column, state)
+            self._cascade(child, column, state)
 
-    def _update_ancestors(self, item: QTreeWidgetItem) -> None:
-        """Bring each ancestor into line with its children.
+    def _update_ancestors(self, item: QTreeWidgetItem, column: int) -> None:
+        """Bring each ancestor's `column` into line with its children's.
 
         Without this a ticked parent would keep covering a child the user has just
         unticked - the parent is what gets sent, so the untick would do nothing. A
@@ -214,7 +243,8 @@ class StepListWindow(QWidget):
         """
         parent = item.parent()
         while parent is not None:
-            states = [parent.child(i).checkState(0) for i in range(parent.childCount())
+            states = [parent.child(i).checkState(column)
+                      for i in range(parent.childCount())
                       if parent.child(i).data(0, _PATH_ROLE) is not None]
             if states and all(s == Qt.CheckState.Checked for s in states):
                 state = Qt.CheckState.Checked
@@ -222,46 +252,51 @@ class StepListWindow(QWidget):
                 state = Qt.CheckState.Unchecked
             else:
                 state = Qt.CheckState.PartiallyChecked
-            if parent.checkState(0) == state:
+            if parent.checkState(column) == state:
                 break
-            parent.setCheckState(0, state)
+            parent.setCheckState(column, state)
             parent = parent.parent()
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
-        if column != 0:
+        if column not in _DragSelectTree._CHECKABLE_COLUMNS:
             return
         # Ticking a directory means everything under it, so the tree says so: the
         # children follow, and the ancestors are re-derived from what is now ticked.
         self._tree.blockSignals(True)
-        if item.checkState(0) != Qt.CheckState.PartiallyChecked:
-            self._cascade(item, item.checkState(0))
-        self._update_ancestors(item)
+        if item.checkState(column) != Qt.CheckState.PartiallyChecked:
+            self._cascade(item, column, item.checkState(column))
+        self._update_ancestors(item, column)
         self._tree.blockSignals(False)
         self._update_status()
-        if self._on_selection is not None and not self._sweeping:
+        if column == 0 and self._on_selection is not None and not self._sweeping:
             self._on_selection(self.checked_paths)
 
-    def _on_drag(self, sweeping: bool) -> None:
+    def _on_drag(self, sweeping: bool, column: int) -> None:
         self._sweeping = sweeping
-        if not sweeping:
-            self._update_status()
-            if self._on_selection is not None:
-                self._on_selection(self.checked_paths)
+        if sweeping:
+            return
+        self._update_status()
+        if column == 0 and self._on_selection is not None:
+            self._on_selection(self.checked_paths)
 
     def _update_status(self) -> None:
         if self._sweeping:
             return
         selected = self.checked_paths
-        if not selected:
+        references = self.reference_paths
+        if not selected and not references:
             self._status.setText("Nothing selected — tick any directory to include "
                                  "everything under it.")
             return
         # What the selection actually expands to, since a directory says nothing about
         # how many records are beneath it.
-        n_steps = len(find_steps(selected))
-        self._status.setText(
-            f"{len(selected)} director{'y' if len(selected) == 1 else 'ies'} selected "
-            f"— {n_steps} step record{'' if n_steps == 1 else 's'}")
+        n_steps = len(find_steps(selected)) if selected else 0
+        text = (f"{len(selected)} director{'y' if len(selected) == 1 else 'ies'} selected "
+                f"— {n_steps} step record{'' if n_steps == 1 else 's'}")
+        if references:
+            text += (f"; {len(references)} director"
+                     f"{'y' if len(references) == 1 else 'ies'} marked reference")
+        self._status.setText(text)
 
     # ---------- scanning ----------
 
@@ -275,6 +310,7 @@ class StepListWindow(QWidget):
         item = QTreeWidgetItem([path.name or str(path)])
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         item.setCheckState(0, Qt.CheckState.Unchecked)
+        item.setCheckState(1, Qt.CheckState.Unchecked)
         item.setData(0, _PATH_ROLE, str(path))
         item.setData(0, _FILLED_ROLE, False)
         if parent is None:
@@ -309,10 +345,12 @@ class StepListWindow(QWidget):
         for child in children:
             self._add(item, child)
         # A node ticked before it was opened must pass that down, or its new children
-        # would look unselected while the selection still covers them.
-        if item.checkState(0) == Qt.CheckState.Checked:
-            for i in range(item.childCount()):
-                item.child(i).setCheckState(0, Qt.CheckState.Checked)
+        # would look unselected while the selection still covers them. Both columns,
+        # independently - either may have been ticked without the other.
+        for column in _DragSelectTree._CHECKABLE_COLUMNS:
+            if item.checkState(column) == Qt.CheckState.Checked:
+                for i in range(item.childCount()):
+                    item.child(i).setCheckState(column, Qt.CheckState.Checked)
         self._tree.blockSignals(False)
 
     def scan(self) -> None:

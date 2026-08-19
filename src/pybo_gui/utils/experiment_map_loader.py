@@ -72,6 +72,9 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             # Which run produced it. The rig had no equivalent - one machine, one
             # sequence - but a campaign here spans several independent runs.
             "run":                    entry.get("run"),
+            # Whether this observation's run is the user's flagged benchmark. False
+            # on a map built before this field existed, rather than missing.
+            "reference":              bool(entry.get("reference")),
             "start_time":             entry["start_time"],
             "parameters":             entry.get("parameters")
                                       or group_params.get(entry["group_id"], {}),

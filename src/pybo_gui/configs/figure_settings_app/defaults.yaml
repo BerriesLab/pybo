@@ -38,6 +38,10 @@ colors:
   # The true objective drawn under a campaign. Neutral and light, so it reads as the
   # backdrop the observations sit on rather than as another series.
   ground_truth: "#8A8F98"
+  # A run (or several, pooled) the user has flagged as their benchmark. Red and
+  # outside the cycle above, so "this is the reference" reads the same whichever
+  # arm it happens to belong to and is never mistaken for an ordinary series.
+  reference: "#E62020"
   # Labels the table above does not name - run directories, say, which cannot be listed
   # in advance - take a colour from here by position, so each series is distinct and
   # keeps the same colour between plots of one campaign.

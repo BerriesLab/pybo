@@ -14,11 +14,18 @@ from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
+from pybo_gui.modules.bayesian_campaign_analysis._colorscale import diverging_norm, mark_center
+from pybo_gui.modules.bayesian_campaign_analysis._aggregate import BAND_MODES
+from pybo_gui.modules.bayesian_campaign_analysis._reference import draw_reference
+from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
 parser.add_argument("--y", required=True, help="Result key for y axis (objective)")
 parser.add_argument("--z", required=True, help="Result key for z axis (objective; also mapped to color)")
+parser.add_argument("--zcenter", type=float, default=None,
+                    help="Value the diverging colormap is centered on (defaults to the "
+                         "midpoint of the data's own range)")
 parser.add_argument("--xlabel", default="", help="Override x-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--ylabel", default="", help="Override y-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--zlabel", default="", help="Override colorbar label (LaTeX accepted via $...$)")
@@ -38,6 +45,9 @@ parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
                          "infeasible ones are shown dimmed.")
+parser.add_argument("--band", default="ci95", choices=BAND_MODES,
+                    help="What the reference band means, where a benchmark pools "
+                         "more than one run (default: %(default)s).")
 args = parser.parse_args()
 try:
     constraints = parse_constraints(args.constraint)
@@ -52,6 +62,7 @@ OUTPUT_DIR = data_path
 MARKERS      = fig_cfg["markers"]["label"]
 LABEL_COLORS = fig_cfg["colors"]["label"]
 SCATTER      = fig_cfg["scatter"]
+FRONT        = fig_cfg["pareto_front"]
 
 FONT_LABEL  = fig_cfg["font"]["label"]
 FONT_LEGEND = fig_cfg["font"]["legend"]
@@ -104,6 +115,8 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
+        # Only used to pool a benchmark's own runs together - see _reference.
+        "run":      exp.get("run"),
         "group_id": exp["group_id"],
         "x":        column(exp, args.x),
         "y":        column(exp, args.y),
@@ -114,6 +127,9 @@ for exp in load_experiments_from_map(MAP_PATH):
         "y_var":    r.get(f"{args.y}_var"),
         "z_val":    column(exp, args.z),
         "feasible": is_feasible(r, constraints),
+        # The user's flagged benchmark. Pulled out of the ordinary per-label series
+        # entirely and drawn through _reference instead - see below.
+        "reference": exp.get("reference", False),
     })
 
 # ---- AGGREGATE (if grouped) ----
@@ -156,6 +172,7 @@ if args.grouped:
             y_err_lo = y_err_hi = sd_y
         rows.append({
             "label":    items[0]["label"],
+            "run":      items[0]["run"],
             "group_id": gid,
             "x":        x_mean,
             "x_err_lo": x_err_lo,
@@ -166,6 +183,9 @@ if args.grouped:
             "z_val":    float(np.mean(zs)),
             "n":        len(items),
             "feasible": True,
+            # One run per group (group_id keys on run - see build_group_map), so
+            # every item in the group agrees on this.
+            "reference": items[0]["reference"],
         })
     valid = rows
 else:
@@ -175,6 +195,14 @@ else:
         r["x_err_lo"] = r["x_err_hi"] = 0.0
         r["y_err_lo"] = r["y_err_hi"] = 0.0
         r["n"]        = 1
+
+# ---- REFERENCE (pulled out of the ordinary per-label series) ----
+# A run flagged as the user's benchmark stops being "just another run": it is drawn
+# once, apart, through _reference - see below - instead of taking its usual place
+# among the series it is being compared against. Ignores z entirely - the
+# reference is fixed-colour, not read off the colour scale.
+reference_valid = [r for r in valid if r["feasible"] and r["reference"]]
+valid = [r for r in valid if not r["reference"]]
 
 # ---- INFEASIBLE (always individual points) ----
 # Constraint-violating experiments are taken straight from raw_rows so they are
@@ -192,7 +220,7 @@ z_vals = [r["z_val"] for r in valid if r["feasible"]]
 z_vals += [r["z_val"] for r in infeasible]
 if z_vals:
     z_cmap = cm.coolwarm
-    z_norm = mcolors.Normalize(vmin=min(z_vals), vmax=max(z_vals))
+    z_norm = diverging_norm(z_vals, args.zcenter)
 else:
     z_cmap = cm.coolwarm
     z_norm = mcolors.Normalize(vmin=0.0, vmax=1.0)
@@ -300,6 +328,10 @@ if nd_rows:
                       label="Pareto-optimal (3D)")
     )
 
+draw_reference(ax, reference_valid, signs[0], signs[1], args.band,
+               fig_cfg["colors"].get("reference", "#E62020"), SCATTER["marker_size"],
+               FRONT["edge_width"], legend_handles)
+
 if args.show_numbers:
     for r in (r for r in valid if r["feasible"]):
         ax.annotate(str(r["group_id"]),
@@ -315,14 +347,17 @@ ax.set_ylabel(ylabel, fontsize=FONT_LABEL)
 ax.tick_params(labelsize=FONT_LABEL - 1)
 ax.grid(True, **fig_cfg["grid"])
 leg_cfg = fig_cfg["legend"]
-ax.legend(handles=legend_handles, fontsize=FONT_LEGEND,
-          loc=leg_cfg["loc"], frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
+# Per-run entries plus the fixed extras (Infeasible, Pareto-optimal (3D), Reference)
+# outgrow the corner fast, so past a handful this shrinks the legend to keep it
+# inside the axes - same rule plot_pareto_2d.py uses.
+place_legend(fig, ax, legend_handles, leg_cfg, FONT_LEGEND, loc=leg_cfg["loc"])
 
 if _last_sc is not None:
     zlabel = args.zlabel if args.zlabel else PRETTY_NAMES.get(args.z, args.z)
     cbar = fig.colorbar(_last_sc, ax=ax, pad=0.02)
     cbar.set_label(zlabel, fontsize=FONT_LABEL)
     cbar.ax.tick_params(labelsize=FONT_LABEL - 1)
+    mark_center(cbar, args.zcenter)
 
 fig.tight_layout(pad=fig_cfg["layout_pad"])
 plt.show(block=__name__ == "__main__")

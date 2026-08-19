@@ -14,6 +14,7 @@ from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styler
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
+from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
 parser = argparse.ArgumentParser(
     description="Single-objective campaign: the objective over one or two parameters.")
@@ -344,17 +345,10 @@ ax.set_ylabel(_par_label(1) if two_par else obj_label, fontsize=FONT_LABEL)
 ax.tick_params(labelsize=FONT_LABEL - 1)
 ax.grid(True, **fig_cfg["grid"])
 leg_cfg = fig_cfg["legend"]
-# Long run names in quantity outgrow any corner, so past a handful the legend moves under
-# the axes and splits into columns instead of covering the data.
-legend_below = len(legend_handles) > 4
-if legend_below:
-    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND - 1,
-                       loc="upper center", bbox_to_anchor=(0.5, -0.16),
-                       ncol=1 if len(legend_handles) <= 6 else 2,
-                       frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
-else:
-    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND, loc="best",
-                       frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
+# Long run names in quantity outgrow a corner at the normal font size, so past a
+# handful this shrinks the legend (smaller type, more columns) to keep it inside
+# the axes rather than let it spill past them.
+place_legend(fig, ax, legend_handles, leg_cfg, FONT_LEGEND)
 
 if two_par and mappable is not None:
     cbar = fig.colorbar(mappable, ax=ax, pad=0.02)
@@ -362,10 +356,4 @@ if two_par and mappable is not None:
     cbar.ax.tick_params(labelsize=FONT_LABEL - 1)
 
 fig.tight_layout(pad=fig_cfg["layout_pad"])
-if legend_below:
-    # tight_layout reserves nothing for a legend anchored outside the axes, so measure
-    # what it actually took and give it that much of the figure.
-    fig.canvas.draw()
-    height = legend.get_window_extent().transformed(fig.transFigure.inverted()).height
-    fig.subplots_adjust(bottom=min(0.6, height + 0.14))
 plt.show(block=__name__ == "__main__")

@@ -96,12 +96,27 @@ def find_steps(roots) -> list:
     return found
 
 
-def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
+def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> dict:
     """One record per observation, in chronological order.
 
     `label_by` decides what each observation is labelled by, and so what gets its
     own series and Pareto front downstream.
+
+    `reference_roots` marks the user's benchmark: a step directory under any of
+    these (or one of these itself) is tagged "reference", so a plot can draw it
+    apart from the ordinary runs it is being compared against. Independent of
+    `roots` - a reference directory not otherwise selected still needs its
+    observations in the map, so callers are expected to fold it into `roots`
+    themselves (the GUI unions checked_paths and reference_paths before calling
+    this); find_steps is not asked to do that union on their behalf.
     """
+    reference_roots = [Path(root).resolve() for root in (reference_roots or [])]
+
+    def _is_reference(step_dir: Path) -> bool:
+        step_dir = step_dir.resolve()
+        return any(step_dir == root or root in step_dir.parents
+                  for root in reference_roots)
+
     records = []
     for path in find_steps(roots):
         step_dir = path.parent
@@ -142,6 +157,7 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
                 "start_time":      _epoch(record.get("datetime")),
                 "run":             run,
                 "path":            str(step_dir),
+                "reference":       _is_reference(step_dir),
                 "parameters":      observation.get("parameters") or {},
                 "results":         results,
             })
@@ -152,11 +168,12 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY) -> dict:
     return {"experiments": records}
 
 
-def build_and_save(out_dir, roots=None, label_by: str = DEFAULT_LABEL_BY) -> Path:
+def build_and_save(out_dir, roots=None, label_by: str = DEFAULT_LABEL_BY,
+                   reference_roots=None) -> Path:
     """Write experiment_map.json under `out_dir`, over `roots` (default: out_dir)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    result = build_map(roots or [out_dir], label_by)
+    result = build_map(roots or [out_dir], label_by, reference_roots)
     out_path = out_dir / "experiment_map.json"
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"Wrote {len(result['experiments'])} observations -> {out_path}")
@@ -174,8 +191,14 @@ def main():
                         dest="label_by",
                         help="What an observation is labelled by, and so what gets its "
                              "own series and Pareto front (default: %(default)s).")
+    parser.add_argument("--reference", action="append", default=[],
+                        dest="reference_roots",
+                        help="A step, run or study directory to mark as the "
+                             "benchmark (repeatable). Must also be covered by "
+                             "--step to appear in the map at all.")
     args = parser.parse_args()
-    build_and_save(args.out_dir, args.step or None, args.label_by)
+    build_and_save(args.out_dir, args.step or None, args.label_by,
+                   args.reference_roots or None)
 
 
 if __name__ == "__main__":

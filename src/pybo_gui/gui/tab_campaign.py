@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
@@ -305,6 +306,18 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         axes_layout.addWidget(row)
     for combo, entry in ((x_combo, x_entry), (y_combo, y_entry), (z_combo, z_entry)):
         bind_label_entry(combo, entry)
+    # Pins the diverging colormap's neutral midpoint to a value the user cares about
+    # instead of leaving it wherever the data's own min/max happen to average to.
+    # Lives on the z row since it only means anything where z drives the colour -
+    # three objectives, or two with a colour key chosen.
+    z_center_entry = QLineEdit()
+    z_center_entry.setPlaceholderText("centre (optional)")
+    z_center_entry.setValidator(QDoubleValidator())
+    z_center_entry.setMaximumWidth(110)
+    z_center_entry.setToolTip("Value the colour scale is centred on. Left blank, the "
+                              "colour midpoint falls wherever the data's own range "
+                              "averages to.")
+    z_row.layout().insertWidget(z_row.layout().count() - 1, z_center_entry)
     plot_page_layout.addWidget(axes_box)
 
     nd_box, nd_collect, nd_set_keys = make_objective_checklist()
@@ -614,6 +627,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # z is a real objective only with three; with two it colours the points and with
         # one it is the second parameter, so in neither does its sense mean anything.
         z_sense.setEnabled(is_three)
+        # z only drives a colour scale with three objectives, or two with a colour key
+        # chosen - never with one, where it is a plain parameter axis instead.
+        z_center_entry.setEnabled(is_three or count == "2")
         # One objective reads the same three rows as a landscape - the one objective, and
         # the one or two parameters it is drawn over - so only the objective's sense is
         # left live.
@@ -653,15 +669,21 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         map through configs.settings.data_path, so that is repointed here too.
         """
         steps = step_list.checked_paths
-        # No steps is a request for the ground truth on its own, as long as there is a
+        # A reference not otherwise selected still has to be in the map, or its own
+        # points would never reach the plot for _reference to draw - so its
+        # directories are folded into the roots build_map reads, independently of
+        # whether the user also ticked Include on them.
+        references = step_list.reference_paths
+        roots = sorted(set(steps) | set(references))
+        # No roots is a request for the ground truth on its own, as long as there is a
         # ground truth to draw: build_map([]) is an empty map, and a plot over one draws
         # the backdrop and no series. Without one it is just an empty plot, so that still
         # asks for a selection rather than opening a blank figure.
-        if not steps and not cb_ground.isChecked():
+        if not roots and not cb_ground.isChecked():
             post("Select at least one step in the Steps window.")
             return False
         try:
-            exp_map = build_map(steps)
+            exp_map = build_map(roots, reference_roots=references)
             groups = build_groups(exp_map, par_collect())
         except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
             post(f"Map build failed: {exc}")
@@ -674,15 +696,19 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # session, not the user's data tree - Save map is how a copy gets kept.
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
-        if not steps:
+        if not roots:
             post("No steps selected — the ground truth will be drawn "
                                "on its own")
             return True
         series = len({e["experiment_type"] for e in exp_map["experiments"]})
-        post(f"{len(exp_map['experiments'])} observations from "
-                           f"{len(steps)} selected director"
-                           f"{'y' if len(steps) == 1 else 'ies'}, {series} series, "
-                           f"held in memory")
+        message = (f"{len(exp_map['experiments'])} observations from "
+                   f"{len(roots)} selected director"
+                   f"{'y' if len(roots) == 1 else 'ies'}, {series} series, "
+                   f"held in memory")
+        if references:
+            message += f", {len(references)} reference director" \
+                       f"{'y' if len(references) == 1 else 'ies'}"
+        post(message)
         return True
 
     def _write_map(out_dir) -> Path:
@@ -868,6 +894,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             extra += ["--x", x, "--y", y, "--z", z,
                       "--xlabel", x_entry.text(), "--ylabel", y_entry.text(),
                       "--zlabel", z_entry.text()]
+            if z_center_entry.text():
+                extra += ["--zcenter", z_center_entry.text()]
             extra += _sense_args((x, x_sense), (y, y_sense), (z, z_sense))
             _launch("plot_pareto_3d", *extra)
             return
@@ -878,6 +906,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                   "--xlabel", x_entry.text(), "--ylabel", y_entry.text()]
         if z:
             extra += ["--z", z, "--zlabel", z_entry.text()]
+            if z_center_entry.text():
+                extra += ["--zcenter", z_center_entry.text()]
         extra += _sense_args((x, x_sense), (y, y_sense)) + _ground_truth_args()
         extra += _aggregate_args()
         # Said either way rather than left to the plot's own judgement: the checkbox is

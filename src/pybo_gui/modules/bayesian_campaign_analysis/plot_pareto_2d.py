@@ -17,11 +17,17 @@ from pybo_gui.modules.bayesian_campaign_analysis._labels import (
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
+from pybo_gui.modules.bayesian_campaign_analysis._colorscale import diverging_norm, mark_center
+from pybo_gui.modules.bayesian_campaign_analysis._reference import draw_reference
+from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
 parser.add_argument("--y", required=True, help="Result key for y axis (objective)")
 parser.add_argument("--z", default="",    help="Result key for color coding (color only, not used in Pareto)")
+parser.add_argument("--zcenter", type=float, default=None,
+                    help="Value the diverging colormap is centered on (defaults to the "
+                         "midpoint of the data's own range)")
 parser.add_argument("--xlabel", default="", help="Override x-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--ylabel", default="", help="Override y-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--zlabel", default="", help="Override colorbar label (LaTeX accepted via $...$)")
@@ -168,6 +174,9 @@ for exp in load_experiments_from_map(MAP_PATH):
         "y_var":    r.get(f"{args.y}_var"),
         "z_val":    column(exp, args.z) if use_z else None,
         "feasible": is_feasible(r, constraints),
+        # The user's flagged benchmark. Pulled out of the ordinary per-label series
+        # entirely and drawn through _reference instead - see below.
+        "reference": exp.get("reference", False),
     })
 
 # ---- AGGREGATE (if grouped) ----
@@ -224,6 +233,9 @@ if args.grouped:
             "z_val":    float(np.mean(zs)) if zs else None,
             "n":        len(items),
             "feasible": True,
+            # One run per group (group_id keys on run - see build_group_map), so
+            # every item in the group agrees on this.
+            "reference": items[0]["reference"],
         })
     valid = rows
 else:
@@ -232,6 +244,13 @@ else:
         r["x_err_lo"] = r["x_err_hi"] = 0.0
         r["y_err_lo"] = r["y_err_hi"] = 0.0
         r["n"]        = 1
+
+# ---- REFERENCE (pulled out of the ordinary per-label series) ----
+# A run flagged as the user's benchmark stops being "just another run": it is drawn
+# once, apart, through _reference - see below - instead of taking its usual place
+# among the series it is being compared against.
+reference_valid = [r for r in valid if r["feasible"] and r["reference"]]
+valid = [r for r in valid if not r["reference"]]
 
 # ---- INFEASIBLE (always individual points) ----
 # Constraint-violating experiments are taken straight from raw_rows so they are
@@ -252,7 +271,7 @@ if use_z:
     z_vals += [r["z_val"] for r in infeasible if r["z_val"] is not None]
     if z_vals:
         z_cmap = cm.coolwarm
-        z_norm = mcolors.Normalize(vmin=min(z_vals), vmax=max(z_vals))
+        z_norm = diverging_norm(z_vals, args.zcenter)
     else:
         use_z = False
 
@@ -477,6 +496,12 @@ if args.aggregate_runs:
             [], [], color=color, linewidth=1.4, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
+# Drawn unconditionally - independent of --aggregate-runs, which is about the
+# ordinary series above, not the benchmark.
+draw_reference(ax, reference_valid, sx, sy, args.band,
+               fig_cfg["colors"].get("reference", "#E62020"), SCATTER["marker_size"],
+               FRONT["edge_width"], legend_handles)
+
 if args.aggregate_runs:
     front_groups = []
 elif args.front_scope == "initial-vs-all":
@@ -550,30 +575,17 @@ ax.set_ylabel(ylabel, fontsize=FONT_LABEL)
 ax.tick_params(labelsize=FONT_LABEL - 1)
 ax.grid(True, **fig_cfg["grid"])
 leg_cfg = fig_cfg["legend"]
-# Long run names in quantity outgrow any corner, so past a handful the legend moves under
-# the axes and splits into columns instead of covering the data.
-legend_below = len(legend_handles) > 4
-if legend_below:
-    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND - 1,
-              loc="upper center", bbox_to_anchor=(0.5, -0.16),
-              ncol=1 if len(legend_handles) <= 6 else 2,
-              frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
-else:
-    legend = ax.legend(handles=legend_handles, fontsize=FONT_LEGEND,
-                       loc="best", frameon=leg_cfg["frameon"],
-                       framealpha=leg_cfg["framealpha"])
+# Long run names in quantity outgrow a corner at the normal font size, so past a
+# handful this shrinks the legend (smaller type, more columns) to keep it inside
+# the axes rather than let it spill past them.
+place_legend(fig, ax, legend_handles, leg_cfg, FONT_LEGEND)
 
 if use_z and _last_sc is not None:
     zlabel = args.zlabel if args.zlabel else PRETTY_NAMES.get(args.z, args.z)
     cbar = fig.colorbar(_last_sc, ax=ax, pad=0.02)
     cbar.set_label(zlabel, fontsize=FONT_LABEL)
     cbar.ax.tick_params(labelsize=FONT_LABEL - 1)
+    mark_center(cbar, args.zcenter)
 
 fig.tight_layout(pad=fig_cfg["layout_pad"])
-if legend_below:
-    # tight_layout reserves nothing for a legend anchored outside the axes, so measure
-    # what it actually took and give it that much of the figure.
-    fig.canvas.draw()
-    height = legend.get_window_extent().transformed(fig.transFigure.inverted()).height
-    fig.subplots_adjust(bottom=min(0.6, height + 0.14))
 plt.show(block=__name__ == "__main__")
