@@ -52,9 +52,22 @@ def arm_label(exp: dict, fallback: str) -> str:
     is what the caller already falls back to when neither is set - typically the
     per-observation label, since an unlabelled run still deserves a series of its own
     rather than being silently lumped in with everything else unlabelled.
+
+    A swept --n-initial (TrialRecord, or a sweep study's own run naming - see
+    build_experiment_map) folds into the arm the same way: otherwise every replicate of
+    every --n-initial size pools into one curve regardless of size, which is exactly the
+    comparison a sweep over it exists to draw apart. Placed ahead of the provenance
+    suffix rather than appended after it, so is_initial/base_label/arm_line_style - which
+    all match that suffix with endswith - keep working unchanged.
     """
     tech = str(exp.get("optimizer") or "").strip().lower()
     prov = str(exp.get("provenance") or "").strip().lower()
+    n_initial = exp.get("n_initial")
+    if tech and n_initial is not None:
+        # Left out of base_label's stripped set on purpose: two different sizes of
+        # the same arm need to read apart on a plot comparing them, which sharing
+        # one named colour - what stripping this for base_label would do - defeats.
+        tech = f"{tech} n{n_initial}"
     if tech and prov:
         return f"{tech} ({prov})"
     return tech or prov or fallback

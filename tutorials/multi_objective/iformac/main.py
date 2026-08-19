@@ -15,6 +15,7 @@ from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
 from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
 from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
+from pybo.utils.trial_record import TrialRecord
 from tutorials.multi_objective.iformac.objective import IFormAC
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,7 +24,8 @@ DTYPE = torch.float64
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
          verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
-         repeats: int = 1, noise: bool = False, init_data: Path = None):
+         repeats: int = 1, noise: bool = False, init_data: Path = None,
+         shuffle_init: bool = False):
     """ Make directory """""
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -51,26 +53,31 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     )
 
     """ Draw or load the initial parameter set """
-    sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
-    initial = None
+    # If the user passes a path to the initial data, then the initial data is
+    # loaded from files, otherwise is drawn using Sobol sampler
     if init_data is not None:
-        # A recorded warm start, not a fresh draw: --n-initial then means "keep only
-        # the first this many", so the sampler below is unused for X but is still built,
-        # since the sobol arm reuses it to continue that sequence for its proposals.
-        initial = load_initial_dataset(init_data, objective, n_initial=n_initial)
+        initial = load_initial_dataset(
+            root=init_data,
+            objective=objective,
+            n_initial=n_initial,
+            shuffle_seed=seed if shuffle_init else None
+        )
         X_initial = initial["X"].to(device=device, dtype=DTYPE)
         n_initial = X_initial.shape[0]
         print(f"Loaded {n_initial} initial point(s) from {init_data}")
     else:
+        sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
         n_initial = n_initial or 5 * (objective.dim + 1)
         n_initial = math.ceil(n_initial / q) * q
         X_initial = sampler.draw_samples(n=n_initial)
-    # Nothing here reads this back - it is the hand-off to whoever (or whatever machine
-    # control software) actually sets these points on the rig: a flat table in the
-    # parameters' real units, rather than the nested, machine-oriented experiment.json.
-    X_np = X_initial.detach().cpu().numpy()
-    np.savetxt(run_dir / "output.csv", X_np, delimiter=",",
-               header=", ".join(cfg.label for cfg in objective.par_cfg))
+
+    # What this trial asked for (or defaulted to), for every step's experiment.json -
+    # the optimizer itself has no way to know any of it. "synthetic" by default: the
+    # loop below evaluates the objective in Python either way; a loaded initial row is
+    # the one exception, overridden per step below (see loaded_initial).
+    trial = TrialRecord(n_initial=n_initial, seed=seed, provenance="synthetic",
+                        n_evals=n_evals, q=q, noise=noise, repeats=repeats,
+                        device=str(device))
 
     """ Instantiate Bayesian optimizer """
     optimizer_class = {"sobol": SobolOptimizer,
@@ -166,7 +173,10 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
             """ Save the running summary (run root) and this measurement's record """
             bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
-            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
+            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose,
+                       extra=trial.step_fields(
+                           step_index=i, repetition=rep,
+                           provenance="experimental" if loaded_initial else None))
 
             if pbar is not None:
                 time.sleep(0.1)
@@ -197,4 +207,5 @@ if __name__ == "__main__":
         repeats=args.repeats,
         noise=args.noise,
         init_data=args.init_data,
+        shuffle_init=args.shuffle_init,
     )

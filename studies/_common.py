@@ -53,6 +53,12 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                              "instead of drawing a fresh one, so every replicate - and, run once per "
                              "--strategy, every arm - starts from the exact same dataset. Forwarded "
                              "unchanged to every trial.")
+    parser.add_argument("--shuffle-init", type=str2bool, default=False,
+                        help="With --init-data, have each replicate's --seed also reorder the "
+                             "recorded initial observations before --n-initial truncates them, so "
+                             "a swept --n-initial keeps a different random subset per replicate "
+                             "instead of always the same first points. Off by default, matching "
+                             "--init-data's own default of one fixed dataset for every replicate.")
     parser.add_argument("--base-seed", type=int, default=2063,
                         help="First seed; trials increment from here.")
     parser.add_argument("--n-replicates", type=int, default=5,

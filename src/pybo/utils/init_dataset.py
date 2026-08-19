@@ -8,6 +8,7 @@ tutorials/multi_objective/branin_currin/main.py for the format written), and kee
 the observations recorded with source == "initial".
 """
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -54,17 +55,27 @@ def _stack_var(entries: list[dict], group: str, labels: list[str]) -> torch.Tens
     return torch.tensor(rows, dtype=torch.float64)
 
 
-def load_initial_dataset(root: str | Path, objective, n_initial: int | None = None) -> dict:
+def load_initial_dataset(root: str | Path, objective, n_initial: int | None = None,
+                         shuffle_seed: int | None = None) -> dict:
     """The rig's own initial design, read back from a previous run.
 
     Walks every experiment.json under `root`, keeps the observations recorded with
     source == "initial", and orders them the way the rig measured them
-    (observation_n).
+    (observation_n) - or, with `shuffle_seed`, in a reproducible random order instead
+    (see below).
 
     `n_initial`, when given, keeps only the first that many - an error, not a silent
     truncation, when the run recorded fewer: a warm start shorter than asked for would
     compare arms on datasets of different sizes, which defeats the point. Left as None,
     every initial observation found is used.
+
+    `shuffle_seed`, when given, reorders the found observations (still deterministically,
+    from that seed) before `n_initial` truncates them, so a smaller subset is a random
+    sample of the recorded design rather than always its first points in measurement
+    order. Left as None (the default), the order - and so which points a truncation
+    keeps - is the fixed one every caller has always seen, which is what an arm
+    comparison that warm-starts every replicate from the identical dataset relies on.
+    Pass the trial's own --seed here to vary the subset by replicate instead.
 
     Returns {"X", "Y_obj", "Y_obj_var", "Y_con", "Y_con_var", "Y_trk", "Y_trk_var"},
     each a tensor or, for a kind the objective declares none of (or whose variance is
@@ -81,7 +92,11 @@ def load_initial_dataset(root: str | Path, objective, n_initial: int | None = No
     if not found:
         raise ValueError(f"No observations with source == 'initial' under {root}.")
 
+    # The canonical order first, always - shuffling is then a reproducible reordering
+    # of *that*, not of whatever order the filesystem walk happened to return.
     found.sort(key=lambda item: item[0].get("observation_n") or 0)
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(found)
 
     if n_initial is not None:
         if n_initial > len(found):

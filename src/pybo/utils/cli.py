@@ -120,6 +120,14 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "'initial' found under this path (a run, or a whole study), in the "
                              "order it was measured. --n-initial then keeps only the first that "
                              "many, and is an error if fewer were recorded.")
+    parser.add_argument("--shuffle-init", type=str2bool, default=False,
+                        help="With --init-data, reorder the recorded initial observations "
+                             "(seeded from --seed, so still reproducible) before --n-initial "
+                             "truncates them, instead of always keeping the first that many in "
+                             "measurement order. Off by default, since an arm comparison that "
+                             "warm-starts every replicate from the identical dataset relies on "
+                             "that fixed order; turn it on to have --n-initial keep a different "
+                             "random subset per --seed instead.")
     parser.add_argument("--seed", type=int, default=2063, help="Seeds the global torch RNG.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")

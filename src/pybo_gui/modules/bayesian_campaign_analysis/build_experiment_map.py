@@ -22,6 +22,7 @@ Both of the record's fields survive into the map, as `optimizer` and `provenance
 """
 import argparse
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +30,12 @@ from pathlib import Path
 # What an observation is labelled by, and so what gets its own series and Pareto front.
 LABEL_BY = ("run", "strategy", "strategy+run", "provenance")
 DEFAULT_LABEL_BY = "run"
+
+# A sweep study (see studies/variability_study.py) names a run
+# "<strategy>_ninit<n>_replicate<k>_seed<s>" when --n-initial was swept - study
+# metadata read back from that name, not anything the optimizer itself records, so a
+# run this wasn't written by (or one since renamed) simply has none.
+_NINIT_RE = re.compile(r"ninit(\d+)")
 
 # Marks a label as the initial design of whatever it is qualifying. The plots read it to
 # style those series as exploration - dotted front, the design's marker - and to pair them
@@ -126,6 +133,15 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> 
         # rig data vs a simulated trial - see "provenance" below); the arm comes from
         # "optimizer" instead.
         optimizer = record.get("optimizer")
+        # TrialRecord (pybo.utils.trial_record) writes this straight into the record
+        # on a run built after it existed; a run from before, or from a tutorial that
+        # hasn't adopted it, still names its own --n-initial in the run directory
+        # (see _NINIT_RE) whenever a sweep study is what produced it.
+        if record.get("n_initial") is not None:
+            n_initial = record["n_initial"]
+        else:
+            n_initial_match = _NINIT_RE.search(run)
+            n_initial = int(n_initial_match.group(1)) if n_initial_match else None
         for observation in record.get("data", []):
             # Values only. A record always carries a <label>_var partner and leaves it
             # null when the run measured no noise, and an unmeasured column is not
@@ -156,6 +172,9 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> 
                 "provenance":      record.get("experiment_type"),
                 "start_time":      _epoch(record.get("datetime")),
                 "run":             run,
+                # The sweep's own --n-initial, read back from the run name a study
+                # gave it - see _NINIT_RE. None on a run no sweep named this way.
+                "n_initial":       n_initial,
                 "path":            str(step_dir),
                 "reference":       _is_reference(step_dir),
                 "parameters":      observation.get("parameters") or {},

@@ -45,6 +45,7 @@ def main():
                     "--q-batch": args.q_batch,
                     "--n-initial": n_initial,
                     "--init-data": args.init_data,
+                    "--shuffle-init": args.shuffle_init,
                     "--seed": seed,
                     "--strategy": args.strategy,
                     "--noise": args.noise,

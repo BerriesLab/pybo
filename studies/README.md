@@ -67,6 +67,33 @@ of each arm then starts from an identical initial design, so the two arms share
 `m_0` and their gains are differences in what the budget was spent on, not in
 where it started.
 
+## Checking whether a smaller warm start still reaches the same hypervolume
+
+`--init-data` on its own keeps the *same* fixed prefix of the recorded design for
+every replicate - the right choice for the bo-vs-sobol comparison above, where
+every arm sharing `m_0` is exactly the point. Add `--shuffle-init true` to have
+each replicate's `--seed` also reorder the recorded points first, so sweeping
+`--n-initial` asks a different question: does a *smaller* real warm start still
+reach the same hypervolume, averaged over which points a subset of that size
+happened to include, rather than always the same handful.
+
+```
+python -m studies.variability_study --target tutorials.multi_objective.iformac.main \
+    --init-data data/iformac_converted --shuffle-init true \
+    --n-initial 8,12,16,20 --n-evals 32 --n-replicates 10 --output-dir data/iformac_subsample
+```
+
+`data/iformac_converted` holds iformac's 20 real, converted initial points (3
+parameters, so `2*(dim+1)` to `5*(dim+1)` spans 8 to 20 - the sweep above is exactly
+that range, in steps of `dim+1`); the tutorial's own synthetic ground truth
+(`evaluate_true_objective`) stands in for the rig from there, so the `--n-evals`
+proposals every trial makes after its warm start cost nothing to actually measure.
+Kept fixed across the sweep (unlike `--n-initial`) so every arm is asking the same
+question with the same further budget - whether the extra initial points bought
+anything a search of that length couldn't make up on its own. Compare the
+resulting arms' hypervolume traces the same way as any other sweep -
+`plot_hypervolume` in the campaign GUI, one series per `--n-initial` value.
+
 ## Available studies
 
 - `variability_study` — replicates a run over seeds to quantify run-to-run

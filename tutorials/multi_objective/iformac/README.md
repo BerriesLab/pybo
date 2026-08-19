@@ -43,13 +43,20 @@ python -m tutorials.multi_objective.iformac.main --strategy sobol --n-evals 32 -
 # search strategy rather than which points the design drew
 python -m tutorials.multi_objective.iformac.main --strategy bo    --init-data data/iformac_converted --n-evals 32 --seed 7
 python -m tutorials.multi_objective.iformac.main --strategy sobol --init-data data/iformac_converted --n-evals 32 --seed 7
+
+# --n-initial then keeps only the first that many recorded points, the same one subset
+# every time. Add --shuffle-init to have --seed also reorder them first, so sweeping
+# --n-initial (e.g. via studies.variability_study) asks "does a smaller warm start reach
+# the same hypervolume", each replicate over a different random subset of the real design
+# rather than always its first --n-initial points
+python -m tutorials.multi_objective.iformac.main --init-data data/iformac_converted --shuffle-init true --n-initial 8 --seed 7
 ```
 
 See `pybo.utils.cli.build_trial_args_parser` for the full flag list
-(`--n-evals`, `--q-batch`, `--noise`, `--repeats`, `--n-initial`, `--init-data`, `--seed`,
-`--output-dir`, `--device`, `--strategy`, `--verbose`). For a replicated comparison across
-seeds, drive this same script through `studies.variability_study` instead of calling it
-directly.
+(`--n-evals`, `--q-batch`, `--noise`, `--repeats`, `--n-initial`, `--init-data`,
+`--shuffle-init`, `--seed`, `--output-dir`, `--device`, `--strategy`, `--verbose`). For a
+replicated comparison across seeds, drive this same script through
+`studies.variability_study` instead of calling it directly.
 
 ## What it writes
 

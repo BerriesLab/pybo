@@ -48,8 +48,12 @@ python -m tutorials.multi_objective.vformac.main --strategy sobol --init-data <p
 ```
 
 See `pybo.utils.cli.build_trial_args_parser` for the full flag list
-(`--n-evals`, `--q-batch`, `--noise`, `--repeats`, `--n-initial`, `--init-data`, `--seed`,
-`--output-dir`, `--device`, `--strategy`, `--verbose`). For a replicated comparison across
+(`--n-evals`, `--q-batch`, `--noise`, `--repeats`, `--n-initial`, `--init-data`,
+`--shuffle-init`, `--seed`, `--output-dir`, `--device`, `--strategy`, `--verbose`). With
+`--init-data`, `--shuffle-init true` has `--seed` also reorder the recorded initial
+observations before `--n-initial` truncates them, so a swept `--n-initial` (e.g. via
+`studies.variability_study`) keeps a different random subset per replicate instead of
+always the same first points. For a replicated comparison across
 seeds, drive this same script through `studies.variability_study` instead of calling it
 directly.
 
