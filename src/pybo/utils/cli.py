@@ -131,11 +131,12 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=2063, help="Seeds the global torch RNG.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
-    parser.add_argument("--device", default="auto",
-                        help="Torch device: auto (default: cuda when available, else cpu), "
-                             "cpu, cuda, or cuda:N. Force cpu when a run collapses on GPU "
-                             "memory. mps (Apple Metal) works only if the tutorial is "
-                             "dropped to float32, so auto never picks it.")
+    parser.add_argument("--device", default="cpu",
+                        help="Torch device: cpu (default - always available, never runs out "
+                             "of memory the way a GPU can mid-sweep), auto (cuda when "
+                             "available, else cpu), cuda, or cuda:N. mps (Apple Metal) works "
+                             "only if the tutorial is dropped to float32, so auto never picks "
+                             "it.")
     parser.add_argument("--strategy", default="bo", choices=["bo", "sobol", "random"],
                         help="How each new point is chosen: bo (default) by the acquisition "
                              "function, sobol by a constrained draw from a low-discrepancy "

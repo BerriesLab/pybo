@@ -18,12 +18,11 @@ from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
 from pybo.utils.trial_record import TrialRecord
 from tutorials.multi_objective.iformac.objective import IFormAC
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
 def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
-         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
+         verbose: bool = True, device: torch.device = torch.device("cpu"), strategy: str = "bo",
          repeats: int = 1, noise: bool = False, init_data: Path = None,
          shuffle_init: bool = False):
     """ Make directory """""
