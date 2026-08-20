@@ -57,6 +57,11 @@ class MainWindow(QMainWindow):
 
         self.step_list.scan()
         self.step_list.show()
+        # Open from the start rather than on demand: it is the only place a message goes
+        # now, so a run that reports something before anyone thinks to open the log would
+        # otherwise look like it reported nothing. main() shows the main window after
+        # this, which leaves that in front.
+        show_log(self)
 
     def closeEvent(self, event):
         # The selector refuses to close on its own, so release it with us.

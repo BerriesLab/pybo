@@ -338,6 +338,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_pareto = QPushButton("Plot Pareto")
     btn_hv = QPushButton("Plot hypervolume")
     btn_hvi = QPushButton("Plot HV improvement")
+    btn_gain = QPushButton("Score campaign")
+    btn_gain_ninit = QPushButton("Plot gain vs n_initial")
     btn_refresh = QPushButton("Refresh keys")
     # Grouped aggregates replicate runs at the same observation index; the error-bar mode
     # only means anything once it is on.
@@ -432,6 +434,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
     plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
+    # Scoring is its own row: the first writes gain.json and the second reads it, so
+    # they run in that order and neither belongs beside the drawing buttons.
+    plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
     plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers,
                                cb_front, cb_design_front))
     plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
@@ -917,10 +922,16 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             extra += ["--front-scope", "initial-vs-all"]
         _launch("plot_pareto_2d", *extra)
 
-    def _plot_hypervolume(improvement: bool) -> None:
-        extra = _constraint_args() + (["--improvement"] if improvement else [])
-        if cb_grouped.isChecked():
-            extra.append("--grouped")
+    def _metric_objective_args() -> list | None:
+        """How the campaign's metric is defined, as flags: the objectives it is measured
+        over and which of them are maximized.
+
+        Shared by every script scoring a campaign rather than drawing its points -
+        plot_hypervolume and campaign_gain - so the two always score the same thing.
+        None means the selection is incomplete and the caller should not launch; the
+        reason has already been posted.
+        """
+        extra = []
         if _n_objectives() == "1":
             # One objective: the metric is the best value it reached, so the objective
             # goes in on its own and the parameter rows have no part in it.
@@ -951,6 +962,15 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 extra += ["--z", z]
                 pairs.append((z, z_sense))
             extra += _sense_args(*pairs)
+        return extra
+
+    def _plot_hypervolume(improvement: bool) -> None:
+        objectives = _metric_objective_args()
+        if objectives is None:
+            return
+        extra = _constraint_args() + (["--improvement"] if improvement else []) + objectives
+        if cb_grouped.isChecked():
+            extra.append("--grouped")
         # The per-step gain view rewrites what a point means, and the plot refuses the
         # two together, so the flags are only added to the cumulative one.
         if not improvement:
@@ -963,6 +983,37 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         if state["problem"] is not None:
             extra += ["--ground-truth", obj_edit.text()]
         _launch("plot_hypervolume", *extra)
+
+    def _gain_dir() -> str:
+        """Where a campaign's score lives: the root the runs were selected from.
+
+        Not the scratch directory the map is built in - that is rebuilt from the
+        selection every time and does not outlive the session, so a score written there
+        is lost the moment the GUI closes. Falls back to the scratch when no root has
+        been chosen, which is the only case with nowhere better to put it.
+        """
+        return step_list.root or str(_scratch)
+
+    def _score_campaign() -> None:
+        """Reduce every run to gamma / n_tau / n_c, scoring the same metric the
+        hypervolume plot draws. Prints its table into the log and writes gain.json
+        beside the runs, which is what the sensitivity plot below reads."""
+        objectives = _metric_objective_args()
+        if objectives is None:
+            return
+        extra = _constraint_args() + objectives + ["--out-dir", _gain_dir()]
+        # The same fixed reference the hypervolume plot uses, and for the same reason:
+        # gamma is a ratio of hypervolumes, so a reference that moves with the selection
+        # would change a run's score depending on what was plotted beside it.
+        if state["problem"] is not None:
+            extra += ["--ground-truth", obj_edit.text()]
+        _launch("campaign_gain", *extra)
+
+    def _plot_gain_vs_ninitial() -> None:
+        """Gain and cost against the initial design's size, from gain.json. Needs
+        campaign_gain to have written one for this campaign first - read from the same
+        place it writes to."""
+        _launch("plot_gain_vs_ninitial", "--gain-dir", _gain_dir())
 
     # The viewers rebuild first, so what they show is the current selection rather than
     # whatever was last written.
@@ -978,6 +1029,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
     btn_hvi.clicked.connect(lambda: _plot_hypervolume(True))
+    btn_gain.clicked.connect(lambda: _score_campaign())
+    btn_gain_ninit.clicked.connect(lambda: _plot_gain_vs_ninitial())
 
     # Diagnostic rows: label, script, and whether it understands --grouped and
     # --aggregate-runs. None of these average runs: at a given step, runs with different

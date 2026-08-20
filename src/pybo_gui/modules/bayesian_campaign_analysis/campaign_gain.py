@@ -8,14 +8,36 @@ The metric is the hypervolume, or the best value when one objective is given.
 
 COLUMNS
 
-  gamma       improvement over the initial design, in %
+  gamma       improvement over the initial design at the end of the budget, in %
+  gamma_c     the same, but measured at convergence rather than at the end of the
+              budget: 100 * (m_c - m_initial) / |m_initial|. The metric only grows, so
+              gamma_c <= gamma, and they part company by whatever the run found after it
+              had stopped counting as improving.
   gamma_norm  how much of the distance from the initial design to the known optimum was
               covered: 0 = no better than the design, 1 = optimum reached
   eta         gamma divided by the evaluations spent getting there, in % per evaluation
-  it0.5       evaluations, past the initial design, needed to cover 50% of that distance;
-  it0.9       likewise 90% and 99%. Set your own targets with --tau.
+  it0.5       evaluations, past the initial design, needed to cover 50% of the distance
+  it0.9       to the optimum; likewise 90% and 99%. Set your own targets with --tau.
   it0.99
+  n0.5        evaluations from the start of the run to cover 50% of that run's own gain
+  n0.9        to convergence; likewise 90% and 99%. See the two finish lines below.
+  n0.99
+  m_c         the metric at convergence
   n_c         evaluation at which the run stopped improving (--patience/--tol)
+
+TWO FINISH LINES
+
+  it_tau and n_tau both answer "how fast", against different targets, and neither is
+  wrong - they say different things.
+
+  it_tau is a fraction of the distance to the optimum: a shared finish line, so runs and
+  arms are directly comparable, and a run that never gets there simply has none. Counted
+  past the initial design, since the design is not the optimizer's work.
+
+  n_tau is a fraction of that run's own gain to convergence, counted from the run's
+  first evaluation. Every run that gained anything reaches it, by construction at n_c at
+  the latest, so it is always defined - but it is self-referential: a run that barely
+  improved reaches 90% of its own small gain quickly and scores well.
 
   In the per-arm summary, gains are mean +- std over that arm's runs and each it column
   is a median plus how many runs got there at all: "15 (1/3)" means one run of three
@@ -94,6 +116,12 @@ parser.add_argument("--patience", type=int, default=10,
 parser.add_argument("--tol", type=float, default=1e-3,
                     help="Improvement below which an iteration counts as flat "
                          "(default: %(default)s).")
+parser.add_argument("--out-dir", default=None,
+                    help="Where gain.json is written (default: the campaign directory). "
+                         "The GUI builds its map in a scratch directory that does not "
+                         "outlive the session, so it passes the campaign root here "
+                         "instead - a score is worth keeping, unlike the map it was "
+                         "computed from, which is rebuilt from the selection each time.")
 args = parser.parse_args()
 
 try:
@@ -204,17 +232,31 @@ for run, items in runs.items():
     # Convergence as the run itself would have called it: `patience` consecutive
     # improvements all below `tol`. Never converged means the horizon is the budget,
     # which makes eta a lower bound rather than a missing value.
+    #
+    # Only windows lying entirely past the initial design are considered. A design is
+    # drawn blind, so its hypervolume is routinely flat for several points together -
+    # a window overlapping it reads that flatness as convergence and stops the run
+    # before the optimizer has proposed anything, which then reports m_c == m_initial
+    # and a gain of zero.
     n_c, converged = n[-1], False
-    for i in range(args.patience - 1, len(m)):
+    for i in range(int(n0) + args.patience - 1, len(m)):
         window = np.diff(m[i - args.patience + 1:i + 1])
         if window.size and np.all(np.abs(window) < args.tol):
             n_c, converged = n[i], True
             break
 
+    # The metric at convergence, which is what gamma_c and n_tau are measured against.
+    # Distinct from m_final: the run keeps going to the end of its budget, and the
+    # hypervolume only ever grows, so m_final >= m_c whenever anything was found after
+    # the run stopped counting as improving.
+    m_c = m[int(n_c) - 1]
+    gain_c = m_c - m0
+
     gap = optimum - m0
     row = {"run": run, "arm": items[0]["arm"], "n_initial": int(n0),
-           "m_initial": m0, "m_final": m_final,
+           "m_initial": m0, "m_final": m_final, "m_c": m_c,
            "gamma": 100.0 * (m_final - m0) / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
+           "gamma_c": 100.0 * gain_c / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
            "gamma_norm": (m_final - m0) / gap if np.isfinite(gap) and gap > 0 else np.nan,
            "n_c": int(n_c), "converged": converged}
     row["eta"] = row["gamma"] / (n_c - n0) if n_c > n0 else np.nan
@@ -223,6 +265,11 @@ for run, items in runs.items():
         # aggregate below reports how many did rather than averaging the rest.
         reached = np.flatnonzero(m >= m0 + tau * gap) if np.isfinite(gap) and gap > 0 else []
         row[f"it{tau:g}"] = n[reached[0]] - n0 if len(reached) else np.nan
+        # n_tau against this run's own gain to convergence, counted from the start of the
+        # run rather than from the end of its design. Always defined when the run gained
+        # anything, since the target is by construction reached at n_c at the latest.
+        own = np.flatnonzero(m >= m0 + tau * gain_c) if gain_c > 0 else []
+        row[f"n{tau:g}"] = n[own[0]] if len(own) else np.nan
     rows.append(row)
 
 if not rows:
@@ -260,33 +307,40 @@ agg, arms = [], []
 for arm, g in per_run.groupby("arm", sort=False):
     row = {"arm": arm, "runs": len(g),
            "gamma": f"{g['gamma'].mean():.4g} +- {g['gamma'].std(ddof=1):.3g}",
+           "gamma_c": f"{g['gamma_c'].mean():.4g} +- {g['gamma_c'].std(ddof=1):.3g}",
            "gamma_norm": f"{g['gamma_norm'].mean():.4g} +- {g['gamma_norm'].std(ddof=1):.3g}",
            "eta": f"{g['eta'].mean():.4g} +- {g['eta'].std(ddof=1):.3g}",
            "converged": f"{int(g['converged'].sum())}/{len(g)}"}
     entry = {"arm": arm, "runs": len(g), "converged": int(g["converged"].sum()),
              "targets": {}}
-    for name in ("gamma", "gamma_norm", "eta"):
+    for name in ("gamma", "gamma_c", "gamma_norm", "eta"):
         entry[name] = {"mean": g[name].mean(), "std": g[name].std(ddof=1)}
     for tau in taus:
         col = g[f"it{tau:g}"]
         hit = int(col.notna().sum())
         row[f"it{tau:g}"] = f"{col.median():.4g} ({hit}/{len(g)})" if hit else f"- (0/{len(g)})"
+        # n_tau is defined for every run that gained anything, so it is a plain median
+        # over the arm - no reached count to qualify it the way it_tau needs one.
+        own = g[f"n{tau:g}"]
+        row[f"n{tau:g}"] = f"{own.median():.4g}" if own.notna().any() else "-"
         # reached is what makes the median readable: a median over 1 of 5 runs is not the
         # same claim as a median over 5.
         entry["targets"][f"{tau:g}"] = {"median": col.median(), "reached": hit,
-                                        "total": len(g)}
+                                        "total": len(g), "n_tau_median": own.median()}
     entry["runs_detail"] = g.to_dict("records")
     agg.append(row)
     arms.append(entry)
 
-print("\nPer arm - mean +- std, it_tau as median (reached/total):\n")
+print("\nPer arm - mean +- std, it_tau as median (reached/total), n_tau as median:\n")
 print(pd.DataFrame(agg).to_string(index=False))
 
 report = {"metric": metric_name, "objectives": objective_keys,
           "optimum": args.optimum, "optimum_source": source,
           "convergence": {"patience": args.patience, "tol": args.tol},
           "taus": taus, "arms": arms}
-out_path = os.path.join(data_path, "gain.json")
+out_dir = args.out_dir or data_path
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(out_dir, "gain.json")
 with open(out_path, "w", encoding="utf-8") as file:
     json.dump(jsonable(report), file, indent=2, allow_nan=False)
 print("\nSaved", out_path)
