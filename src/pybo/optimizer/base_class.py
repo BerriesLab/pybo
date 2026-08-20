@@ -865,20 +865,11 @@ class OptimizerBase(ABC):
         if verbose:
             self._print_success()
 
-    def to_json(self, filepath: str | Path | None = None, verbose=True,
-                extra: dict | None = None):
+    def to_json(self, filepath: str | Path | None = None, verbose=True):
         """Write the observations of the latest step to JSON, one record per observation.
 
         Each record carries its position in the run, what produced it, and its values
         named from the problem definition rather than left as bare tensor columns.
-
-        `extra` is merged into the top-level payload, last, so it can add or override
-        anything - e.g. experiment_type (real rig vs simulated trial), n_initial, or a
-        step/repetition index. The optimizer has no way to know any of that itself: it
-        doesn't know what objective it was pointed at or how a script chose to loop it,
-        only its own measured data and which arm it is. That is the caller's own
-        pybo.utils.trial_record.TrialRecord to supply, via TrialRecord.step_fields();
-        left as None, the payload carries none of it, the same as before this existed.
         """
         if verbose:
             print("Saving observations to JSON... ", end="")
@@ -922,14 +913,12 @@ class OptimizerBase(ABC):
         payload = {
             "datetime": self._datetime.isoformat(),
             # Which arm proposed the point - this the optimizer does know about
-            # itself, unlike experiment_type (real rig vs simulated trial), which
-            # is a caller's own to say - see `extra` above.
+            # itself, unlike whether the measurement came from a real rig or a
+            # simulated trial, which nothing here is in a position to say.
             "optimizer": self.optimizer_type,
             "batch_size": q,
             "data": data,
         }
-        payload.update(extra or {})
-
         with open(Path(filepath or "experiment.json"), "w") as file:
             json.dump(payload, file, indent=2)
 

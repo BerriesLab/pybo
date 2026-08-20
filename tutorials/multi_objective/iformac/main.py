@@ -14,7 +14,6 @@ from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
 from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
 from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
-from pybo.utils.trial_record import TrialRecord
 from tutorials.multi_objective.iformac.objective import IFormAC
 
 
@@ -50,6 +49,7 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
     """ Draw or load the initial parameter set """
     # If the user passes a path to the initial data, then the initial data is
     # loaded from files, otherwise is drawn using Sobol sampler
+    sampler = SobolSampler(device=device, dtype=dtype, objective=objective)
     if init_data is not None:
         initial = load_initial_dataset(
             root=init_data,
@@ -61,18 +61,9 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
         n_initial = X_initial.shape[0]
         print(f"Loaded {n_initial} initial point(s) from {init_data}")
     else:
-        sampler = SobolSampler(device=device, dtype=dtype, objective=objective)
         n_initial = n_initial or 5 * (objective.dim + 1)
         n_initial = math.ceil(n_initial / q) * q
         X_initial = sampler.draw_samples(n=n_initial)
-
-    # What this trial asked for (or defaulted to), for every step's experiment.json -
-    # the optimizer itself has no way to know any of it. "synthetic" by default: the
-    # loop below evaluates the objective in Python either way; a loaded initial row is
-    # the one exception, overridden per step below (see loaded_initial).
-    trial = TrialRecord(n_initial=n_initial, seed=seed, provenance="synthetic",
-                        n_evals=n_evals, q=q, noise=noise, repeats=repeats,
-                        device=str(device), dtype=str(dtype))
 
     """ Instantiate Bayesian optimizer """
     optimizer_class = {"sobol": SobolOptimizer,
@@ -168,10 +159,7 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
 
             """ Save the running summary (run root) and this measurement's record """
             bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
-            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose,
-                       extra=trial.step_fields(
-                           step_index=i, repetition=rep,
-                           provenance="experimental" if loaded_initial else None))
+            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
 
             if pbar is not None:
                 time.sleep(0.1)
