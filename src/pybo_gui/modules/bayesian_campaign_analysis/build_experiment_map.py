@@ -37,6 +37,12 @@ DEFAULT_LABEL_BY = "run"
 # run this wasn't written by (or one since renamed) simply has none.
 _NINIT_RE = re.compile(r"ninit(\d+)")
 
+# A trial writes one step directory per repetition, "step_<i>_rep<r>". Counting an
+# initial design means counting each point once, so only repetition 00 is read; a
+# layout with no repetition in its names (a ported rig campaign, whose directories
+# are the rig's own experiment ids) has nothing to skip and is counted whole.
+_REP_RE = re.compile(r"_rep(\d+)$")
+
 # Marks a label as the initial design of whatever it is qualifying. The plots read it to
 # style those series as exploration - dotted front, the design's marker - and to pair them
 # with the proposals they belong to.
@@ -103,6 +109,35 @@ def find_steps(roots) -> list:
     return found
 
 
+def _count_initial(run_dir: Path) -> int | None:
+    """How many points a run measured as its initial design, counted from its records.
+
+    Counted rather than declared, so it holds for a run nothing wrote a size into: a
+    tutorial run by hand, or a rig campaign ported from the machine's own files. This is
+    what OptimizerBase.n_initial_samples does for a live run, over the records instead.
+
+    None, not 0, when the run records no provenance at all - a baseline whose rows name
+    no source has an unknown initial design, not an empty one.
+    """
+    total = 0
+    saw_source = False
+    for path in sorted(run_dir.glob("*/experiment.json")):
+        repetition = _REP_RE.search(path.parent.name)
+        if repetition is not None and int(repetition.group(1)) != 0:
+            continue
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for observation in record.get("data", []):
+            source = observation.get("source")
+            if source is not None:
+                saw_source = True
+            if source == "initial":
+                total += 1
+    return total if saw_source else None
+
+
 def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> dict:
     """One record per observation, in chronological order.
 
@@ -125,20 +160,30 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> 
                   for root in reference_roots)
 
     records = []
+    # One count per run, not per record: every step of a run shares the run's initial
+    # design, and _count_initial reads the whole run directory to work it out.
+    counted_initial: dict[Path, int | None] = {}
     for path in find_steps(roots):
         step_dir = path.parent
         record = json.loads(path.read_text(encoding="utf-8"))
-        run = step_dir.parent.name
+        run_dir = step_dir.parent
+        run = run_dir.name
+        if run_dir not in counted_initial:
+            counted_initial[run_dir] = _count_initial(run_dir)
         # The step record's own "experiment_type" means something else entirely (real
         # rig data vs a simulated trial - see "provenance" below); the arm comes from
         # "optimizer" instead.
         optimizer = record.get("optimizer")
-        # TrialRecord (pybo.utils.trial_record) writes this straight into the record
-        # on a run built after it existed; a run from before, or from a tutorial that
-        # hasn't adopted it, still names its own --n-initial in the run directory
-        # (see _NINIT_RE) whenever a sweep study is what produced it.
+        # Three ways to know a run's initial design, most trustworthy first: a size the
+        # record itself declares (older data, written while the trial scripts recorded
+        # one), the size counted from the run's own observations, and finally the
+        # --n-initial a sweep study spelled into the run directory name (see _NINIT_RE).
+        # Counting covers what the other two cannot: a run nobody declared a size for and
+        # no study named, which is every hand-run trial and every ported rig campaign.
         if record.get("n_initial") is not None:
             n_initial = record["n_initial"]
+        elif counted_initial[run_dir] is not None:
+            n_initial = counted_initial[run_dir]
         else:
             n_initial_match = _NINIT_RE.search(run)
             n_initial = int(n_initial_match.group(1)) if n_initial_match else None
