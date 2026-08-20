@@ -365,24 +365,35 @@ elif args.aggregate_runs:
         legend_handles.append(mlines.Line2D(
             [], [], color=_color(arm), linewidth=1.6, linestyle=arm_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
-    # Where the initial design ends, common to every run of every arm plotted - the
-    # smallest across all of them, so a run with a longer design just loses a step or
-    # two of shading rather than the span claiming a run is still initial past the
-    # point it moved on. One neutral grey span behind everything - not an arm's own
-    # colour, since the design is shared by every arm, not particular to one - and not
-    # one per arm either: arms share the same design window, so a second hatch on top
-    # of the first would only double the ink over the one region, not add information.
-    all_n_init = [n for lengths in arm_n_initial.values() for n in lengths]
-    if all_n_init:
-        n_init = min(all_n_init)
-        if len(set(all_n_init)) > 1:
-            print(f"! runs disagree on the initial design's length "
-                  f"({min(all_n_init)}-{max(all_n_init)} steps) - shading only the "
-                  f"first {n_init}, common to all of them.")
-        if n_init > 0:
-            neutral = fig_cfg["colors"].get("ground_truth", "#8A8F98")
-            ax.axvspan(0.5, n_init + 0.5, color=neutral, alpha=0.14,
-                      hatch="//", linewidth=0, zorder=1)
+    # Where each arm's initial design ends. Arms that differ only by strategy share one
+    # design window, and then this is the single neutral span it always was. A sweep over
+    # --n-initial makes the design size the very thing being compared, and there a span
+    # at the smallest would claim every longer design had ended there too.
+    #
+    # Drawn as abutting bands rather than one span per arm: every arm's span would start
+    # at the same left edge, so they would stack alpha over the shared region and double
+    # the ink exactly where it says least. Each band instead covers the steps between one
+    # design size and the next, coloured by the arm whose design ends at its right edge -
+    # the extra exploration that arm bought over the one before it.
+    arm_edge = {}
+    for arm, lengths in arm_n_initial.items():
+        if len(set(lengths)) > 1:
+            print(f"! {arm}: runs disagree on the initial design's length "
+                  f"({min(lengths)}-{max(lengths)} steps) - taking the shortest.")
+        arm_edge[arm] = min(lengths)
+    neutral = fig_cfg["colors"].get("ground_truth", "#8A8F98")
+    left = 0.5
+    for edge in sorted({n for n in arm_edge.values() if n > 0}):
+        owners = [arm for arm, n in arm_edge.items() if n == edge]
+        # Neutral for the first band, which every arm is still exploring in, and for any
+        # band more than one arm ends at: one arm's colour would claim a region it does
+        # not own alone. A band a single arm ends at gets that arm's colour.
+        shared = left == 0.5 or len(owners) > 1
+        ax.axvspan(left, edge + 0.5,
+                   color=neutral if shared else _color(owners[0]),
+                   alpha=0.14 if shared else 0.10,
+                   hatch="//" if shared else "\\\\", linewidth=0, zorder=1)
+        left = edge + 0.5
     # Runs of one arm rarely stop at the same step; the shortest is what they were
     # truncated to, and saying so keeps a curve that ends early from reading as a run
     # that stalled. Reported per arm, since each is truncated to its own shortest and
