@@ -2,7 +2,6 @@ import os
 import math
 import time
 import warnings
-import numpy as np
 import torch
 from pathlib import Path
 from tqdm import tqdm
@@ -13,18 +12,15 @@ from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.random import RandomOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
-from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
+from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
 from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
 from pybo.utils.trial_record import TrialRecord
 from tutorials.multi_objective.iformac.objective import IFormAC
 
-DTYPE = torch.float64
 
-
-def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
-         verbose: bool = True, device: torch.device = torch.device("cpu"), strategy: str = "bo",
-         repeats: int = 1, noise: bool = False, init_data: Path = None,
-         shuffle_init: bool = False):
+def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, verbose: bool,
+         device: torch.device, dtype: torch.dtype, strategy: str, repeats: int, noise: bool,
+         init_data: Path, shuffle_init: bool):
     """ Make directory """""
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +30,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     torch.manual_seed(seed)
 
     """ Instantiate true objective """
-    objective = IFormAC(device=device, dtype=DTYPE)
+    objective = IFormAC(device=device, dtype=dtype)
 
     """ Instantiate kernel """
     kernel = ScaleKernel(
@@ -61,11 +57,11 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
             n_initial=n_initial,
             shuffle_seed=seed if shuffle_init else None
         )
-        X_initial = initial["X"].to(device=device, dtype=DTYPE)
+        X_initial = initial["X"].to(device=device, dtype=dtype)
         n_initial = X_initial.shape[0]
         print(f"Loaded {n_initial} initial point(s) from {init_data}")
     else:
-        sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
+        sampler = SobolSampler(device=device, dtype=dtype, objective=objective)
         n_initial = n_initial or 5 * (objective.dim + 1)
         n_initial = math.ceil(n_initial / q) * q
         X_initial = sampler.draw_samples(n=n_initial)
@@ -76,14 +72,14 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
     # the one exception, overridden per step below (see loaded_initial).
     trial = TrialRecord(n_initial=n_initial, seed=seed, provenance="synthetic",
                         n_evals=n_evals, q=q, noise=noise, repeats=repeats,
-                        device=str(device))
+                        device=str(device), dtype=str(dtype))
 
     """ Instantiate Bayesian optimizer """
     optimizer_class = {"sobol": SobolOptimizer,
                        "random": RandomOptimizer}.get(strategy, BayesianOptimizer)
     bo = optimizer_class(
         device=device,
-        dtype=DTYPE,
+        dtype=dtype,
         objective=objective,
         acqf=qLogNoisyExpectedHypervolumeImprovement,
         kernel=kernel,
@@ -157,7 +153,7 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
                     initial=initial,
                     rows=sl,
                     device=device,
-                    dtype=DTYPE
+                    dtype=dtype
                 )
             else:
                 new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
@@ -188,10 +184,9 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
 
 if __name__ == "__main__":
-    args = parse_trial_args(description="Run a single constrained IFormAC BO trial.")
-    device = resolve_device(args.device)
+    args = parse_trial_args(description="Run a trial.")
     if args.verbose:
-        print(f"Running on {device}.")
+        print(f"Running on {args.device} in {args.dtype}.")
     output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
     main(
@@ -201,7 +196,8 @@ if __name__ == "__main__":
         seed=args.seed,
         output_dir=output_dir,
         verbose=args.verbose,
-        device=device,
+        device=args.device,
+        dtype=args.dtype,
         strategy=args.strategy,
         repeats=args.repeats,
         noise=args.noise,

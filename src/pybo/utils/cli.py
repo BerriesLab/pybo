@@ -6,11 +6,9 @@ with the studies/_common.py contract without repeating the same argparse
 boilerplate in each tutorial's main.py.
 """
 import argparse
+import torch
 from datetime import datetime
 from pathlib import Path
-
-import torch
-
 from pybo.utils.helpers import str2bool
 
 
@@ -20,25 +18,8 @@ def mps_available() -> bool:
     return bool(backend is not None and backend.is_available())
 
 
-def resolve_device(name: str = "auto") -> torch.device:
-    """The torch device a run should use, from the --device flag.
-
-    "auto" is the old hard-coded behaviour: cuda when torch reports one, else cpu. The
-    point of naming a device explicitly is "cpu": a GP fit that exhausts GPU memory
-    brings the run down partway through, and falling back to system memory finishes it,
-    slower, rather than not at all.
-
-    "mps" (Apple Metal) is accepted but deliberately never chosen by "auto". Metal has no
-    float64, and every tutorial runs DTYPE = torch.float64, so a run that lands there
-    fails on the first tensor it builds. Auto-selecting it would turn a working cpu
-    default on Apple silicon into a broken one; asking for it by name, having dropped the
-    tutorial to float32, is a choice this function does not need to second-guess.
-
-    An unavailable or misspelled device fails here, with the flag in the message, rather
-    than several steps later inside a tensor op.
-    """
-    if name == "auto":
-        name = "cuda" if torch.cuda.is_available() else "cpu"
+def resolve_device(name: str = "cpu") -> torch.device:
+    """The torch device a run should use, from the --device flag."""
     try:
         device = torch.device(name)
     except RuntimeError as error:
@@ -46,7 +27,7 @@ def resolve_device(name: str = "auto") -> torch.device:
     if device.type == "cuda":
         if not torch.cuda.is_available():
             raise SystemExit(f"--device {name}: torch reports no CUDA device on this machine. "
-                             f"Use --device cpu, or auto to pick whatever is there.")
+                             f"Use --device cpu.")
         count = torch.cuda.device_count()
         if device.index is not None and device.index >= count:
             raise SystemExit(f"--device {name}: this machine has {count} CUDA device"
@@ -55,9 +36,20 @@ def resolve_device(name: str = "auto") -> torch.device:
         if not mps_available():
             raise SystemExit(f"--device {name}: torch reports no Metal (MPS) backend on this "
                              f"machine. It needs Apple silicon and a torch built with MPS.")
-        print("! --device mps: Metal has no float64. Set DTYPE = torch.float32 in the "
-              "tutorial, or this run will fail on its first tensor.")
+        print("! --device mps: Metal has no float64. Pass --dtype float32 where the "
+              "tutorial threads it, or set DTYPE = torch.float32 in one that does not, "
+              "or this run will fail on its first tensor.")
     return device
+
+
+DTYPES = {"float32": torch.float32, "float64": torch.float64}
+
+
+def resolve_dtype(name: str = "float64") -> torch.dtype:
+    """The torch dtype a run should use, from the --dtype flag."""
+    if name not in DTYPES:
+        raise SystemExit(f"--dtype {name}: expected one of {', '.join(DTYPES)}.")
+    return DTYPES[name]
 
 
 def default_output_dir(script_file: str | Path) -> Path:
@@ -71,14 +63,7 @@ def default_output_dir(script_file: str | Path) -> Path:
 def unique_dir(path: str | Path) -> Path:
     """Return a run directory safe to write into without clobbering a previous
     run: `path` itself when it does not exist or is empty, otherwise the first
-    free `path_NNN` (path_001, path_002, ...).
-
-    Always absolute. The trial loop chdirs into each step's directory so the
-    plotters write there, which leaves a relative --output-dir resolving against
-    a different place every step: the run would nest its own output inside
-    step_000, write summary.json where nothing looks for it, and eventually die
-    on the path length. Resolving here fixes it for every tutorial at once,
-    since they all pass --output-dir through this function."""
+    free `path_NNN` (path_001, path_002, ...). Always absolute."""
     path = Path(path).resolve()
     if not path.exists() or not any(path.iterdir()):
         return path
@@ -90,7 +75,8 @@ def unique_dir(path: str | Path) -> Path:
         i += 1
 
 
-def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
+def parse_trial_args(description: str = ""):
+    """Parse the trial flags."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--n-evals", type=int, default=32,
                         help="Proposed objective evaluations per trial, on top of the initial design "
@@ -131,11 +117,18 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=2063, help="Seeds the global torch RNG.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
-    parser.add_argument("--device", default="cpu",
+    parser.add_argument("--device", default="cpu", type=resolve_device, metavar="DEVICE",
                         help="Torch device: cpu (default - always available, never runs out "
-                             "of memory the way a GPU can mid-sweep), auto (cuda when "
-                             "available, else cpu), cuda, or cuda:N. mps (Apple Metal) works "
-                             "only if the tutorial is dropped to float32, so auto never picks "
+                             "of memory the way a GPU can mid-sweep), cuda, or cuda:N. mps "
+                             "(Apple Metal) works only in float32, so it needs --dtype "
+                             "float32 and a tutorial that threads it.")
+    parser.add_argument("--dtype", default="float64", type=resolve_dtype,
+                        metavar="{" + ",".join(sorted(DTYPES)) + "}",
+                        help="Torch dtype every tensor a trial builds is made in: float64 "
+                             "(default - what keeps a GP fit's kernel matrix factorizable as "
+                             "it fills up) or float32 (half the memory, and the only precision "
+                             "Apple Metal has, so --device mps needs it). Acted on by the "
+                             "tutorials wired for it; the rest read their own DTYPE and ignore "
                              "it.")
     parser.add_argument("--strategy", default="bo", choices=["bo", "sobol", "random"],
                         help="How each new point is chosen: bo (default) by the acquisition "
@@ -148,13 +141,4 @@ def build_trial_args_parser(description: str = "") -> argparse.ArgumentParser:
                              "dataset - or pass --init-data to start them from a recorded "
                              "one instead.")
     parser.add_argument("--verbose", type=str2bool, default=True, help="Whether to print progress.")
-    return parser
-
-
-def parse_trial_args(description: str = ""):
-    """Parse the trial flags.
-
-    A trial builds no figures, so nothing here touches pybo.plotters. Code that does
-    plot resolves its own style through pybo.plotters.style.
-    """
-    return build_trial_args_parser(description=description).parse_args()
+    return parser.parse_args()

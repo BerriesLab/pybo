@@ -77,7 +77,7 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                              "where this costs most: the budget is n_evals * repeats per "
                              "trial, times the replicates.")
     parser.add_argument("--device", default=None,
-                        help="Torch device forwarded to every trial (auto, cpu, cuda, cuda:N). "
+                        help="Torch device forwarded to every trial (cpu, cuda, cuda:N). "
                              "A sweep is where GPU memory runs out, since the trials that "
                              "exhaust it are the long ones near the end.")
     parser.add_argument("--verbose", type=str2bool, default=False,

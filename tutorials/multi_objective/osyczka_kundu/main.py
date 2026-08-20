@@ -11,16 +11,14 @@ from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.random import RandomOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
-from pybo.utils.cli import parse_trial_args, default_output_dir, resolve_device, unique_dir
+from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
 from tutorials.multi_objective.osyczka_kundu.objective import OsyczkaKundu
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float64
 
 
-def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: int = 2063,
-         verbose: bool = True, device: torch.device = DEVICE, strategy: str = "bo",
-         repeats: int = 1, noise: bool = False):
+def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, verbose: bool,
+         device: torch.device, strategy: str, repeats: int, noise: bool):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -131,9 +129,8 @@ def main(output_dir: Path, n_evals=64, q: int = 1, n_initial: int = None, seed: 
 
 if __name__ == "__main__":
     args = parse_trial_args(description="Run a single Osyczka-Kundu BO trial.")
-    device = resolve_device(args.device)
     if args.verbose:
-        print(f"Running on {device}.")
+        print(f"Running on {args.device}.")
     output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
 
     main(
@@ -143,7 +140,7 @@ if __name__ == "__main__":
         seed=args.seed,
         output_dir=output_dir,
         verbose=args.verbose,
-        device=device,
+        device=args.device,
         strategy=args.strategy,
         repeats=args.repeats,
         noise=args.noise,
