@@ -108,7 +108,7 @@ if args.grouped:
     } for gid in order]
 
 all_labels = sorted({r["label"] for r in rows})
-_color, _marker, _ = styler(fig_cfg, all_labels)
+_color, _marker, _, _ = styler(fig_cfg, all_labels)
 
 # ---- EVOLUTION GEOMETRY ----
 # x is "number of observations": the initial-design block sits on one vertical

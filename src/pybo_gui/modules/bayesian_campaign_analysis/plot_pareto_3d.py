@@ -244,7 +244,7 @@ for r, m in zip(feasible_rows, nd_mask):
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
 
 all_labels     = sorted({r["label"] for r in valid})
-_color, _marker, _front_style = styler(fig_cfg, all_labels)
+_color, _marker, _line_style, _front_style = styler(fig_cfg, all_labels)
 legend_handles = []
 _last_sc       = None
 

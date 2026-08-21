@@ -187,7 +187,7 @@ if not valid:
 infeasible = [r for r in raw_rows if _complete(r) and not r["feasible"]]
 
 all_labels = sorted({r["label"] for r in valid})
-_label_color, _label_marker, _ = styler(fig_cfg, all_labels)
+_label_color, _label_marker, _, _ = styler(fig_cfg, all_labels)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["objective"])

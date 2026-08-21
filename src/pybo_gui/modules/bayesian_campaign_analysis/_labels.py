@@ -22,17 +22,21 @@ INITIAL_SUFFIX = " (initial)"
 # "{optimizer} ({experiment_type})" format. Stripped for colour the same way
 # INITIAL_SUFFIX is: a real rig's bayesian runs and a simulated study's bayesian runs
 # share bayesian's colour, not a second one a named palette was never designed to
-# hold - told apart instead by line style (see arm_line_style) and the legend text.
+# hold - told apart instead by their own line style and marker (see styler) and by
+# the legend text.
 PROVENANCE_SUFFIXES = (" (experimental)", " (synthetic)")
 
 QUALIFIER_SUFFIXES = (INITIAL_SUFFIX, *PROVENANCE_SUFFIXES)
 
+# Line styles and markers a series takes when nothing names one for it, assigned by
+# position the way colours already are. Ordered most to least distinct, so a plot with
+# few series uses only the patterns that read apart at a glance.
+LINE_STYLE_CYCLE = ("-", "--", "-.", ":", (0, (5, 1, 1, 1)), (0, (3, 1, 3, 1, 1, 1)))
+MARKER_CYCLE = ("o", "s", "^", "D", "v", "P", "X", "*")
+
 # Dash patterns for the two kinds of front, before a per-series phase is applied.
 DASHES = {"initial": (1, 3), "proposed": (6, 2)}
 
-# Solid for a real run, dashed for a simulated one - an aggregated arm's own line
-# style, keyed by the same qualifier PROVENANCE_SUFFIXES strips for colour.
-ARM_LINESTYLES = {"experimental": "-", "synthetic": "--"}
 
 FALLBACK_COLOR = "#888888"
 
@@ -57,8 +61,8 @@ def arm_label(exp: dict, fallback: str) -> str:
     build_experiment_map) folds into the arm the same way: otherwise every replicate of
     every --n-initial size pools into one curve regardless of size, which is exactly the
     comparison a sweep over it exists to draw apart. Placed ahead of the provenance
-    suffix rather than appended after it, so is_initial/base_label/arm_line_style - which
-    all match that suffix with endswith - keep working unchanged.
+    suffix rather than appended after it, so is_initial/base_label/style_key - which all
+    match that suffix with endswith - keep working unchanged.
     """
     tech = str(exp.get("optimizer") or "").strip().lower()
     prov = str(exp.get("provenance") or "").strip().lower()
@@ -71,18 +75,6 @@ def arm_label(exp: dict, fallback: str) -> str:
     if tech and prov:
         return f"{tech} ({prov})"
     return tech or prov or fallback
-
-
-def arm_line_style(label: str) -> str:
-    """An aggregated arm's line style: solid for a real run, dashed for a simulated
-    one, matplotlib linestyle notation. Two arms that share a colour because they
-    share an optimizer (see base_label) still need to read apart on the curve itself,
-    not only in the legend text, when both sit on one plot."""
-    if label:
-        for suffix in PROVENANCE_SUFFIXES:
-            if label.endswith(suffix):
-                return ARM_LINESTYLES[suffix.strip(" ()")]
-    return "-"
 
 
 def base_label(label):
@@ -102,12 +94,32 @@ def base_label(label):
     return label
 
 
+def style_key(label):
+    """What a series is keyed by for its line style and marker.
+
+    Only the initial-design qualifier is stripped, so a design and the proposals it
+    belongs to are one series and share a style - the marker and the front's dashes
+    already tell those two apart. The provenance qualifier is kept, which is what lets a
+    real run and a simulated one of the same arm read apart: they share a colour by
+    design (see base_label), so a shared line and marker on top would leave them
+    distinguishable by the legend text alone.
+    """
+    if label and label.endswith(INITIAL_SUFFIX):
+        return label[:-len(INITIAL_SUFFIX)]
+    return label
+
+
 def styler(fig_cfg: dict, labels):
-    """Colour, marker and front-style functions bound to the labels present.
+    """Colour, marker, line-style and front-style functions bound to the labels present.
 
     `labels` is every label in the plot, which is what lets a colour be assigned by
     position and a dash phase be spread over the series sharing a pattern - both need to
     know the whole set, not one label at a time.
+
+    Every series gets all three of colour, line style and marker, each assigned by its
+    position among the labels present. Colour alone is not identity: it is lost to
+    colour-blind readers, to greyscale printing and to a figure photocopied for a
+    reviewer, and two arms of one campaign are exactly the case where that matters.
     """
     named = fig_cfg["colors"]["label"]
     markers = fig_cfg["markers"]["label"]
@@ -117,6 +129,9 @@ def styler(fig_cfg: dict, labels):
     # comparison. Such a label still gets FALLBACK_COLOR, as any unnamed one does.
     labels = sorted(set(labels), key=str)
     unnamed = sorted({base_label(l) for l in labels} - set(named))
+    # One position per series, shared by its line style and marker, so the two never
+    # disagree about which series they are describing.
+    keys = sorted({style_key(l) for l in labels}, key=str)
 
     def color(label):
         base = base_label(label)
@@ -128,7 +143,19 @@ def styler(fig_cfg: dict, labels):
         """The design keeps its own marker, so it reads as exploration wherever it sits."""
         if is_initial(label):
             return markers.get("initial", "^")
-        return markers.get(base_label(label), "o")
+        named_marker = markers.get(base_label(label))
+        if named_marker:
+            return named_marker
+        return MARKER_CYCLE[keys.index(style_key(label)) % len(MARKER_CYCLE)]
+
+    def line_style(label):
+        """The series' own dash pattern, so it survives greyscale and colour blindness.
+
+        Solid first, so a plot of one series looks as it always did.
+        """
+        key = style_key(label)
+        index = keys.index(key) if key in keys else 0
+        return LINE_STYLE_CYCLE[index % len(LINE_STYLE_CYCLE)]
 
     def front_style(label):
         """A dash pattern, phased so coincident fronts stay visible.
@@ -142,4 +169,4 @@ def styler(fig_cfg: dict, labels):
         phase = period * peers.index(label) / len(peers) if label in peers else 0.0
         return phase, pattern
 
-    return color, marker, front_style
+    return color, marker, line_style, front_style

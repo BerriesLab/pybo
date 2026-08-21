@@ -13,7 +13,7 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    DASHES, arm_label, arm_line_style, base_label, is_initial, styler)
+    DASHES, arm_label, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -285,7 +285,7 @@ FRONT_LABELS     = sorted({r["label"] for r in valid})
 # with any one run's. Left alone otherwise: adding names shifts the colours the styler
 # assigns by position.
 _arms = sorted({r["arm"] for r in valid}) if args.aggregate_runs else []
-_label_color, _label_marker, _front_style = styler(fig_cfg, list(FRONT_LABELS) + _arms)
+_label_color, _label_marker, _line_style, _front_style = styler(fig_cfg, list(FRONT_LABELS) + _arms)
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
@@ -491,9 +491,9 @@ if args.aggregate_runs:
         # Drawn as the staircase it is: a straight line between two front points would
         # claim pairs no run achieved.
         ax.step(gx, sy * mean, where="post" if sx > 0 else "pre",
-                color=color, linewidth=1.4, linestyle=arm_line_style(arm), zorder=3)
+                color=color, linewidth=1.4, linestyle=_line_style(arm), zorder=3)
         legend_handles.append(mlines.Line2D(
-            [], [], color=color, linewidth=1.4, linestyle=arm_line_style(arm),
+            [], [], color=color, linewidth=1.4, linestyle=_line_style(arm),
             label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
 
 # Drawn unconditionally - independent of --aggregate-runs, which is about the

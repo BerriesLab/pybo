@@ -12,7 +12,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    arm_label, arm_line_style, base_label, is_initial, styler)
+    arm_label, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -272,7 +272,7 @@ if args.aggregate_runs and args.improvement:
 # Arms take a colour of their own when aggregating, so the mean curve is not confused
 # with any single run's. Left alone otherwise, since adding names here would shift the
 # colours assigned by position to every existing label.
-_color, _marker, _front_style = styler(
+_color, _marker, _line_style, _front_style = styler(
     fig_cfg, all_labels + sorted(arm_curves) if args.aggregate_runs else all_labels)
 
 # ---- PLOT ----
@@ -360,10 +360,15 @@ elif args.aggregate_runs:
         steps = range(1, len(mean) + 1)
         ax.fill_between(steps, low, high, color=_color(arm), alpha=0.18,
                         linewidth=0, zorder=2)
+        # Marked as well as coloured and dashed: on a curve this long a marker every
+        # tenth step is what identifies the series where the dashes of two arms happen
+        # to coincide, without turning the line into a row of symbols.
         ax.plot(steps, mean, color=_color(arm), linewidth=1.6,
-                linestyle=arm_line_style(arm), zorder=3)
+                linestyle=_line_style(arm), marker=_marker(arm),
+                markevery=max(1, len(mean) // 10), markersize=5, zorder=3)
         legend_handles.append(mlines.Line2D(
-            [], [], color=_color(arm), linewidth=1.6, linestyle=arm_line_style(arm),
+            [], [], color=_color(arm), linewidth=1.6, linestyle=_line_style(arm),
+            marker=_marker(arm), markersize=5,
             label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
     # Where each arm's initial design ends. Arms that differ only by strategy share one
     # design window, and then this is the single neutral span it always was. A sweep over

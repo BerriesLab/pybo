@@ -174,7 +174,7 @@ if len(sizes) < 2:
     print(f"! only one initial design size ({sizes[0]}) in this campaign - there is no "
           f"trend to draw. Select runs from a sweep over --n-initial.")
 
-color, _marker, _front = styler(fig_cfg, series)
+color, _marker, _line, _front = styler(fig_cfg, series)
 
 # Series are dodged around each size so their boxes never overlap. One series sits on the
 # size itself; several share the spacing between adjacent sizes.
