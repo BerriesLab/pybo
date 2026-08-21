@@ -39,9 +39,27 @@ def _describe(style) -> str:
     return "; ".join(parts) if parts else "A partial override of the defaults."
 
 
+class _SettingsPage(QWidget):
+    """The tab, refreshing what it reports each time it is shown.
+
+    The workspace figures move while this tab is not the one on screen - every map built
+    in the campaign tab adds a cache entry, and clearing takes them away - so a number
+    read once at construction is stale by the time anyone looks at it. Recomputing on
+    show is what makes it right whenever it can actually be read, without the campaign
+    tab having to know this tab exists.
+    """
+
+    on_show = None
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self.on_show is not None:
+            self.on_show()
+
+
 def build(settings) -> QWidget:
     """Construct the tab. `settings` is the shared object the other tabs read."""
-    page = QWidget()
+    page = _SettingsPage()
     layout = QVBoxLayout(page)
 
     box = QGroupBox("Figures")
@@ -160,6 +178,7 @@ def build(settings) -> QWidget:
 
     browse.clicked.connect(_browse)
     clear_cache.clicked.connect(_clear_cache)
+    page.on_show = _show_workspace
     clear.clicked.connect(lambda: (setattr(settings, "workspace", None), _show_workspace()))
     _show_workspace()
 
