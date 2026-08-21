@@ -424,6 +424,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # 2-D only. The second front is the union, design points included - a front over the
     # proposals alone would run through points the design had already beaten.
     cb_design_front = QCheckBox("Show initial Pareto front line")
+    cb_gt_front = QCheckBox("Show ground-truth Pareto front line")
+    cb_gt_front.setChecked(True)
+    cb_gt_front.setToolTip("Draw the true front along with the ground truth's cloud. "
+                           "A constrained problem has no single front, so there it makes "
+                           "no difference.")
     cb_design_front.setToolTip("Also draw the initial design's own front, in grey under "
                                "the campaign's. The pair says what proposing added to "
                                "the dataset the run started from.")
@@ -504,7 +509,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # The ground truth belongs here too: it is drawn under these plots' points, and the
     # reference point it carries is what the hypervolume above is measured from. Nothing
     # in the Plots frame reads it.
-    axes_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
+    axes_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy,
+                               cb_gt_front))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
     plot_page_layout.addWidget(plot_box)
 
@@ -546,6 +552,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         gt_samples.setEnabled(on and gt_method.currentText() == "random")
         gt_spacing.setEnabled(on and gt_method.currentText() == "grid")
         cb_gt_noisy.setEnabled(on)
+        cb_gt_front.setEnabled(on)
 
     cb_ground.stateChanged.connect(lambda _s: _sync_ground_truth())
     gt_method.currentTextChanged.connect(lambda _t: _sync_ground_truth())
@@ -1136,6 +1143,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         extra += ["--front-line", "always" if cb_front.isChecked() else "never"]
         if cb_design_front.isChecked():
             extra += ["--front-scope", "initial-vs-all"]
+        # Only here: plot_pareto_3d draws no ground-truth front and would not take it.
+        if cb_ground.isChecked():
+            extra += ["--gt-front", "always" if cb_gt_front.isChecked() else "never"]
         _launch("plot_pareto_2d", *extra)
 
     def _metric_objective_args() -> list | None:

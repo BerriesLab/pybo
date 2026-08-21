@@ -65,6 +65,12 @@ parser.add_argument("--gt-samples", type=int, default=4096, dest="gt_samples",
 parser.add_argument("--gt-spacing", type=float, default=0.05, dest="gt_spacing",
                     help="Step on every axis when --gt-method is grid, as a fraction "
                          "of that axis' range: 0.05 is 21 points per parameter.")
+parser.add_argument("--gt-front", choices=["always", "never"], default="always",
+                    dest="gt_front",
+                    help="Whether the ground truth's own Pareto front is drawn along "
+                         "with its cloud (default: always). Only ever there on an "
+                         "unconstrained problem - a constrained one has no single front "
+                         "to draw, so this changes nothing.")
 parser.add_argument("--gt-noisy", action="store_true", default=False, dest="gt_noisy",
                     help="Draw the ground truth the way a run would have observed it, "
                          "noise and all, instead of the noiseless value underneath.")
@@ -301,13 +307,14 @@ if args.ground_truth:
         ax.scatter([p[0] for p in gt_points], [p[1] for p in gt_points],
                    s=SCATTER["marker_size"] * 0.25, marker=".", facecolors=gt_color,
                    edgecolors="none", alpha=0.25, zorder=0)
-        if gt_front:
+        if gt_front and args.gt_front == "always":
             ax.plot([p[0] for p in gt_front], [p[1] for p in gt_front],
                     color=gt_color, linewidth=1.2, zorder=1)
             legend_handles_gt = mlines.Line2D([], [], color=gt_color, linewidth=1.2,
                                               label="Ground truth")
         else:
-            # A constrained problem draws no front line, so the handle shows the cloud.
+            # No front line drawn - a constrained problem has none, or it was turned off -
+            # so the handle shows the cloud instead.
             legend_handles_gt = mlines.Line2D([], [], linestyle="None", marker=".",
                                               color=gt_color,
                                               markersize=SCATTER["marker_size"] ** 0.5,
