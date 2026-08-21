@@ -103,7 +103,6 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import arm_label, is_initial
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
-from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 
 REF_MARGIN = 0.10  # reference point sits this fraction of the data range beyond the worst
 
@@ -211,6 +210,12 @@ if not runs:
 # number, or it is not measuring the run - it is measuring the report.
 ref = None
 if args.ground_truth:
+    # Imported here, not at the top: a pybo objective is a torch object, so this line
+    # costs five seconds of import - and every run of this script that does not ask for a
+    # ground truth was paying it for nothing. Same reasoning as _ground_truth's own lazy
+    # botorch import, and as _hypervolume being extracted torch-free in the first place.
+    from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
+        load_objective, problem_definition)
     problem = problem_definition(load_objective(args.ground_truth))
     ref_by_label = {o["label"]: o["ref_point"] for o in problem["objectives"]}
     missing = [k for k in objective_keys if k not in ref_by_label]

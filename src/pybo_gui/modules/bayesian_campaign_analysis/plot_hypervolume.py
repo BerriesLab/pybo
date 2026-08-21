@@ -17,7 +17,6 @@ from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
-from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", default="down_time_minutes", help="Result key for first objective")
@@ -184,6 +183,12 @@ if not feasible_rows:
 # it is not measuring the run - it is measuring the selection.
 ref = None
 if args.ground_truth:
+    # Imported here, not at the top: a pybo objective is a torch object, so this line
+    # costs five seconds of import - and every run of this script that does not ask for a
+    # ground truth was paying it for nothing. Same reasoning as _ground_truth's own lazy
+    # botorch import, and as _hypervolume being extracted torch-free in the first place.
+    from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
+        load_objective, problem_definition)
     problem = problem_definition(load_objective(args.ground_truth))
     ref_by_label = {o["label"]: o["ref_point"] for o in problem["objectives"]}
     missing = [k for k in objective_keys if k not in ref_by_label]
