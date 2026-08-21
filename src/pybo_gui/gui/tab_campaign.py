@@ -233,6 +233,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     map_box = QGroupBox("Experiment map")
     map_layout = QVBoxLayout(map_box)
     btn_rebuild = QPushButton("Rebuild map now")
+    btn_regroup = QPushButton("Regroup")
     btn_view_exp = QPushButton("View experiment map")
     btn_view_grp = QPushButton("View group map")
     btn_save_map = QPushButton("Save map")
@@ -240,7 +241,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # What counts as the same setting is the resolution in the Parameters box, and only
     # that: a second knob here would be a second answer to one question, free to disagree
     # with the objective's own. A parameter with no resolution is compared as measured.
-    map_layout.addWidget(_row(btn_rebuild, btn_view_exp, btn_view_grp, btn_save_map,
+    map_layout.addWidget(_row(btn_rebuild, btn_regroup, btn_view_exp, btn_view_grp, btn_save_map,
                               btn_load_map))
     layout.addWidget(map_box)
 
@@ -290,10 +291,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # Above the objectives because the parameters are what a setting *is*: the resolution
     # here decides which observations count as repeats of one, which the grouped error
     # bars and every group-aware plot then rest on.
-    # Deferred on purpose: _regroup is defined further down, and the lambda only looks it
-    # up when an edit is actually committed.
+    # Editing a resolution does not regroup either: nothing changes what the plots see
+    # except Rebuild map now, whether the resolutions came from an objective or were
+    # typed here. Deferred on purpose - the lambda only looks the function up when an
+    # edit is actually committed, by which time it is defined further down.
     par_box, par_collect, par_set_keys = make_parameters_widget(
-        on_change=lambda: _regroup())
+        on_change=lambda: _note_resolutions_changed())
     layout.addWidget(par_box)
 
     # ---- Axes ----------------------------------------------------------------
@@ -582,10 +585,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             return
         state["problem"] = problem
         _refresh_keys()
-        # The Parameters box now shows the objective's own resolutions; a map already
-        # built from before was grouped at whatever was there previously (typically
-        # blank, i.e. compared as measured), so it has to be regrouped to match.
-        _regroup()
+        # The Parameters box now shows the objective's own resolutions, but a map already
+        # built was grouped at whatever was there before - typically blank, i.e. compared
+        # as measured. Regrouping here would change what the group map says under the
+        # user without their asking; saying so and leaving the map alone puts that in
+        # their hands, and Rebuild map now is the one action that changes it.
+        _note_resolutions_changed()
         _sync_ground_truth()
         unload_btn.setEnabled(True)
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
@@ -605,9 +610,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         post(_NO_OBJECTIVE)
         unload_btn.setEnabled(False)
         _refresh_keys()
-        # Same reasoning as loading: whatever resolutions the boxes show now may differ
-        # from what the map was last grouped at, so a map already built has to catch up.
-        _regroup()
+        # Same reasoning as loading: the boxes no longer say what the map was grouped at.
+        _note_resolutions_changed()
         _sync_ground_truth()
 
     def _browse_objective() -> None:
@@ -728,7 +732,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                     if json.loads((cached / "stamp.json").read_text(encoding="utf-8")) == stamp:
                         return (json.loads((cached / "experiment_map.json").read_text(encoding="utf-8")),
                                 json.loads((cached / "group_map.json").read_text(encoding="utf-8")),
-                                True)
+                                True, stamp)
                 except (OSError, ValueError):
                     # An unreadable or half-written cache entry is not worth failing over:
                     # rebuilding is always correct, only slower.
@@ -744,7 +748,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 # Written last, so a stamp on disk always has a complete map beside it.
                 (cached / "stamp.json").write_text(json.dumps(stamp, indent=2),
                                                    encoding="utf-8")
-            return exp_map, groups, False
+            return exp_map, groups, False, stamp
 
         def _apply(result) -> None:
             """Back on the GUI thread with whatever the worker produced."""
@@ -753,9 +757,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 post(f"Map build failed: {result}")
                 finish(False)
                 return
-            exp_map, groups, reused = result
+            exp_map, groups, reused, stamp = result
             state["map"], state["groups"] = exp_map, groups
             state["source"] = "selection"
+            # What this map was built from. Regroup reuses it rather than taking a fresh
+            # one, so a regrouped map is cached as coming from the records it really came
+            # from - see _regroup.
+            state["stamp"] = stamp
             # A plot is a separate process reading configs.settings.data_path, so the map
             # has to exist somewhere on disk for it. That somewhere is a scratch directory
             # for the session, not the user's data tree - Save map is how a copy gets kept.
@@ -790,26 +798,74 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             json.dumps(state["groups"], indent=2), encoding="utf-8")
         return out_dir
 
+    def _cache_regrouped(resolutions: dict) -> None:
+        """Store the regrouped map under the records it was built from.
+
+        Nothing to store when the map came from a file rather than a build, since then no
+        fingerprint of the records stands behind it.
+        """
+        cache = workspace.cache_dir()
+        if cache is None or not state.get("stamp"):
+            return
+        stamp = {**state["stamp"],
+                 "resolutions": {str(k): v for k, v in sorted(resolutions.items())}}
+        entry = cache / stamp_digest(stamp)
+        try:
+            entry.mkdir(parents=True, exist_ok=True)
+            (entry / "experiment_map.json").write_text(json.dumps(state["map"], indent=2),
+                                                       encoding="utf-8")
+            (entry / "group_map.json").write_text(json.dumps(state["groups"], indent=2),
+                                                  encoding="utf-8")
+            (entry / "stamp.json").write_text(json.dumps(stamp, indent=2), encoding="utf-8")
+        except OSError as exc:  # noqa: BLE001 - a cache that cannot be written is not fatal
+            post(f"Could not cache the regrouped map: {exc}")
+
     def _regroup() -> None:
         """Re-group the map held in memory at the current resolutions.
 
-        Applied to whatever is in memory, loaded map included: the saved grouping was made
-        at whatever resolutions were set then, and leaving it in place would mean the
-        Parameters box reads one thing while the plots group by another. Only the grouping
-        is redone - the observations themselves do not depend on it.
+        The cheap half of a rebuild: which observations count as one setting depends on
+        the resolutions, the observations themselves do not - so this needs no step
+        record read again. Seconds against minutes, which is why it is a button of its
+        own rather than something Rebuild map now is the only way to reach.
+
+        Applied to whatever is in memory, loaded map included: a saved grouping was made
+        at whatever resolutions were set then, and leaving it would mean the Parameters
+        box reads one thing while the plots group by another.
+
+        Cached under the fingerprint the map was *built* with, not a fresh one. Pressing
+        Regroup asserts that the map in memory still stands - but only now. Taking a new
+        fingerprint would extend that assertion into the future: a record rewritten since
+        the build would be recorded as though the map already reflected it, and the next
+        rebuild would reuse a map that does not. Keeping the original fingerprint says
+        what is true - these records, in that state, grouped this way - so a rebuild after
+        a record changes still misses and rebuilds.
         """
         if not state["map"]:
+            post("Nothing to regroup — build a map first.")
             return
         resolutions = par_collect()
         state["groups"] = build_groups(state["map"], resolutions)
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
-        # Just that the box took effect. The counts said little, and listing every group's
-        # size ran to hundreds of numbers on a study-sized map, which is what stretched the
-        # window: a status line has to fit on one.
-        n = len(state["groups"])
-        post(f"regrouped into {n} groups, "
-                           f"{len(resolutions)} parameters by resolution")
+        _cache_regrouped(resolutions)
+        post(f"Regrouped into {len(state['groups'])} groups, "
+             f"{len(resolutions)} parameters by resolution")
+
+    def _note_resolutions_changed() -> None:
+        """Say that the Parameters box and the map now disagree, when they do.
+
+        Nothing regroups on its own - not loading an objective, not typing a resolution.
+        One action changes what the plots see, and it is Rebuild map now; anything else
+        would move the ground under a group map the user is in the middle of reading.
+
+        Only with a map already built: with none there is nothing to be out of step with,
+        and the next build will use whatever the boxes hold by then.
+        """
+        if not state["map"]:
+            return
+        post("Resolutions changed — the map is still grouped at the previous ones. "
+             "Press Regroup to group by these, or Rebuild map now to re-read the "
+             "records as well.")
 
     def _with_shown_map(on_ready) -> None:
         """Call `on_ready(True)` with whatever map is already held, building one only if
@@ -867,6 +923,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
         state["map"], state["groups"] = exp_map, groups
         state["source"] = "loaded"
+        # Loaded from a file, so there is no record fingerprint behind it and a regroup
+        # of it has nothing honest to cache under.
+        state["stamp"] = None
         _write_map(_scratch)
         configs_settings.set_data_path(_scratch)
         _refresh_keys()
@@ -1121,6 +1180,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # whatever was last written.
     # Rebuild map now always rebuilds: it is the way out when a cached map is
     # somehow wrong, so it must not itself consult the cache.
+    btn_regroup.clicked.connect(lambda: _regroup())
     btn_rebuild.clicked.connect(
         lambda: _rebuild_map(lambda ok: ok and _refresh_keys(), force=True))
     # The viewers show what is held rather than rebuilding to show it; only an empty tab
