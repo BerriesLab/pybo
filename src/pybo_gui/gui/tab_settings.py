@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from pybo_gui.configs import workspace as ws_store
 from pybo_gui.configs.figure_settings import store
 
 _NONE = "(package defaults)"
@@ -101,20 +102,54 @@ def build(settings) -> QWidget:
     ws_row_layout.addStretch()
     ws_layout.addWidget(ws_row)
 
+    usage_row = QWidget()
+    usage_layout = QHBoxLayout(usage_row)
+    usage_layout.setContentsMargins(0, 0, 0, 0)
+    usage_label = QLabel()
+    usage_label.setStyleSheet("color: grey;")
+    clear_cache = QPushButton("Clear cache")
+    spacer = QLabel()
+    spacer.setFixedWidth(90)   # allinea sotto "Folder:"
+    usage_layout.addWidget(spacer)
+    usage_layout.addWidget(usage_label)
+    usage_layout.addWidget(clear_cache)
+    usage_layout.addStretch()
+    ws_layout.addWidget(usage_row)
+
     ws_note = QLabel(
         "Where each session writes its experiment_map.json and group_map.json, one "
         "directory per session. Left empty they go to a temporary folder and are gone "
         "when the session ends, so the map is rebuilt from scratch next time — which on "
         "a large campaign is minutes. A session already open keeps the folder it started "
-        "with.")
+        "with. Clearing the cache only deletes the built maps, which are rebuilt "
+        "from the records on demand; the session folders are left alone.")
     ws_note.setStyleSheet("color: grey;")
     ws_note.setWordWrap(True)
     ws_layout.addWidget(ws_note)
+
+    def _mb(value: int) -> str:
+        return f"{value / (1024 * 1024):.1f} MB"
 
     def _show_workspace() -> None:
         current = settings.workspace
         ws_path.setText(str(current) if current else "")
         ws_path.setPlaceholderText("temporary — not kept between sessions")
+        usage = ws_store.usage()
+        if usage is None:
+            usage_label.setText("No workspace, so nothing is kept.")
+            clear_cache.setEnabled(False)
+            return
+        # The two are split because only one of them is safe to delete.
+        usage_label.setText(
+            f"{_mb(usage['total'])} in use — {_mb(usage['cache'])} of cached maps "
+            f"({usage['entries']} selection{'' if usage['entries'] == 1 else 's'}), "
+            f"{_mb(usage['sessions'])} of session folders.")
+        clear_cache.setEnabled(usage["cache"] > 0)
+
+    def _clear_cache() -> None:
+        freed = ws_store.clear_cache()
+        _show_workspace()
+        usage_label.setText(usage_label.text() + f"  Freed {_mb(freed)}.")
 
     def _browse() -> None:
         chosen = QFileDialog.getExistingDirectory(page, "Choose a workspace folder",
@@ -124,6 +159,7 @@ def build(settings) -> QWidget:
             _show_workspace()
 
     browse.clicked.connect(_browse)
+    clear_cache.clicked.connect(_clear_cache)
     clear.clicked.connect(lambda: (setattr(settings, "workspace", None), _show_workspace()))
     _show_workspace()
 

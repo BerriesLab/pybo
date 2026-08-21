@@ -21,6 +21,7 @@ who never opens the setting.
 """
 import json
 import os
+import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -111,3 +112,51 @@ def new_instance_dir() -> Path:
         candidate = base.with_name(f"{base.name}_{index:03d}")
     candidate.mkdir(parents=True)
     return candidate
+
+def _dir_size(path: Path) -> int:
+    """Bytes held under `path`, skipping anything that vanishes while being counted."""
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file():
+                total += item.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def usage() -> dict | None:
+    """What the workspace is holding, in bytes, or None when there is no workspace.
+
+    Split into the two things that grow for different reasons: the cache, one entry per
+    distinct selection ever built, which is safe to delete; and the session directories,
+    one per run of the GUI, which are what a saved map or a crashed session left behind.
+    """
+    root = get_workspace()
+    if root is None:
+        return None
+    cache = root / "map_cache"
+    cached = _dir_size(cache) if cache.is_dir() else 0
+    total = _dir_size(root)
+    return {"total": total, "cache": cached, "sessions": total - cached,
+            "entries": len(list(cache.iterdir())) if cache.is_dir() else 0}
+
+
+def clear_cache() -> int:
+    """Delete the cached maps, returning the bytes freed.
+
+    Only map_cache, and only its contents: a cached map is rebuilt from the records on
+    demand, so losing it costs time and nothing else. The session directories are left
+    alone - one of them holds the map the running GUI is pointing its plots at, and
+    another may be what a crashed session left to be recovered.
+    """
+    root = get_workspace()
+    if root is None:
+        return 0
+    cache = root / "map_cache"
+    if not cache.is_dir():
+        return 0
+    freed = _dir_size(cache)
+    for entry in cache.iterdir():
+        shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
+    return freed
