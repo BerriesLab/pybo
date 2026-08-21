@@ -488,9 +488,22 @@ if args.aggregate_runs:
         gx = sx * grid
         ax.fill_between(gx, sy * low, sy * high, color=color, alpha=0.18,
                         linewidth=0, zorder=2)
-        # Drawn as the staircase it is: a straight line between two front points would
-        # claim pairs no run achieved.
-        ax.step(gx, sy * mean, where="post" if sx > 0 else "pre",
+        # Drawn through the corners of the mean attainment surface rather than as the
+        # staircase it strictly is. The surface is a step function - between two front
+        # points a run achieved the earlier one and nothing better - but the front line
+        # here is a visual guide to where an arm ended up, not a claim that the pairs
+        # along it were attained, and the per-run fronts elsewhere in this plot are drawn
+        # the same way. The band below keeps the full grid, where the shading carries the
+        # uncertainty and a stepped edge costs nothing to read.
+        #
+        # Corners, not the 200 grid samples: plotting those directly would redraw the
+        # staircase with sloped risers, which is the worst of both.
+        corners_x, corners_y = [], []
+        for gxi, myi in zip(gx, sy * mean):
+            if not corners_y or not (np.isclose(myi, corners_y[-1], equal_nan=True)):
+                corners_x.append(gxi)
+                corners_y.append(myi)
+        ax.plot(corners_x, corners_y,
                 color=color, linewidth=1.4, linestyle=_line_style(arm), zorder=3)
         legend_handles.append(mlines.Line2D(
             [], [], color=color, linewidth=1.4, linestyle=_line_style(arm),
