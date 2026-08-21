@@ -31,7 +31,7 @@ from pybo_gui.configs import settings as configs_settings
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
-from pybo_gui.gui.launchers import launch_analysis, watch
+from pybo_gui.gui.launchers import launch_analysis, run_off_thread, watch
 from pybo_gui.gui.message_log import post
 from pybo_gui.gui.widgets import (
     bind_label_entry, make_constraints_widget, make_objective_checklist,
@@ -666,13 +666,27 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     # ---- Launching -----------------------------------------------------------
 
-    def _rebuild_map() -> bool:
+    def _rebuild_map(on_done=None) -> None:
         """Rebuild experiment_map.json + group_map.json from the current selection.
 
-        Synchronous and cheap - it only re-reads the selected step records - so a plot
-        launched right after always sees the selection as it is now. The scripts read the
-        map through configs.settings.data_path, so that is repointed here too.
+        Asynchronous: the reading happens on a worker thread and `on_done(ok)` is called
+        here afterwards, so callers continue from there rather than from a return value.
+        Reading a campaign's step records is seconds to minutes - 80 s for a 40-run study,
+        nearly all of it file opens - and on the GUI thread that is a window Windows greys
+        out as "not responding".
+
+        A second rebuild while one is in flight is refused rather than queued: the two
+        would race to write the same scratch map, and the loser's would be what the plots
+        then read. The scripts read the map through configs.settings.data_path, which is
+        repointed once the build lands.
         """
+        finish = on_done or (lambda ok: None)
+        if state.get("building"):
+            post("Still building the previous map — wait for it to finish.")
+            finish(False)
+            return
+        # Everything the build needs is read from the widgets here, on the GUI thread,
+        # and closed over: the worker must not touch a Qt object.
         steps = step_list.checked_paths
         # A reference not otherwise selected still has to be in the map, or its own
         # points would never reach the plot for _reference to draw - so its
@@ -686,35 +700,49 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # asks for a selection rather than opening a blank figure.
         if not roots and not cb_ground.isChecked():
             post("Select at least one step in the Steps window.")
-            return False
-        try:
-            exp_map = build_map(roots, reference_roots=references)
-            groups = build_groups(exp_map, par_collect())
-        except Exception as exc:  # noqa: BLE001 - a build error must not kill the click
-            post(f"Map build failed: {exc}")
-            return False
+            finish(False)
+            return
+        resolutions = par_collect()
+        state["building"] = True
+        post(f"Building the campaign map from {len(roots)} director"
+             f"{'y' if len(roots) == 1 else 'ies'}...")
 
-        state["map"], state["groups"] = exp_map, groups
-        state["source"] = "selection"
-        # A plot is a separate process reading configs.settings.data_path, so the map has
-        # to exist somewhere on disk for it. That somewhere is a scratch directory for the
-        # session, not the user's data tree - Save map is how a copy gets kept.
-        _write_map(_scratch)
-        configs_settings.set_data_path(_scratch)
-        if not roots:
-            post("No steps selected — the ground truth will be drawn "
-                               "on its own")
-            return True
-        series = len({e["experiment_type"] for e in exp_map["experiments"]})
-        message = (f"{len(exp_map['experiments'])} observations from "
-                   f"{len(roots)} selected director"
-                   f"{'y' if len(roots) == 1 else 'ies'}, {series} series, "
-                   f"held in memory")
-        if references:
-            message += f", {len(references)} reference director" \
-                       f"{'y' if len(references) == 1 else 'ies'}"
-        post(message)
-        return True
+        def _work():
+            """The slow half: reading every selected step record. No Qt in here."""
+            exp_map = build_map(roots, reference_roots=references)
+            return exp_map, build_groups(exp_map, resolutions)
+
+        def _apply(result) -> None:
+            """Back on the GUI thread with whatever the worker produced."""
+            state["building"] = False
+            if isinstance(result, BaseException):
+                post(f"Map build failed: {result}")
+                finish(False)
+                return
+            exp_map, groups = result
+            state["map"], state["groups"] = exp_map, groups
+            state["source"] = "selection"
+            # A plot is a separate process reading configs.settings.data_path, so the map
+            # has to exist somewhere on disk for it. That somewhere is a scratch directory
+            # for the session, not the user's data tree - Save map is how a copy gets kept.
+            _write_map(_scratch)
+            configs_settings.set_data_path(_scratch)
+            if not roots:
+                post("No steps selected — the ground truth will be drawn on its own")
+                finish(True)
+                return
+            series = len({e["experiment_type"] for e in exp_map["experiments"]})
+            message = (f"{len(exp_map['experiments'])} observations from "
+                       f"{len(roots)} selected director"
+                       f"{'y' if len(roots) == 1 else 'ies'}, {series} series, "
+                       f"held in memory")
+            if references:
+                message += f", {len(references)} reference director" \
+                           f"{'y' if len(references) == 1 else 'ies'}"
+            post(message)
+            finish(True)
+
+        run_off_thread(_work, _apply)
 
     def _write_map(out_dir) -> Path:
         """Write the map held in memory into `out_dir`."""
@@ -747,16 +775,19 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         post(f"regrouped into {n} groups, "
                            f"{len(resolutions)} parameters by resolution")
 
-    def _ensure_map() -> bool:
-        """The map to work from: a loaded one as it is, else rebuilt from the selection.
+    def _with_map(on_ready) -> None:
+        """Call `on_ready(ok)` with a map to work from: a loaded one as it is, else one
+        rebuilt from the selection.
 
         A loaded map is left alone so that plotting it does not quietly replace it with
         whatever happens to be ticked in the tree; Rebuild map now is how you go back to
-        the selection.
+        the selection. That case answers immediately; a rebuild answers when its worker
+        finishes, which is why this hands the caller a callback instead of a bool.
         """
         if state["source"] == "loaded" and state["map"]:
-            return True
-        return _rebuild_map()
+            on_ready(True)
+            return
+        _rebuild_map(on_ready)
 
     def _load_map() -> None:
         """Read a saved map back in, and work from it until the next rebuild."""
@@ -827,21 +858,38 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         return args
 
     def _launch(script: str, *extra) -> None:
-        """Make sure a map exists, then run one of the analysis modules against it."""
-        if not _ensure_map():
-            return
+        """Make sure a map exists, then run one of the analysis modules against it.
+
+        The map may take a worker thread and a minute to build, so the launch is what
+        happens once it lands rather than the next line here.
+        """
+        post(f"Preparing {script}...")
+        _with_map(lambda ok: _run_script(script, *extra) if ok else None)
+
+    def _run_script(script: str, *extra) -> None:
         module = f"{MODULES}.{script}"
         proc = launch_analysis(module, *extra)
+        # The log says what is running and how it ended, nothing more - a script that
+        # prints a table (campaign_gain) would otherwise bury every other message under
+        # it. Output is collected rather than posted, so a run that succeeds stays quiet
+        # and one that fails can still say why: an exit code alone leaves nothing to act
+        # on, and the reason is part of how it ended.
+        output = []
+
+        def _failed(codes) -> None:
+            post(f"{script} exited with {codes[0]}.")
+            for line in output[-4:]:
+                post(f"    {line}")
+            if not output:
+                post("    (it printed nothing - see its console.)")
+            if codes[0] == 2:
+                post("    Exit 2 is a constraint that would not parse.")
+
         watch([proc],
               on_start=lambda: post(f"Running {script}..."),
-              on_done=lambda: post("Done."),
-              on_fail=lambda codes: post(
-                  f"{script} exited with {codes[0]} — see its console. "
-                          f"Exit 2 is a constraint that would not parse."),
-              # The script's own console, which nothing else here shows - a plot that
-              # still exits 0 (an arm skipped for lack of a common range, say) has no
-              # other way to say so.
-              on_output=lambda line: post(f"{script}: {line}"))
+              on_done=lambda: post(f"{script} finished."),
+              on_fail=_failed,
+              on_output=output.append)
 
     def _aggregate_args() -> list:
         """The flags for collapsing an arm's runs into one curve, or nothing when off."""
@@ -1010,19 +1058,24 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         _launch("campaign_gain", *extra)
 
     def _plot_gain_vs_ninitial() -> None:
-        """Gain and cost against the initial design's size, from gain.json. Needs
-        campaign_gain to have written one for this campaign first - read from the same
-        place it writes to."""
-        _launch("plot_gain_vs_ninitial", "--gain-dir", _gain_dir())
+        """Gain and cost against the initial design's size.
+
+        Takes no run list: the plot reads the per-run scores for whatever the map holds,
+        and the map has just been rebuilt from the ticked selection by _launch. So the
+        selection drives it, and scoring a campaign once leaves every run of it plottable
+        in any later combination.
+        """
+        _launch("plot_gain_vs_ninitial")
 
     # The viewers rebuild first, so what they show is the current selection rather than
     # whatever was last written.
-    btn_rebuild.clicked.connect(lambda: _rebuild_map() and _refresh_keys())
-    btn_view_exp.clicked.connect(
-        lambda: _ensure_map() and _view_json_dialog(page, state["map"], "Experiment map"))
-    btn_view_grp.clicked.connect(
-        lambda: _ensure_map() and _view_group_map_dialog(page, state["groups"],
-                                                         state["map"]))
+    btn_rebuild.clicked.connect(lambda: _rebuild_map(lambda ok: ok and _refresh_keys()))
+    # The dialog opens when the map lands, not when the click returns - a rebuild is a
+    # worker thread away now.
+    btn_view_exp.clicked.connect(lambda: _with_map(
+        lambda ok: ok and _view_json_dialog(page, state["map"], "Experiment map")))
+    btn_view_grp.clicked.connect(lambda: _with_map(
+        lambda ok: ok and _view_group_map_dialog(page, state["groups"], state["map"])))
     btn_save_map.clicked.connect(_save_map)
     btn_load_map.clicked.connect(_load_map)
 

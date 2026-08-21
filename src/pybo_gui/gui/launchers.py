@@ -18,6 +18,31 @@ from PySide6.QtCore import QCoreApplication, QTimer
 _procs: list = []
 
 
+def run_off_thread(work, on_done) -> None:
+    """Run `work()` on a worker thread and hand what it returns to `on_done` here.
+
+    For the slow parts that are not subprocesses - reading a campaign's step records is
+    seconds to minutes, and on the GUI thread that is a window Windows greys out as "not
+    responding". The callback is marshalled back the same way watch() does it, through a
+    timer bound to the application object, which lives on the main thread.
+
+    `work` must touch no Qt object: widgets belong to the main thread, so read whatever it
+    needs from them before calling and close over the values. An exception raised inside
+    is passed to `on_done` as its argument rather than killing the thread silently - the
+    caller decides how to report it.
+    """
+    app = QCoreApplication.instance()
+
+    def _run():
+        try:
+            result = work()
+        except BaseException as error:  # noqa: BLE001 - handed on, not swallowed
+            result = error
+        QTimer.singleShot(0, app, lambda: on_done(result))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def launch_analysis(module: str, *args) -> subprocess.Popen:
     """Run `python -m <module> <args...>` in its own window.
 
