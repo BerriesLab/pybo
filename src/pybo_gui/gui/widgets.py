@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QCoreApplication, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QHeaderView,
-    QLineEdit, QPushButton, QScrollArea, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QLabel, QLineEdit, QPushButton, QScrollArea, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
     QWidget,
 )
 
@@ -92,6 +92,16 @@ def make_constraints_widget():
     """
     box = QGroupBox("Constraints")
     outer = QVBoxLayout(box)
+    # Said in the box rather than left to be discovered: the objective declares which
+    # columns are constraints, but not the rule - no operator, no threshold - so there is
+    # nothing here to fill in from it. Only the key lists come from the loaded objective
+    # and the map; the rule itself is typed.
+    note = QLabel("In this version of pyBO constraints are not read from the objective "
+                  "function: type each one here. The key list is filled in for you, the "
+                  "operator and value are not.")
+    note.setStyleSheet("color: grey;")
+    note.setWordWrap(True)
+    outer.addWidget(note)
     host = QWidget()
     rows_layout = QVBoxLayout(host)
     rows_layout.setContentsMargins(0, 0, 0, 0)
