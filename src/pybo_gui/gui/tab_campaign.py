@@ -298,6 +298,24 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout.addWidget(par_box)
 
     # ---- Axes ----------------------------------------------------------------
+    # ---- Grouping ------------------------------------------------------------
+    # At the top because it cuts across frames: what counts as one point, and what a bar
+    # or band around it means, is decided once and applies to whichever plot is drawn
+    # next - not to the plot whose button happens to sit nearest.
+    #
+    # Not every plot takes them yet - the boxplot, the correlation matrix and the two
+    # time views ignore both - so each note says which do. That is a gap to close in
+    # those scripts, not a property of the setting, and the wording says "yet" so the
+    # note does not have to be rewritten as they catch up.
+    group_box = QGroupBox("Grouping")
+    group_layout = QVBoxLayout(group_box)
+
+    def _grouping_note(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setStyleSheet("color: grey;")
+        label.setWordWrap(True)
+        return label
+
     # The axes and the two plots drawn against them, in one frame: what the rows pick is
     # what the Pareto front and the hypervolume are measured over, so separating the
     # choice from the buttons that use it only made the reader connect them.
@@ -352,7 +370,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     plot_box = QGroupBox("Plots")
     plot_layout = QVBoxLayout(plot_box)
     btn_pareto = QPushButton("Plot Pareto")
-    btn_hv = QPushButton("Plot hypervolume")
+    btn_hv = QPushButton("Plot HV")
     btn_hvi = QPushButton("Plot HV improvement")
     btn_gain = QPushButton("Score campaign")
     btn_gain_ninit = QPushButton("Plot gain vs n_initial")
@@ -458,15 +476,36 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     cb_aggregate.stateChanged.connect(lambda _s: _on_band_change())
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
+
+    # Filled here, where the widgets exist, but shown at the top of the page.
+    group_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax))
+    group_layout.addWidget(_grouping_note(
+        "Averages the repeats of one setting within a run — same run, same parameters. "
+        "The bar is measurement spread: a noisy objective, or --repeats. "
+        "Acted on by Pareto, HV, objective and evolution; the others do not take it "
+        "yet."))
+    group_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
+    group_layout.addWidget(_grouping_note(
+        "Pools runs that share an arm — same optimizer (bayesian / sobol / random), "
+        "same initial-design size, same provenance (real rig or simulated) — and "
+        "averages them at each evaluation index. Runs differing only by seed become one "
+        "curve, and the band is how differently the optimizer behaves from seed to "
+        "seed. Acted on by HV and Pareto 2D so far. Composes with Grouped: repeats into "
+        "a point, then runs into a curve."))
+    plot_page_layout.insertWidget(0, group_box)
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
     # Into the axes frame, not this one: they draw against the rows up there.
     axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
+    # And with them, the options only these plots read: the front lines are the Pareto
+    # plot's own, and the point labels are read by Pareto and the objective landscape.
+    # The hypervolume takes none of the three.
+    axes_layout.addWidget(_row(cb_numbers, cb_front, cb_design_front))
+    # The ground truth belongs here too: it is drawn under these plots' points, and the
+    # reference point it carries is what the hypervolume above is measured from. Nothing
+    # in the Plots frame reads it.
+    axes_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
-    plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers,
-                               cb_front, cb_design_front))
-    plot_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
-    plot_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy))
     plot_page_layout.addWidget(plot_box)
 
     # ---- Diagnostics ---------------------------------------------------------
@@ -681,7 +720,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             "Load an objective to draw the true landscape under the observations" if is_single
             else "Load an objective to draw the true front under the observations")
         btn_pareto.setText("Plot objective" if is_single else "Plot Pareto")
-        btn_hv.setText("Plot best value" if is_single else "Plot hypervolume")
+        btn_hv.setText("Plot best value" if is_single else "Plot HV")
         btn_hvi.setText("Plot improvement" if is_single else "Plot HV improvement")
         btn_pareto.setEnabled(not is_many)
         # Grouping and point labels belong to the scatter, which 4+ objectives has none of.
