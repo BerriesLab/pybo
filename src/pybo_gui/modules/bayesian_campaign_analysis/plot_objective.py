@@ -134,8 +134,10 @@ def _complete(row):
 
 
 # ---- AGGREGATE (if grouped) ----
-# A group is the same evaluation of the same arm across replicate runs, so its members
-# share their parameters and only the objective is averaged. Infeasible experiments are
+# A group is one setting within one run - same run, same parameters on the rig's own
+# grid (build_group_map) - so its members share their parameters by construction and only
+# the objective is averaged. Not runs of an arm pooled together: that is --aggregate-runs,
+# a different axis. Infeasible experiments are
 # left out of the mean and drawn individually below, as in the Pareto plots.
 if args.grouped:
     groups, order = {}, []

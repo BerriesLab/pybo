@@ -357,9 +357,14 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_gain = QPushButton("Score campaign")
     btn_gain_ninit = QPushButton("Plot gain vs n_initial")
     btn_refresh = QPushButton("Refresh keys")
-    # Grouped aggregates replicate runs at the same observation index; the error-bar mode
-    # only means anything once it is on.
+    # Grouped averages the repeats of one setting within a run - same parameters, same
+    # run - so its bars measure measurement spread. Averaging whole runs of an arm
+    # against each other is the separate Average runs below. The error-bar mode only
+    # means anything once this is on.
     cb_grouped = QCheckBox("Grouped")
+    cb_grouped.setToolTip("Average the repeats of one setting within a run. The bars "
+                          "show measurement spread — a noisy objective, or --repeats. "
+                          "For spread between runs of an arm, use Average runs.")
     rb_sem = QRadioButton("Std. error")
     rb_sem.setChecked(True)
     rb_std = QRadioButton("Std. dev.")
@@ -375,6 +380,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # step, this averages whole runs of an arm against each other. They compose, so both
     # can be on at once.
     cb_aggregate = QCheckBox("Average runs")
+    cb_aggregate.setToolTip("Average whole runs of one arm against each other, aligned "
+                            "by evaluation index. The band shows how differently the "
+                            "optimizer behaves from seed to seed. Composes with Grouped: "
+                            "repeats into a point, then runs into a curve.")
     band_combo = QComboBox()
     band_combo.addItems(["ci95", "sem", "std", "minmax"])
     BAND_TEXT = {

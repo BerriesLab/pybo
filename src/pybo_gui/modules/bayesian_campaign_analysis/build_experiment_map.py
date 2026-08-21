@@ -4,11 +4,22 @@ The plot scripts were written for a rig where one experiment is one measured poi
 flat dict of results. A pybo observation is exactly that, so this walks the selected steps
 and emits one record per observation.
 
-Each record carries where it sits in its run and which arm produced it; build_group_map
-turns that pair into the group_id the plots aggregate by, so a group holds the same
-evaluation count of the same arm across replicate runs. That is what makes --grouped mean
-"mean +- std over seeds at that point in the campaign", the same shape of statement the
-original made about a repeated setting.
+Each record carries the parameters it was taken at, the run it belongs to, where it sits
+in that run and which arm produced it. Two different things are built on those, and they
+are easy to mistake for one another:
+
+  build_group_map keys a group on the run *and the parameters*, snapped to the rig's
+  resolutions - so a group is one setting within one run, and --grouped averages the
+  repeats of a setting. Its error bars measure measurement spread: a noisy objective, or
+  a setting deliberately repeated with --repeats.
+
+  The aggregate view (--aggregate-runs, see _aggregate) keys on the *arm* instead and
+  aligns runs by evaluation index, so it averages whole runs of one arm against each
+  other. Its band measures how differently the optimizer behaves from one seed to the
+  next, and the parameters play no part in it.
+
+The two compose rather than compete: with both on, repeats are averaged into a point and
+then runs into a curve.
 
 `experiment_type` is what the scripts label, colour and draw a separate Pareto front by,
 so what goes into it decides what a front is drawn per - see LABEL_BY. `optimizer`
