@@ -811,6 +811,20 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         post(f"regrouped into {n} groups, "
                            f"{len(resolutions)} parameters by resolution")
 
+    def _with_shown_map(on_ready) -> None:
+        """Call `on_ready(True)` with whatever map is already held, building one only if
+        there is none.
+
+        For the viewers, which exist to show the current state rather than to produce a
+        fresh one. Reading a large campaign's records is the expensive thing the GUI
+        does, and doing it to redraw a JSON the tab is already holding is work for
+        nothing - Rebuild map now is what asks for a new one.
+        """
+        if state["map"]:
+            on_ready(True)
+            return
+        _rebuild_map(on_ready)
+
     def _with_map(on_ready) -> None:
         """Call `on_ready(ok)` with a map to work from: a loaded one as it is, else one
         rebuilt from the selection.
@@ -1109,11 +1123,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # somehow wrong, so it must not itself consult the cache.
     btn_rebuild.clicked.connect(
         lambda: _rebuild_map(lambda ok: ok and _refresh_keys(), force=True))
-    # The dialog opens when the map lands, not when the click returns - a rebuild is a
-    # worker thread away now.
-    btn_view_exp.clicked.connect(lambda: _with_map(
+    # The viewers show what is held rather than rebuilding to show it; only an empty tab
+    # has to build first, and then the dialog opens when the map lands rather than when
+    # the click returns.
+    btn_view_exp.clicked.connect(lambda: _with_shown_map(
         lambda ok: ok and _view_json_dialog(page, state["map"], "Experiment map")))
-    btn_view_grp.clicked.connect(lambda: _with_map(
+    btn_view_grp.clicked.connect(lambda: _with_shown_map(
         lambda ok: ok and _view_group_map_dialog(page, state["groups"], state["map"])))
     btn_save_map.clicked.connect(_save_map)
     btn_load_map.clicked.connect(_load_map)
