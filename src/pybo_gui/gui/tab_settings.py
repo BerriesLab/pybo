@@ -5,7 +5,8 @@ configs/figure_settings_app/state.json and takes effect on the next plot launche
 each plot is a fresh process that resolves the style from that file.
 """
 from PySide6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 from pybo_gui.configs.figure_settings import store
@@ -78,5 +79,54 @@ def build(settings) -> QWidget:
     combo.currentTextChanged.connect(_on_change)
 
     layout.addWidget(box)
+
+    # ---- Workspace -----------------------------------------------------------
+    ws_box = QGroupBox("Workspace")
+    ws_layout = QVBoxLayout(ws_box)
+
+    ws_row = QWidget()
+    ws_row_layout = QHBoxLayout(ws_row)
+    ws_row_layout.setContentsMargins(0, 0, 0, 0)
+    ws_label = QLabel("Folder:")
+    ws_label.setFixedWidth(90)
+    ws_path = QLineEdit()
+    ws_path.setReadOnly(True)
+    ws_path.setMinimumWidth(320)
+    browse = QPushButton("Browse…")
+    clear = QPushButton("Use a temporary folder")
+    ws_row_layout.addWidget(ws_label)
+    ws_row_layout.addWidget(ws_path)
+    ws_row_layout.addWidget(browse)
+    ws_row_layout.addWidget(clear)
+    ws_row_layout.addStretch()
+    ws_layout.addWidget(ws_row)
+
+    ws_note = QLabel(
+        "Where each session writes its experiment_map.json and group_map.json, one "
+        "directory per session. Left empty they go to a temporary folder and are gone "
+        "when the session ends, so the map is rebuilt from scratch next time — which on "
+        "a large campaign is minutes. A session already open keeps the folder it started "
+        "with.")
+    ws_note.setStyleSheet("color: grey;")
+    ws_note.setWordWrap(True)
+    ws_layout.addWidget(ws_note)
+
+    def _show_workspace() -> None:
+        current = settings.workspace
+        ws_path.setText(str(current) if current else "")
+        ws_path.setPlaceholderText("temporary — not kept between sessions")
+
+    def _browse() -> None:
+        chosen = QFileDialog.getExistingDirectory(page, "Choose a workspace folder",
+                                                  str(settings.workspace or ""))
+        if chosen:
+            settings.workspace = chosen
+            _show_workspace()
+
+    browse.clicked.connect(_browse)
+    clear.clicked.connect(lambda: (setattr(settings, "workspace", None), _show_workspace()))
+    _show_workspace()
+
+    layout.addWidget(ws_box)
     layout.addStretch()
     return page

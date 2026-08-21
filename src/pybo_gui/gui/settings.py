@@ -8,6 +8,7 @@ terminal.
 """
 from dataclasses import dataclass
 
+from pybo_gui.configs import workspace
 from pybo_gui.configs.figure_settings import store
 
 
@@ -23,3 +24,16 @@ class Settings:
     @plot_style.setter
     def plot_style(self, name) -> None:
         store.set_active_publisher(name or None)
+
+    @property
+    def workspace(self):
+        """Where a session keeps its maps, or None for a temporary directory.
+
+        Proxied the same way the style is: the store owns it, so the choice survives a
+        restart and a session already running keeps the directory it started with.
+        """
+        return workspace.get_workspace()
+
+    @workspace.setter
+    def workspace(self, path) -> None:
+        workspace.set_workspace(path)

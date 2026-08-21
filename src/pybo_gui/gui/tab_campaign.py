@@ -15,7 +15,6 @@ point all come from the run's objective.py. Every sense stays editable afterward
 objective is the default, not the last word.
 """
 import json
-import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from pybo_gui.configs import settings as configs_settings
+from pybo_gui.configs import workspace
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
@@ -219,9 +219,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # user loaded. A loaded map must survive the next plot click rather than being
     # silently rebuilt from a selection it has nothing to do with.
     state: dict = {"problem": None, "map": None, "groups": None, "source": None}
-    # One scratch directory per session, so a rebuild never writes into the
-    # user's data tree. Save map is the only thing that puts a map where they chose.
-    _scratch = Path(tempfile.mkdtemp(prefix="pybo_campaign_"))
+    # One directory per session, so a rebuild never writes into the user's data tree.
+    # Save map is the only thing that puts a map where they chose.
+    #
+    # Read once, here: the Workspace setting can change while this session runs, but the
+    # directory it already writes to must not, or configs.settings.data_path and the map
+    # on disk would drift apart. Unset means a temporary directory, as it always was.
+    _scratch = workspace.new_instance_dir()
 
     # ---- Experiment map ------------------------------------------------------
     # First, as in the original tab: it defines the rebuild every other action calls.

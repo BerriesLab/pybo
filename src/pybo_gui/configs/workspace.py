@@ -1,0 +1,95 @@
+"""Where a GUI session keeps the files it produces.
+
+Every rebuild writes experiment_map.json and group_map.json somewhere on disk, because a
+plot is a separate process that reads them through configs.settings.data_path. Left to
+itself that somewhere is a temporary directory, which is gone the moment the session ends
+- so the map is rebuilt from scratch next time, and reading a large campaign's step
+records is minutes, not seconds.
+
+Pointing this at a real folder keeps those files: they can be reused instead of rebuilt,
+inspected, fed to a script run straight from a terminal
+(PYBO_CAMPAIGN_DIR=<instance dir> python -m pybo_gui.modules...), and a session that
+crashes leaves its map behind rather than taking it away.
+
+One directory per session, not per folder. A temporary directory gives every process its
+own by construction; a shared folder would have two open windows overwriting each other's
+map, and whichever plot launched last would read the wrong one. The timestamp makes an
+instance directory readable, the pid makes it unique.
+
+Unset is the default, and means exactly the old behaviour - so nothing changes for anyone
+who never opens the setting.
+"""
+import json
+import os
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+_PKG_DIR = Path(__file__).parent
+
+# --- Application seam: the single place this points at the host app, matching
+# figure_settings.store's own seam. ------------------------------------------------
+APP_DIR = _PKG_DIR / "gui_app"
+STATE_PATH = APP_DIR / "state.json"
+
+_DEFAULT_STATE = {"workspace": None}
+
+
+def _read_state() -> dict:
+    """The stored state, falling back to the default on anything unreadable.
+
+    A state file that cannot be parsed is not worth an exception on startup: the setting
+    is a convenience, and losing it costs a rebuild, not any data.
+    """
+    try:
+        state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return dict(_DEFAULT_STATE)
+    return {**_DEFAULT_STATE, **state} if isinstance(state, dict) else dict(_DEFAULT_STATE)
+
+
+def _write_state(state: dict) -> None:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def get_workspace() -> Path | None:
+    """The folder session directories are made in, or None for a temporary one.
+
+    A configured folder that has since been deleted or renamed reads as unset rather than
+    as an error: the session still needs somewhere to write, and a temporary directory is
+    the answer that always works.
+    """
+    stored = _read_state()["workspace"]
+    if not stored:
+        return None
+    path = Path(stored)
+    return path if path.is_dir() else None
+
+
+def set_workspace(path) -> None:
+    """Point at `path`, or pass a falsy value to go back to temporary directories."""
+    _write_state({**_read_state(), "workspace": str(Path(path).resolve()) if path else None})
+
+
+def new_instance_dir() -> Path:
+    """A fresh directory for this session to write its maps into.
+
+    Called once per session: the setting can change while a session runs, but the
+    directory it already writes to must not, or configs.settings.data_path and the map on
+    disk would drift apart.
+    """
+    workspace = get_workspace()
+    if workspace is None:
+        return Path(tempfile.mkdtemp(prefix="pybo_campaign_"))
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    base = workspace / f"{stamp}_{os.getpid()}"
+    # The timestamp is only second-resolution and the pid is the same within a process, so
+    # two calls in the same second would otherwise land in one directory and overwrite each
+    # other's map. A suffix keeps them apart, the way cli.unique_dir does for run output.
+    candidate, index = base, 0
+    while candidate.exists():
+        index += 1
+        candidate = base.with_name(f"{base.name}_{index:03d}")
+    candidate.mkdir(parents=True)
+    return candidate
