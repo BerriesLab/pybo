@@ -72,6 +72,9 @@ def load_experiments_from_map(map_path: str, valid_only: bool = False) -> list[d
             # Which run produced it. The rig had no equivalent - one machine, one
             # sequence - but a campaign here spans several independent runs.
             "run":                    entry.get("run"),
+            # The run's directory. None on a map built before this was recorded, which
+            # is what anything writing beside a run has to check before assuming a path.
+            "run_dir":                entry.get("run_dir"),
             # The sweep's own --n-initial, when the run carries one (TrialRecord, or
             # the ninitN run-name a sweep study gave it). None on an ordinary run.
             "n_initial":              entry.get("n_initial"),

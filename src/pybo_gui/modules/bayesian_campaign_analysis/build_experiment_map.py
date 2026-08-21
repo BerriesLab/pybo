@@ -203,6 +203,10 @@ def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> 
                 "observation":     observation.get("observation_n"),
                 "experiment_id":   f"{step_dir.parent.name}/{step_dir.name}"
                                    f"#{observation.get('observation_n')}",
+                # Where the run lives, not just what it is called. Two studies can hold
+                # a run of the same name, and anything writing back beside a run (see
+                # campaign_gain's per-run score) needs the path rather than the label.
+                "run_dir":         str(step_dir.parent.resolve()),
                 "experiment_type": _label_for(observation, optimizer, run, label_by),
                 "source":          observation.get("source"),
                 "optimizer":       optimizer,

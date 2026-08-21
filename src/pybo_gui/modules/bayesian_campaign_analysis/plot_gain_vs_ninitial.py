@@ -1,7 +1,13 @@
 """How the initial design's size pays off: the gain it buys and what it costs.
 
-Reads the gain.json that campaign_gain writes and plots, against the initial design
-size n0, the two halves of the trade-off a sweep over --n-initial exists to measure:
+Reads the score campaign_gain leaves inside each run directory - one gain.json per run -
+for the runs the campaign's map currently holds, which is the selection ticked in the
+browser. That is what keeps the plot honest: the numbers follow the selection instead of
+whichever set happened to be scored last. A run with no score yet is named and skipped,
+and a set of runs scored under different settings is refused rather than mixed.
+
+Plots, against the initial design size n0, the two halves of the trade-off a sweep over
+--n-initial exists to measure:
 
   gamma_c  the gain over the initial design at convergence, in %
   n_c      the evaluations spent reaching it, the design included
@@ -11,8 +17,29 @@ have unrelated units, and a second y axis invites reading a crossing point that 
 nothing.
 
 Both panels are needed together. gamma_c alone says a bigger design converges higher
-without saying what it cost; n_c alone rewards a run that stopped early having gained
-little. Read as a pair they are the exploration-cost/convergence-quality trade-off.
+without saying what it cost; the cost alone rewards a run that stopped early having
+gained little. Read as a pair they are the exploration-cost/convergence-quality
+trade-off.
+
+WHICH COST - and a floor to know about
+
+  n_c counts from the run's first evaluation, so it includes the initial design, and the
+  convergence window is only looked for past that design (campaign_gain). Together those
+  put a floor under it:
+
+      n_c >= n0 + patience
+
+  so a sweep over n0 makes the total-cost panel slope upward whatever the optimizer did -
+  part of that rise is arithmetic, not behaviour, and it is steepest exactly where the
+  sweep is widest.
+
+  --cost total (the default) keeps n_c, and is the honest number for machine time: an
+  initial point costs a measurement like any other. --cost proposals plots n_c - n0
+  instead, the evaluations the optimizer itself spent, where the floor cancels - that is
+  the one to read for "does a larger design need fewer proposals".
+
+  They can disagree, and the disagreement is the finding: a design that pays for itself
+  in proposals can still cost more wall-clock overall.
 
 A run that never met the convergence test has no n_c - the budget's end stands in, which
 is a lower bound, not a measurement. Those are drawn as open markers and left out of the
@@ -26,7 +53,9 @@ EXAMPLE
 import argparse
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,41 +74,99 @@ parser.add_argument("--points", type=lambda v: v.lower() not in ("0", "false", "
                     default=True,
                     help="Draw each replicate as a point beside its box (default: on). "
                          "With a handful of replicates the box alone hides how few.")
-parser.add_argument("--gain-dir", default=None,
-                    help="Where to read gain.json from (default: the campaign "
-                         "directory). Must match campaign_gain's --out-dir.")
+parser.add_argument("--run", action="append", default=[], metavar="DIR",
+                    help="A run directory to read a score from. Repeatable. Given none, "
+                         "the runs are taken from the campaign's experiment_map.json, "
+                         "which is rebuilt from the current selection - so the plot "
+                         "follows what is ticked in the browser.")
 args = parser.parse_args()
 
 FONT_LABEL = fig_cfg["font"]["label"]
 FONT_LEGEND = fig_cfg["font"]["legend"]
 
-GAIN_PATH = os.path.join(args.gain_dir or data_path, "gain.json")
-if not os.path.exists(GAIN_PATH):
-    print(f"No gain.json at {GAIN_PATH}. Run campaign_gain first - this plots what it "
-          f"writes - and point both at the same directory.")
-    sys.exit(1)
-report = json.load(open(GAIN_PATH, encoding="utf-8"))
+def _selected_run_dirs() -> list:
+    """The run directories to score, in the order the map lists them.
 
-# One row per run, from every arm's runs_detail. The arm label already carries the design
-# size (see _labels.arm_label), so the strategy is what is left once it is taken out -
-# that, not the arm, is what makes a series here, since n0 is the x axis.
-runs = []
-for arm in report.get("arms", []):
-    for run in arm.get("runs_detail", []):
-        n_initial = run.get("n_initial")
-        if n_initial is None or run.get("gamma_c") is None:
-            continue
-        label = str(run.get("arm") or "")
-        runs.append({"n0": int(n_initial),
-                     "series": label.replace(f" n{n_initial}", "", 1) or "run",
-                     "gamma_c": float(run["gamma_c"]),
-                     "n_c": float(run["n_c"]),
-                     "converged": bool(run.get("converged"))})
+    The map is rebuilt from the ticked selection before any plot runs, so reading the
+    run directories out of it is what makes this plot follow the browser rather than
+    whatever set happened to be scored last.
+    """
+    if args.run:
+        return [str(Path(d).resolve()) for d in args.run]
+    map_path = os.path.join(data_path, "experiment_map.json")
+    if not os.path.exists(map_path):
+        print(f"No experiment_map.json in {data_path}, and no --run given, so there is "
+              f"nothing to say which runs to read.")
+        sys.exit(1)
+    exp_map = json.load(open(map_path, encoding="utf-8"))
+    seen = []
+    for entry in exp_map.get("experiments", []):
+        run_dir = entry.get("run_dir")
+        if run_dir and run_dir not in seen:
+            seen.append(run_dir)
+    if not seen:
+        print("The map records no run directories - rebuild it, so build_experiment_map "
+              "writes run_dir, then score the campaign again.")
+        sys.exit(1)
+    return seen
+
+
+# One row per run, read from the score campaign_gain left beside it. The arm label
+# already carries the design size (see _labels.arm_label), so the strategy is what is
+# left once it is taken out - that, not the arm, is what makes a series here, since n0
+# is the x axis.
+runs, contexts, missing = [], [], []
+for run_dir in _selected_run_dirs():
+    score_path = os.path.join(run_dir, "gain.json")
+    if not os.path.exists(score_path):
+        missing.append(run_dir)
+        continue
+    score = json.load(open(score_path, encoding="utf-8"))
+    n_initial, gamma_c, n_c = (score.get("n_initial"), score.get("gamma_c"),
+                               score.get("n_c"))
+    if n_initial is None or gamma_c is None or n_c is None:
+        missing.append(run_dir)
+        continue
+    contexts.append(json.dumps(score.get("context"), sort_keys=True))
+    # By pattern, not by this run's own number: the size in the arm label is written by
+    # _labels.arm_label from the map's count, and the two can differ (a run measured with
+    # --repeats records the design more than once). Matching " n<digits>" strips it either
+    # way, so the arms stay whole instead of splitting one series per design size.
+    label = re.sub(r" n\d+", "", str(score.get("arm") or ""), count=1)
+    runs.append({"n0": int(n_initial),
+                 "series": label or "run",
+                 "gamma_c": float(gamma_c),
+                 # Both readings of the same stopping point, drawn one above the other:
+                 # what the optimizer spent, and what the experiment cost in total.
+                 "cost_prop": float(n_c) - n_initial,
+                 "cost_total": float(n_c),
+                 "converged": bool(score.get("converged"))})
+
+if missing:
+    print(f"! {len(missing)} selected run(s) carry no score yet - score the campaign "
+          f"first, and they will be included. Skipped: "
+          f"{', '.join(os.path.basename(d) for d in missing[:4])}"
+          f"{' ...' if len(missing) > 4 else ''}")
 
 if not runs:
-    print("gain.json has no runs carrying both n_initial and gamma_c. A campaign whose "
-          "runs record no initial design cannot be plotted against its size.")
+    print("None of the selected runs carries a score with both n_initial and gamma_c. "
+          "Score the campaign first; a run recording no initial design cannot be "
+          "plotted against its size.")
     sys.exit(1)
+
+# Scores are only comparable when they were measured the same way. The context each file
+# carries says how - reference point, objectives, senses, constraints, convergence
+# settings - so a set that disagrees is a set that must not share a plot.
+if len(set(contexts)) > 1:
+    print("! The selected runs were scored under different settings (reference point, "
+          "objectives, constraints or convergence), so their numbers are not "
+          "comparable. Score them together in one pass, then plot.")
+    sys.exit(1)
+context = json.loads(contexts[0]) if contexts else {}
+if context.get("reference_source") == "selection":
+    print("! These scores used a reference point derived from whichever runs were "
+          "loaded when they were computed, so they hold only for that selection. "
+          "Re-score with --ground-truth for numbers that travel.")
 
 sizes = sorted({r["n0"] for r in runs})
 series = sorted({r["series"] for r in runs})
@@ -140,27 +227,34 @@ def _panel(ax, key, converged_only):
 
 figsize = fig_cfg["figsize"].get("gain_vs_ninitial",
                                  list(fig_cfg["figsize"]["hypervolume"]))
-fig, (ax_gain, ax_cost) = plt.subplots(
-    2, 1, sharex=True, figsize=(figsize[0], figsize[1] * 1.7))
+fig, (ax_gain, ax_prop, ax_cost) = plt.subplots(
+    3, 1, sharex=True, figsize=(figsize[0], figsize[1] * 2.4))
 
 _panel(ax_gain, "gamma_c", converged_only=False)
-_panel(ax_cost, "n_c", converged_only=True)
+# Both cost panels keep only the runs that converged: n_c stands in as the budget's end
+# for the others, which is a lower bound rather than a measurement.
+_panel(ax_prop, "cost_prop", converged_only=True)
+_panel(ax_cost, "cost_total", converged_only=True)
 
-ax_gain.set_ylabel(r"Gain at convergence $\gamma_\mathrm{c}$ (%)", fontsize=FONT_LABEL)
-ax_cost.set_ylabel(r"Evaluations to convergence $n_\mathrm{c}$", fontsize=FONT_LABEL)
+# Short labels on purpose: the panels are stacked in a single-column figure, where a
+# sentence-long ylabel on each runs into its neighbour. The symbols carry the meaning.
+ax_gain.set_ylabel(r"Gain $\gamma_\mathrm{c}$ (%)", fontsize=FONT_LABEL)
+ax_prop.set_ylabel(r"$n_\mathrm{c} - n_0$ (proposals)", fontsize=FONT_LABEL)
+ax_cost.set_ylabel(r"$n_\mathrm{c}$ (evaluations)", fontsize=FONT_LABEL)
 ax_cost.set_xlabel(r"Initial design size $n_0$", fontsize=FONT_LABEL)
 ax_cost.set_xticks(sizes)
 ax_cost.set_xticklabels([str(s) for s in sizes])
-for ax in (ax_gain, ax_cost):
+for ax in (ax_gain, ax_prop, ax_cost):
     ax.grid(True, **fig_cfg["grid"])
 
 # The same axis read in machining hours - a unit conversion of the one measure, not a
 # second scale competing with it.
 if args.hours_per_eval > 0:
-    hours = ax_cost.secondary_yaxis(
-        "right", functions=(lambda v: v * args.hours_per_eval,
-                            lambda v: v / args.hours_per_eval))
-    hours.set_ylabel("Machining time (h)", fontsize=FONT_LABEL)
+    for ax in (ax_prop, ax_cost):
+        hours = ax.secondary_yaxis(
+            "right", functions=(lambda v: v * args.hours_per_eval,
+                                lambda v: v / args.hours_per_eval))
+        hours.set_ylabel("Machining time (h)", fontsize=FONT_LABEL)
 
 # One series names itself in the axis labels; several need telling apart.
 if len(series) > 1:
@@ -173,8 +267,9 @@ if len(series) > 1:
 censored = [r for r in runs if not r["converged"]]
 if censored:
     print(f"! {len(censored)} of {len(runs)} runs never met the convergence test "
-          f"({report.get('convergence')}) - drawn open, and left out of the cost boxes. "
-          f"Their n_c is the end of the budget, a lower bound.")
+          f"(patience {context.get('patience')}, tol {context.get('tol')}) - drawn open, "
+          f"and left out of the cost boxes. Their n_c is the end of the budget, a lower "
+          f"bound.")
 for size in sizes:
     kept = [r for r in runs if r["n0"] == size and r["converged"]]
     if not kept:
