@@ -110,7 +110,9 @@ def new_instance_dir() -> Path:
     while candidate.exists():
         index += 1
         candidate = base.with_name(f"{base.name}_{index:03d}")
-    candidate.mkdir(parents=True)
+    # Named, not created. A session that never builds a map has nothing to put here, and
+    # creating it up front left an empty dated directory behind every time the GUI was
+    # opened and closed again. Whoever writes the first file makes it (see _write_map).
     return candidate
 
 def _dir_size(path: Path) -> int:
