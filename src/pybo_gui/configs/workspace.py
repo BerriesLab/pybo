@@ -72,6 +72,24 @@ def set_workspace(path) -> None:
     _write_state({**_read_state(), "workspace": str(Path(path).resolve()) if path else None})
 
 
+def cache_dir() -> Path | None:
+    """Where built maps are kept for reuse, or None when there is no workspace.
+
+    In the workspace, not in the session directory: a session gets a fresh directory
+    every time, so a map cached inside one would never be read again. Sharing it is the
+    whole point - the rebuild it saves is minutes on a large campaign.
+
+    Without a workspace there is nowhere durable to put it, so nothing is cached and every
+    session builds from scratch, exactly as before this existed.
+    """
+    workspace = get_workspace()
+    if workspace is None:
+        return None
+    cache = workspace / "map_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
 def new_instance_dir() -> Path:
     """A fresh directory for this session to write its maps into.
 

@@ -28,7 +28,8 @@ from PySide6.QtWidgets import (
 
 from pybo_gui.configs import settings as configs_settings
 from pybo_gui.configs import workspace
-from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import build_map
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
+    build_map, map_stamp, stamp_digest)
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import launch_analysis, run_off_thread, watch
@@ -670,7 +671,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     # ---- Launching -----------------------------------------------------------
 
-    def _rebuild_map(on_done=None) -> None:
+    def _rebuild_map(on_done=None, force: bool = False) -> None:
         """Rebuild experiment_map.json + group_map.json from the current selection.
 
         Asynchronous: the reading happens on a worker thread and `on_done(ok)` is called
@@ -712,9 +713,38 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
              f"{'y' if len(roots) == 1 else 'ies'}...")
 
         def _work():
-            """The slow half: reading every selected step record. No Qt in here."""
+            """The slow half: reading every selected step record. No Qt in here.
+
+            Unless it can be skipped. The stamp says what the map depends on - the
+            records' own mtimes and sizes, the selection, the resolutions, the schema the
+            code writes - and a cached map taken under an identical stamp is the same map.
+            Two large reads instead of thousands of small ones.
+            """
+            stamp = map_stamp(roots, references=references, resolutions=resolutions)
+            cache = workspace.cache_dir()
+            cached = None if cache is None else cache / stamp_digest(stamp)
+            if cached is not None and not force and (cached / "stamp.json").exists():
+                try:
+                    if json.loads((cached / "stamp.json").read_text(encoding="utf-8")) == stamp:
+                        return (json.loads((cached / "experiment_map.json").read_text(encoding="utf-8")),
+                                json.loads((cached / "group_map.json").read_text(encoding="utf-8")),
+                                True)
+                except (OSError, ValueError):
+                    # An unreadable or half-written cache entry is not worth failing over:
+                    # rebuilding is always correct, only slower.
+                    pass
             exp_map = build_map(roots, reference_roots=references)
-            return exp_map, build_groups(exp_map, resolutions)
+            groups = build_groups(exp_map, resolutions)
+            if cached is not None:
+                cached.mkdir(parents=True, exist_ok=True)
+                (cached / "experiment_map.json").write_text(json.dumps(exp_map, indent=2),
+                                                            encoding="utf-8")
+                (cached / "group_map.json").write_text(json.dumps(groups, indent=2),
+                                                       encoding="utf-8")
+                # Written last, so a stamp on disk always has a complete map beside it.
+                (cached / "stamp.json").write_text(json.dumps(stamp, indent=2),
+                                                   encoding="utf-8")
+            return exp_map, groups, False
 
         def _apply(result) -> None:
             """Back on the GUI thread with whatever the worker produced."""
@@ -723,7 +753,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 post(f"Map build failed: {result}")
                 finish(False)
                 return
-            exp_map, groups = result
+            exp_map, groups, reused = result
             state["map"], state["groups"] = exp_map, groups
             state["source"] = "selection"
             # A plot is a separate process reading configs.settings.data_path, so the map
@@ -736,10 +766,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 finish(True)
                 return
             series = len({e["experiment_type"] for e in exp_map["experiments"]})
+            # Said out loud on purpose: a reused map that is somehow wrong has to be
+            # visible, not silent. Rebuild map now is the way to force one either way.
+            how = "reused, unchanged since it was built" if reused else "held in memory"
             message = (f"{len(exp_map['experiments'])} observations from "
                        f"{len(roots)} selected director"
-                       f"{'y' if len(roots) == 1 else 'ies'}, {series} series, "
-                       f"held in memory")
+                       f"{'y' if len(roots) == 1 else 'ies'}, {series} series, {how}")
             if references:
                 message += f", {len(references)} reference director" \
                            f"{'y' if len(references) == 1 else 'ies'}"
@@ -1073,7 +1105,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     # The viewers rebuild first, so what they show is the current selection rather than
     # whatever was last written.
-    btn_rebuild.clicked.connect(lambda: _rebuild_map(lambda ok: ok and _refresh_keys()))
+    # Rebuild map now always rebuilds: it is the way out when a cached map is
+    # somehow wrong, so it must not itself consult the cache.
+    btn_rebuild.clicked.connect(
+        lambda: _rebuild_map(lambda ok: ok and _refresh_keys(), force=True))
     # The dialog opens when the map lands, not when the click returns - a rebuild is a
     # worker thread away now.
     btn_view_exp.clicked.connect(lambda: _with_map(

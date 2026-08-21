@@ -21,6 +21,7 @@ real rig data vs a simulated trial. The record's arm lives under "optimizer" ins
 Both of the record's fields survive into the map, as `optimizer` and `provenance`.
 """
 import argparse
+import hashlib
 import json
 import re
 from datetime import datetime
@@ -136,6 +137,56 @@ def _count_initial(run_dir: Path) -> int | None:
             if source == "initial":
                 total += 1
     return total if saw_source else None
+
+
+# The shape of a record written below. Anything cached against an older number was
+# built by code that wrote different fields, and no stamp taken from the data can see
+# that - adding run_dir, for instance, left existing maps without it and the plots that
+# had come to expect it failed on them. Bump this whenever a record gains, loses or
+# renames a field.
+MAP_SCHEMA = 1
+
+
+def map_stamp(roots, references=(), label_by: str = DEFAULT_LABEL_BY,
+              resolutions: dict | None = None) -> dict:
+    """Everything the built map depends on, small enough to compare.
+
+    Statting is cheap exactly where reading is not: opening these records costs tens of
+    milliseconds apiece on a scanned filesystem, while the directory walk and the stat
+    behind it are a fraction of a second for thousands of them. So a stamp costs well
+    under a second where the build it can skip costs a minute.
+
+    Per record rather than per directory: a directory's mtime does not move when a file
+    inside a subdirectory is rewritten, and scoring a campaign writes gain.json into a run
+    without touching any step record. The (mtime, size) pair of each record is what
+    actually tracks the inputs.
+    """
+    records = []
+    for path in find_steps(roots):
+        try:
+            info = path.stat()
+        except OSError:
+            # Vanished between the walk and the stat: leaving it out is what a rebuild
+            # would see anyway, and a stamp that cannot be taken twice the same way is
+            # worse than one that simply reflects what is there.
+            continue
+        records.append((str(path), info.st_mtime_ns, info.st_size))
+    records.sort()
+    return {
+        "schema": MAP_SCHEMA,
+        "roots": sorted(str(Path(root).resolve()) for root in roots),
+        "references": sorted(str(Path(root).resolve()) for root in references),
+        "label_by": label_by,
+        "resolutions": {str(k): v for k, v in sorted((resolutions or {}).items())},
+        "n_records": len(records),
+        "records": hashlib.sha256(repr(records).encode("utf-8")).hexdigest(),
+    }
+
+
+def stamp_digest(stamp: dict) -> str:
+    """A short name for a stamp, for the directory a map is cached under."""
+    return hashlib.sha256(
+        json.dumps(stamp, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> dict:
