@@ -40,9 +40,7 @@ from pybo_gui.gui.widgets import (
     make_trackers_widget, repopulate,
 )
 
-OBJECTIVE_COUNTS = ("1", "2", "3", "4+")
 MODULES = "pybo_gui.modules.bayesian_campaign_analysis"
-_NO_OBJECTIVE = "No objective loaded — keys will come from the selected steps."
 
 
 def _result_keys(exp_map: dict) -> list:
@@ -229,7 +227,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     _scratch = workspace.new_instance_dir()
 
     # ---- Experiment map ------------------------------------------------------
-    # First, as in the original tab: it defines the rebuild every other action calls.
+    # First: it is what every other action on this page ends up calling, and the one
+    # thing that carries a change made below - an objective, a resolution - through to
+    # the plots. Further down it reads as an afterthought rather than the step nothing
+    # takes effect without.
     map_box = QGroupBox("Experiment map")
     map_layout = QVBoxLayout(map_box)
     btn_rebuild = QPushButton("Rebuild map now")
@@ -246,16 +247,21 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout.addWidget(map_box)
 
     # ---- Objective -----------------------------------------------------------
+    # First: nothing else on either page is usable until this is loaded.
     obj_box = QGroupBox("Objective")
     obj_layout = QVBoxLayout(obj_box)
     obj_edit = QLineEdit()
     obj_edit.setPlaceholderText("path to the run's objective.py")
     browse = QPushButton("Browse")
-    load_btn = QPushButton("Load objective")
-    unload_btn = QPushButton("Unload")
-    unload_btn.setToolTip("Go back to the keys the selected steps carry, with no senses")
-    unload_btn.setEnabled(False)
-    obj_layout.addWidget(_row(obj_edit, browse, load_btn, unload_btn))
+    # Browse loads what it picks, so this is not how an objective first arrives. It is
+    # here for the two cases Browse does not cover: a path typed into the field by hand,
+    # and re-reading a file that has been edited since it was loaded.
+    load_btn = QPushButton("Reload objective")
+    load_btn.setToolTip("Read the file again — after editing the objective, or for a "
+                        "path typed in by hand")
+    # No Unload: with the objective required, dropping it would only leave a tab that
+    # can do nothing. Loading another one over it is how a campaign changes objective.
+    obj_layout.addWidget(_row(obj_edit, browse, load_btn))
     layout.addWidget(obj_box)
 
     # What the objective just loaded above actually declares, so the campaign says what it
@@ -264,28 +270,20 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout.addWidget(objectives_box)
 
     # ---- Objective count -------------------------------------------------------
-    count_group = QButtonGroup(page)
-    count_buttons = {}
-    count_row = QWidget()
-    count_layout = QHBoxLayout(count_row)
-    count_layout.setContentsMargins(0, 0, 0, 0)
-    lead = QLabel("Objectives:")
-    lead.setFixedWidth(78)
-    count_layout.addWidget(lead)
-    for name in OBJECTIVE_COUNTS:
-        button = QRadioButton(name)
-        count_group.addButton(button)
-        count_buttons[name] = button
-        count_layout.addWidget(button)
-    count_layout.addStretch()
-    count_buttons["1"].setToolTip("A single-objective campaign: the objective over its "
-                                  "parameters, and the best value it reached")
-    count_buttons["2"].setChecked(True)
-    plot_page_layout.addWidget(count_row)
 
     def _n_objectives() -> str:
-        button = count_group.checkedButton()
-        return button.text() if button else "2"
+        """How many objectives the loaded problem declares, as the buckets the tab draws
+        by: "1", "2", "3" or "4+", and "" with no objective loaded.
+
+        Not a choice any more. The dimensionality is a property of the objective
+        function, so offering it as a setting only let the tab be told something the
+        problem contradicts - a two-objective campaign drawn as if it had three.
+        """
+        problem = state["problem"]
+        if problem is None:
+            return ""
+        count = len(problem.get("objectives") or [])
+        return {0: "", 1: "1", 2: "2", 3: "3"}.get(count, "4+")
 
     # ---- Parameters ----------------------------------------------------------
     # Above the objectives because the parameters are what a setting *is*: the resolution
@@ -300,18 +298,28 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout.addWidget(par_box)
 
     # ---- Axes ----------------------------------------------------------------
-    # "Axes", not "Objectives": what the rows pick is what the figure is drawn against,
-    # which with one objective is that objective over its parameters. The constructor tab
-    # has the box that says what the objectives are.
-    axes_box = QGroupBox("Axes")
+    # The axes and the two plots drawn against them, in one frame: what the rows pick is
+    # what the Pareto front and the hypervolume are measured over, so separating the
+    # choice from the buttons that use it only made the reader connect them.
+    #
+    # "Axes", not "Objectives": with one objective the rows are that objective over its
+    # parameters. The constructor tab has the box that says what the objectives are.
+    axes_box = QGroupBox("Pareto and hypervolume")
     axes_layout = QVBoxLayout(axes_box)
+    # The rows apart from the box, because with four or more objectives there is no
+    # scatter to draw and they give way to the checklist - while the hypervolume, which
+    # takes its objectives from that checklist instead, still has buttons to offer.
+    axes_rows = QWidget()
+    axes_rows_layout = QVBoxLayout(axes_rows)
+    axes_rows_layout.setContentsMargins(0, 0, 0, 0)
     x_combo, y_combo, z_combo = QComboBox(), QComboBox(), QComboBox()
     x_entry, y_entry, z_entry = QLineEdit(), QLineEdit(), QLineEdit()
     x_row, x_lead, x_sense = _axis_row("x:", x_combo, x_entry)
     y_row, y_lead, y_sense = _axis_row("y:", y_combo, y_entry)
     z_row, z_lead, z_sense = _axis_row("z (colour):", z_combo, z_entry)
     for row in (x_row, y_row, z_row):
-        axes_layout.addWidget(row)
+        axes_rows_layout.addWidget(row)
+    axes_layout.addWidget(axes_rows)
     for combo, entry in ((x_combo, x_entry), (y_combo, y_entry), (z_combo, z_entry)):
         bind_label_entry(combo, entry)
     # Pins the diverging colormap's neutral midpoint to a value the user cares about
@@ -441,9 +449,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     cb_aggregate.stateChanged.connect(lambda _s: _on_band_change())
     band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
     _on_band_change()
-    plot_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
+    # Into the axes frame, not this one: they draw against the rows up there.
+    axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
     plot_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax, cb_numbers,
                                cb_front, cb_design_front))
@@ -461,6 +470,22 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     plot_page_layout.addStretch()
 
     # ---- Key discovery -------------------------------------------------------
+
+    def _sync_plot_buttons() -> None:
+        """Only offer the plots once an objective says what the campaign is.
+
+        Every one of them needs the dimensionality - which axes exist, whether there is
+        a front to draw, what the hypervolume is measured over - and that is the
+        objective's to declare. Without one the tab has the map's column names and no
+        way to tell an objective from a parameter among them, so a plot drawn then would
+        be drawn against a guess.
+        """
+        ready = state["problem"] is not None
+        for button in (btn_pareto, btn_hv, btn_hvi, btn_gain, btn_gain_ninit):
+            button.setEnabled(ready)
+        hint = "" if ready else "Load an objective first: it defines how many objectives "                                "the campaign has, and every plot needs that."
+        for button in (btn_pareto, btn_hv, btn_hvi, btn_gain, btn_gain_ninit):
+            button.setToolTip(hint)
 
     def _sync_ground_truth() -> None:
         """Only offer the ground truth when the objective that defines it is loaded."""
@@ -580,10 +605,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - a bad path must not kill the tab
             state["problem"] = None
             post(f"Could not load: {exc}")
-            unload_btn.setEnabled(False)
             _sync_ground_truth()
             return
         state["problem"] = problem
+        # The count comes from the problem now, so loading one is what changes it - the
+        # radio buttons used to fire this and no longer exist.
+        _on_objective_count_change()
         _refresh_keys()
         # The Parameters box now shows the objective's own resolutions, but a map already
         # built was grouped at whatever was there before - typically blank, i.e. compared
@@ -592,27 +619,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # their hands, and Rebuild map now is the one action that changes it.
         _note_resolutions_changed()
         _sync_ground_truth()
-        unload_btn.setEnabled(True)
+        _sync_plot_buttons()
         senses = ", ".join(f"{o['label']} ({'min' if o['to_minimize'] else 'max'})"
                            for o in problem["objectives"])
         n_obj = len(problem["objectives"])
         post(f"{n_obj} objective{'' if n_obj == 1 else 's'}: {senses}. "
                            f"ref_point={problem['ref_point']}")
-
-    def _unload_objective() -> None:
-        """Drop the loaded problem definition and fall back to the steps' own keys.
-
-        The path goes too: it is what --ground-truth is handed, so leaving it behind
-        would let a cleared objective still be drawn under the observations.
-        """
-        state["problem"] = None
-        obj_edit.clear()
-        post(_NO_OBJECTIVE)
-        unload_btn.setEnabled(False)
-        _refresh_keys()
-        # Same reasoning as loading: the boxes no longer say what the map was grouped at.
-        _note_resolutions_changed()
-        _sync_ground_truth()
 
     def _browse_objective() -> None:
         chosen, _ = QFileDialog.getOpenFileName(page, "Choose an objective", obj_edit.text(),
@@ -623,7 +635,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     browse.clicked.connect(_browse_objective)
     load_btn.clicked.connect(lambda: _load_objective(obj_edit.text()))
-    unload_btn.clicked.connect(_unload_objective)
     btn_refresh.clicked.connect(_refresh_keys)
 
     # ---- Objective-count wiring -----------------------------------------------
@@ -633,9 +644,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         is_many = count == "4+"
         is_three = count == "3"
         is_single = count == "1"
-        # 4+ has no scatter to draw beyond three axes, so the axis frame gives way to
-        # the checklist and the Pareto button goes with it.
-        axes_box.setVisible(not is_many)
+        # 4+ has no scatter to draw beyond three axes, so the axis rows give way to the
+        # checklist and the Pareto button goes with them - but the hypervolume reads its
+        # objectives from that checklist and still has buttons here, so the frame stays.
+        axes_rows.setVisible(not is_many)
+        btn_pareto.setVisible(not is_many)
         nd_box.setVisible(is_many)
         z_row.setEnabled(not is_many)
         # z is a real objective only with three; with two it colours the points and with
@@ -647,7 +660,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # One objective reads the same three rows as a landscape - the one objective, and
         # the one or two parameters it is drawn over - so only the objective's sense is
         # left live.
-        axes_box.setTitle("Axes: objective and parameters" if is_single else "Axes")
+        axes_box.setTitle("Objective landscape and best value" if is_single
+                          else "Pareto and hypervolume")
         x_lead.setText("objective:" if is_single else "x:")
         y_lead.setText("parameter:" if is_single else "y:")
         z_lead.setText("parameter 2:" if is_single else ("z:" if is_three else "z (colour):"))
@@ -669,9 +683,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # The key lists mean different things per objective count, so they are rebuilt
         # rather than left showing the previous one's.
         _refresh_keys()
-
-    count_group.buttonToggled.connect(
-        lambda _b, checked: checked and _on_objective_count_change())
 
     # ---- Launching -----------------------------------------------------------
 
@@ -1228,4 +1239,5 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     _on_objective_count_change()
     _sync_ground_truth()
+    _sync_plot_buttons()
     return page, plot_page
