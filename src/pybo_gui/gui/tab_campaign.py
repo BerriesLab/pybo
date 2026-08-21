@@ -415,7 +415,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # can make for the user: on a constrained problem the line claims trade-offs a
     # constraint may forbid, which is still worth drawing when the front is what the
     # figure is about.
-    cb_front = QCheckBox("Front line")
+    cb_front = QCheckBox("Show Pareto front line")
     cb_front.setChecked(True)
     cb_front.setToolTip("Join the non-dominated points into a dashed front line, on a "
                         "constrained problem as well as an unconstrained one. There the "
@@ -423,7 +423,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                         "necessarily attainable.")
     # 2-D only. The second front is the union, design points included - a front over the
     # proposals alone would run through points the design had already beaten.
-    cb_design_front = QCheckBox("Design front")
+    cb_design_front = QCheckBox("Show initial Pareto front line")
     cb_design_front.setToolTip("Also draw the initial design's own front, in grey under "
                                "the campaign's. The pair says what proposing added to "
                                "the dataset the run started from.")
