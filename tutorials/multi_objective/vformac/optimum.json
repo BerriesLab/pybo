@@ -1,0 +1,109 @@
+{
+  "hv_star": 319.3030232148861,
+  "ground_truth": "objective.py",
+  "samples_requested": 131072,
+  "samples_drawn": 279482,
+  "samples_feasible": 279482,
+  "front_size": 1437,
+  "declared_max_hv": null,
+  "convergence": [
+    {
+      "samples": 32768,
+      "hv_star": 304.51414552215516,
+      "gain_percent": null
+    },
+    {
+      "samples": 65536,
+      "hv_star": 307.10770500009346,
+      "gain_percent": 0.8517041050723876
+    },
+    {
+      "samples": 98304,
+      "hv_star": 308.1487809583351,
+      "gain_percent": 0.33899376059006603
+    },
+    {
+      "samples": 131072,
+      "hv_star": 310.0745376954759,
+      "gain_percent": 0.624943811606756
+    }
+  ],
+  "refine_rounds": 10,
+  "refinement": [
+    {
+      "round": 1,
+      "step_fraction": 0.05,
+      "hv_star": 318.7840701473987,
+      "gain_percent": 2.808851225467747
+    },
+    {
+      "round": 2,
+      "step_fraction": 0.025,
+      "hv_star": 319.20016895919656,
+      "gain_percent": 0.13052685211197748
+    },
+    {
+      "round": 3,
+      "step_fraction": 0.0125,
+      "hv_star": 319.2185792020558,
+      "gain_percent": 0.005767616890457958
+    },
+    {
+      "round": 4,
+      "step_fraction": 0.00625,
+      "hv_star": 319.2505560497138,
+      "gain_percent": 0.010017226358786623
+    },
+    {
+      "round": 5,
+      "step_fraction": 0.003125,
+      "hv_star": 319.2879482616551,
+      "gain_percent": 0.011712497044328082
+    },
+    {
+      "round": 6,
+      "step_fraction": 0.0015625,
+      "hv_star": 319.29072921496936,
+      "gain_percent": 0.0008709859953636982
+    },
+    {
+      "round": 7,
+      "step_fraction": 0.00078125,
+      "hv_star": 319.29344356195014,
+      "gain_percent": 0.0008501176928797106
+    },
+    {
+      "round": 8,
+      "step_fraction": 0.000390625,
+      "hv_star": 319.30145973541994,
+      "gain_percent": 0.0025105975808246703
+    },
+    {
+      "round": 9,
+      "step_fraction": 0.0001953125,
+      "hv_star": 319.302531228908,
+      "gain_percent": 0.0003355742529110279
+    },
+    {
+      "round": 10,
+      "step_fraction": 9.765625e-05,
+      "hv_star": 319.3030232148861,
+      "gain_percent": 0.00015408145253583316
+    }
+  ],
+  "context": {
+    "objectives": [
+      "Material Removal Rate",
+      "Tool Wear"
+    ],
+    "signs": [
+      -1.0,
+      1.0
+    ],
+    "reference": [
+      -0.0,
+      150.0
+    ],
+    "reference_source": "ground-truth"
+  }
+}

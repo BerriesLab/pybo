@@ -416,7 +416,11 @@ context = {"objectives": objective_keys,
            "reference": list(ref),
            "reference_source": "ground-truth"}
 payload = {"hv_star": hv_star,
-           "ground_truth": os.path.abspath(args.ground_truth),
+           # The objective's file name, not its path. This file sits beside it by default,
+           # so the name is enough to say which problem was measured - and an absolute path
+           # names a directory on one machine, which is exactly what makes a committed file
+           # useless to everyone else (the same reason gui_app/state.json is not tracked).
+           "ground_truth": os.path.basename(os.path.abspath(args.ground_truth)),
            "samples_requested": args.samples,
            "samples_drawn": drawn,
            "samples_feasible": feasible,
