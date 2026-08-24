@@ -9,14 +9,14 @@ and a set of runs scored under different settings is refused rather than mixed.
 Plots, against the initial design size n0, the two halves of the trade-off a sweep over
 --n-initial exists to measure:
 
-  gamma_c  the gain over the initial design at convergence, in %
+  gamma    the gain over the initial design at convergence, in %
   n_c      the evaluations spent reaching it, the design included
 
 Two panels sharing one x axis rather than one panel with two y scales: the measures
 have unrelated units, and a second y axis invites reading a crossing point that means
 nothing.
 
-Both panels are needed together. gamma_c alone says a bigger design converges higher
+Both panels are needed together. gamma alone says a bigger design converges higher
 without saying what it cost; the cost alone rewards a run that stopped early having
 gained little. Read as a pair they are the exploration-cost/convergence-quality
 trade-off.
@@ -41,9 +41,14 @@ WHICH COST - and a floor to know about
   They can disagree, and the disagreement is the finding: a design that pays for itself
   in proposals can still cost more wall-clock overall.
 
-A run that never met the convergence test has no n_c - the budget's end stands in, which
-is a lower bound, not a measurement. Those are drawn as open markers and left out of the
-cost boxes, and the console says how many there were.
+A run still improving when its budget ended never converged, so it has no n_c and no
+gain measured at one. It is not dropped: gamma_budget - what it had gained by the end -
+stands in on the gain panel, drawn as an open marker to say it is a lower bound rather
+than a measurement. The cost panels leave it out entirely, since there the missing
+quantity is the x value itself. The console says how many there were.
+
+Each strategy gets its own marker as well as its own colour, so the comparison the figure
+exists to make survives greyscale printing and colour vision deficiency.
 
 EXAMPLE
 
@@ -115,17 +120,36 @@ def _selected_run_dirs() -> list:
 # already carries the design size (see _labels.arm_label), so the strategy is what is
 # left once it is taken out - that, not the arm, is what makes a series here, since n0
 # is the x axis.
-runs, contexts, missing = [], [], []
+runs, contexts, missing, stale, unconverged = [], [], [], [], []
 for run_dir in _selected_run_dirs():
     score_path = os.path.join(run_dir, "gain.json")
     if not os.path.exists(score_path):
         missing.append(run_dir)
         continue
     score = json.load(open(score_path, encoding="utf-8"))
-    n_initial, gamma_c, n_c = (score.get("n_initial"), score.get("gamma_c"),
-                               score.get("n_c"))
-    if n_initial is None or gamma_c is None or n_c is None:
+    # The gain at convergence, which campaign_gain wrote as "gamma_c" until "gamma" was
+    # freed up for it - the paper's gamma is measured at convergence, and the column that
+    # held that name is now "gamma_budget". A file written before the swap is named rather
+    # than half-read: its "gamma" is the end-of-budget number, so reading it under the new
+    # name would silently plot a different quantity for those runs than for the rest.
+    n_initial, n_c = score.get("n_initial"), score.get("n_c")
+    gamma_c = score.get("gamma") if "gamma_budget" in score else None
+    if gamma_c is None and "gamma_c" in score:
+        stale.append(run_dir)
+        continue
+    if n_initial is None:
         missing.append(run_dir)
+        continue
+    # A run still improving when its budget ran out has no n_c, and campaign_gain leaves
+    # gamma and eta null for it rather than passing the budget's end off as a convergence
+    # point. It is not dropped here: what it gained by the end is a real measurement and a
+    # lower bound on what it would have reached, so gamma_budget stands in and the marker
+    # is drawn open - the same censoring convention this plot already used. The cost panels
+    # do drop it, because there its missing quantity is the x value itself.
+    converged = bool(score.get("converged")) and n_c is not None
+    gain = gamma_c if converged else score.get("gamma_budget")
+    if gain is None:
+        unconverged.append(run_dir)
         continue
     contexts.append(json.dumps(score.get("context"), sort_keys=True))
     # By pattern, not by this run's own number: the size in the arm label is written by
@@ -135,12 +159,13 @@ for run_dir in _selected_run_dirs():
     label = re.sub(r" n\d+", "", str(score.get("arm") or ""), count=1)
     runs.append({"n0": int(n_initial),
                  "series": label or "run",
-                 "gamma_c": float(gamma_c),
+                 "gamma": float(gain),
                  # Both readings of the same stopping point, drawn one above the other:
-                 # what the optimizer spent, and what the experiment cost in total.
-                 "cost_prop": float(n_c) - n_initial,
-                 "cost_total": float(n_c),
-                 "converged": bool(score.get("converged"))})
+                 # what the optimizer spent, and what the experiment cost in total. NaN
+                 # without an n_c, which the converged-only cost panels then leave out.
+                 "cost_prop": float(n_c) - n_initial if converged else float("nan"),
+                 "cost_total": float(n_c) if converged else float("nan"),
+                 "converged": converged})
 
 if missing:
     print(f"! {len(missing)} selected run(s) carry no score yet - score the campaign "
@@ -148,9 +173,23 @@ if missing:
           f"{', '.join(os.path.basename(d) for d in missing[:4])}"
           f"{' ...' if len(missing) > 4 else ''}")
 
+if unconverged:
+    print(f"! {len(unconverged)} selected run(s) never converged - they were still "
+          f"improving when the budget ended, so they have no n_c or gamma to plot. Give "
+          f"them a longer budget, or loosen --tol-rel when scoring. Skipped: "
+          f"{', '.join(os.path.basename(d) for d in unconverged[:4])}"
+          f"{' ...' if len(unconverged) > 4 else ''}")
+
+if stale:
+    print(f"! {len(stale)} selected run(s) were scored under the older column names, "
+          f"where the gain at convergence was called gamma_c. Re-score the campaign and "
+          f"they will be included. Skipped: "
+          f"{', '.join(os.path.basename(d) for d in stale[:4])}"
+          f"{' ...' if len(stale) > 4 else ''}")
+
 if not runs:
-    print("None of the selected runs carries a score with both n_initial and gamma_c. "
-          "Score the campaign first; a run recording no initial design cannot be "
+    print("None of the selected runs carries a current score with both n_initial and "
+          "gamma. Score the campaign first; a run recording no initial design cannot be "
           "plotted against its size.")
     sys.exit(1)
 
@@ -174,7 +213,10 @@ if len(sizes) < 2:
     print(f"! only one initial design size ({sizes[0]}) in this campaign - there is no "
           f"trend to draw. Select runs from a sweep over --n-initial.")
 
-color, _marker, _line, _front = styler(fig_cfg, series)
+# Marker as well as colour: the strategies are the thing being compared here, and a
+# figure that separates them by hue alone stops separating them at all in greyscale, in
+# print, or for a reader with a colour vision deficiency.
+color, marker, _line, _front = styler(fig_cfg, series)
 
 # Series are dodged around each size so their boxes never overlap. One series sits on the
 # size itself; several share the spacing between adjacent sizes.
@@ -216,10 +258,11 @@ def _panel(ax, key, converged_only):
                 # A deterministic jitter, so the same campaign redraws identically.
                 jitter = (hash((run["series"], size, run[key])) % 100 / 100 - 0.5)
                 ax.plot(size + offset + jitter * width * 0.5, run[key],
-                        marker="o", markersize=3.5, linestyle="none",
+                        marker=marker(name), markersize=4.5, linestyle="none",
                         color=color(name),
-                        # Open for a run that never converged: its n_c is the budget's
-                        # end standing in for a measurement it never made.
+                        # Open for a run that never converged: what is plotted for it is
+                        # gamma_budget, a lower bound, rather than a gain at a convergence
+                        # point it never reached.
                         markerfacecolor=color(name) if run["converged"] else "none",
                         markeredgecolor=color(name), markeredgewidth=0.8,
                         alpha=0.75, zorder=3)
@@ -230,7 +273,7 @@ figsize = fig_cfg["figsize"].get("gain_vs_ninitial",
 fig, (ax_gain, ax_prop, ax_cost) = plt.subplots(
     3, 1, sharex=True, figsize=(figsize[0], figsize[1] * 2.4))
 
-_panel(ax_gain, "gamma_c", converged_only=False)
+_panel(ax_gain, "gamma", converged_only=False)
 # Both cost panels keep only the runs that converged: n_c stands in as the budget's end
 # for the others, which is a lower bound rather than a measurement.
 _panel(ax_prop, "cost_prop", converged_only=True)
@@ -238,7 +281,7 @@ _panel(ax_cost, "cost_total", converged_only=True)
 
 # Short labels on purpose: the panels are stacked in a single-column figure, where a
 # sentence-long ylabel on each runs into its neighbour. The symbols carry the meaning.
-ax_gain.set_ylabel(r"Gain $\gamma_\mathrm{c}$ (%)", fontsize=FONT_LABEL)
+ax_gain.set_ylabel(r"Gain $\gamma$ (%)", fontsize=FONT_LABEL)
 ax_prop.set_ylabel(r"$n_\mathrm{c} - n_0$ (proposals)", fontsize=FONT_LABEL)
 ax_cost.set_ylabel(r"$n_\mathrm{c}$ (evaluations)", fontsize=FONT_LABEL)
 ax_cost.set_xlabel(r"Initial design size $n_0$", fontsize=FONT_LABEL)
@@ -258,18 +301,21 @@ if args.hours_per_eval > 0:
 
 # One series names itself in the axis labels; several need telling apart.
 if len(series) > 1:
-    handles = [mlines.Line2D([], [], color=color(name), marker="o", linestyle="none",
-                             markersize=5, label=name) for name in series]
+    handles = [mlines.Line2D([], [], color=color(name), marker=marker(name),
+                             linestyle="none", markersize=6, label=name)
+               for name in series]
     leg_cfg = fig_cfg["legend"]
     ax_gain.legend(handles=handles, fontsize=FONT_LEGEND, loc=leg_cfg["loc"],
                    frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
 
 censored = [r for r in runs if not r["converged"]]
 if censored:
-    print(f"! {len(censored)} of {len(runs)} runs never met the convergence test "
-          f"(patience {context.get('patience')}, tol {context.get('tol')}) - drawn open, "
-          f"and left out of the cost boxes. Their n_c is the end of the budget, a lower "
-          f"bound.")
+    print(f"! {len(censored)} of {len(runs)} runs were still improving when the budget "
+          f"ended (patience {context.get('patience')}, tol_rel {context.get('tol_rel')}) "
+          f"- drawn open, with gamma_budget standing in for a gain at a convergence point "
+          f"they never reached, and left out of the cost panels entirely since they have "
+          f"no n_c. Both are lower bounds: give them a longer budget to measure rather "
+          f"than bound them.")
 for size in sizes:
     kept = [r for r in runs if r["n0"] == size and r["converged"]]
     if not kept:

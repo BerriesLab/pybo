@@ -8,14 +8,25 @@ The metric is the hypervolume, or the best value when one objective is given.
 
 COLUMNS
 
-  gamma       improvement over the initial design at the end of the budget, in %
-  gamma_c     the same, but measured at convergence rather than at the end of the
-              budget: 100 * (m_c - m_initial) / |m_initial|. The metric only grows, so
-              gamma_c <= gamma, and they part company by whatever the run found after it
-              had stopped counting as improving.
+  gamma       improvement over the initial design at convergence, in %:
+              100 * (m_c - m_initial) / |m_initial|. The relative gain, and the headline
+              number - the metric only grows, so this is a floor on what the run
+              eventually reached rather than what it reached at the end.
+  gamma_budget
+              the same measured at the end of the budget instead of at convergence.
+              gamma <= gamma_budget always, and on a converged run they agree to within
+              the flatness threshold - the plateau gamma is measured at the start of is
+              flat by construction. A run that never converged has only this one.
   gamma_norm  how much of the distance from the initial design to the known optimum was
               covered: 0 = no better than the design, 1 = optimum reached
-  eta         gamma divided by the evaluations spent getting there, in % per evaluation
+  rho_c       m_c as a fraction of the optimum: 1 means the run reached it. Needs a
+              known optimum; blank without one.
+  regret_c    how far short of the optimum the run stopped, in the metric's own units.
+              Reaches 0 at the optimum. Needs a known optimum.
+  eta         gamma divided by the evaluations spent reaching it, in % per evaluation.
+              Both halves are measured at convergence, so it is the rate the run gained
+              at while it was still gaining, not an average over a budget it spent part
+              of sitting still.
   it0.5       evaluations, past the initial design, needed to cover 50% of the distance
   it0.9       to the optimum; likewise 90% and 99%. Set your own targets with --tau.
   it0.99
@@ -27,24 +38,39 @@ COLUMNS
   prop0.99    from what the search cost. A large design with a quick search and a small
               design with a slow one can share an n_tau and differ entirely in this.
   m_c         the metric at convergence
-  n_c         evaluation at which the run stopped improving (--patience/--tol), counted
-              from the run's first evaluation, so the initial design is included
+  n_c         evaluation at which the run stopped improving - the start of the plateau
+              it finished on (--patience/--tol). Counted from the run's first evaluation,
+              so the initial design is included. Blank for a run still improving when its
+              budget ran out.
   eps         the flatness threshold this run was judged against - equal to --tol, or
               --tol-rel times this run's own HV(n0)
 
-CONVERGENCE, AND WHAT IT CANNOT SEE
+CONVERGENCE, AND RUNS THAT NEVER GET THERE
 
-  n_c is the end of the first run of --patience consecutive iterations that all improved
-  by less than the threshold, searched only past the initial design (a design is drawn
-  blind, so its metric is routinely flat for several points together, and a window
-  overlapping it would stop the run before the optimizer proposed anything).
+  n_c is where the plateau the run *finished* on begins - found by walking back from the
+  last evaluation for as long as each step improved by less than the threshold. The
+  plateau has to be at least --patience iterations long to count as one, and has to start
+  past the initial design (a design is drawn blind, so its metric is routinely flat for
+  several points together, and a plateau running back into it would report the run as
+  having stopped improving before the optimizer proposed anything).
 
-  It is a *first* match, so it cannot tell a plateau apart from an ending. A run that
-  sits flat for longer than --patience and then climbs again is called converged at the
-  plateau, and everything after it is invisible to m_c, gamma_c and n_tau - while gamma,
-  measured at the end of the budget, still sees it. A large gap between gamma and gamma_c
-  is the symptom, and the cure is a --patience longer than the longest plateau the
-  experiment plausibly has.
+  Backwards, and not forwards, because forwards cannot tell a plateau from an ending: the
+  first flat stretch wins, so a run that goes quiet and then finds something is called
+  converged at the quiet patch, and everything after it vanishes from m_c, gamma and
+  n_tau. Searching back from the end there is nothing to confuse - the terminal plateau is
+  the only one considered, and it is by definition the last time the run improved.
+
+  A run still improving in its final --patience iterations has no terminal plateau, and
+  gets no n_c, m_c, gamma or eta at all. This is the run whose budget ran out before it
+  settled, and the budget's end is not a convergence point - it is where the money
+  stopped. Reporting it as one is what let a censored run be averaged in with finished
+  ones and drag the arm's mean down invisibly. What such a run does still have is
+  gamma_budget: how much it had gained when the budget ended, which is a real measurement
+  and a lower bound on what it would have reached.
+
+  The per-arm summary therefore averages gamma, eta and m_c over the converged runs only,
+  and prints "converged: 7/10" beside them. gamma_budget is averaged over all of them,
+  since every run has one.
 
 TWO FINISH LINES
 
@@ -62,16 +88,20 @@ TWO FINISH LINES
   same instant minus n_initial, and is not a third finish line - the target is identical,
   only the origin of the count differs.
 
-  In the per-arm summary, gains are mean +- std over that arm's runs and each it column
-  is a median plus how many runs got there at all: "15 (1/3)" means one run of three
-  reached that target, after 15 evaluations. The others are not averaged in; discarding
-  them would make an optimizer that usually fails look fast.
+  In the per-arm summary, each it column is a median plus how many runs got there at
+  all: "15 (1/3)" means one run of three reached that target, after 15 evaluations. The
+  others are not averaged in; discarding them would make an optimizer that usually fails
+  look fast. The gain columns carry the same qualification whenever a run is missing one
+  - see the convergence section above.
 
 READING THEM
 
   gamma is the headline number but it blows up when the initial design scores near zero
-  (a common case: its front dominates almost nothing). Prefer gamma_norm, which stays in
-  0..1 - but it needs a known optimum, from --optimum.
+  (a common case: its front dominates almost nothing). Prefer rho_c, which stays in 0..1
+  and says how much of the optimum the run actually reached - but it needs a known
+  optimum. gamma_norm needs one too, and answers a different question: not how close to
+  the optimum the run got, but how much of the distance left open by its initial design
+  it closed.
 
   eta and it_tau both measure speed, against different finish lines. eta uses the run's
   own stopping point, so a run that stalls early looks fast; it_tau uses a target you
@@ -98,6 +128,9 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import (
     ConstraintError, is_feasible, parse_constraints,
 )
+from pybo_gui.modules.bayesian_campaign_analysis._convergence import (
+    terminal_plateau,
+)
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
@@ -123,8 +156,12 @@ parser.add_argument("--tau", action="append", default=[], type=float,
                     help="Target as a fraction of the achievable gap (repeatable, "
                          "default: 0.5 0.9 0.99).")
 parser.add_argument("--optimum", type=float, default=None,
-                    help="Reference optimum m*. Needed for gamma_norm and the it columns "
-                         "to mean anything across campaigns.")
+                    help="Reference optimum m*. Needed for gamma_norm, rho_c, regret_c "
+                         "and the it columns to mean anything across campaigns. Given "
+                         "none, it is looked for in optimum.json (campaign_optimum) and "
+                         "then in the problem's declared max_hv/best_value, before "
+                         "falling back to the best value this campaign reached - which "
+                         "is not comparable with another campaign's.")
 parser.add_argument("--ground-truth", default="", dest="ground_truth",
                     help="Path to the run's objective.py. When given, the hypervolume "
                          "metric is measured from each objective's own declared "
@@ -132,6 +169,24 @@ parser.add_argument("--ground-truth", default="", dest="ground_truth",
                          "in this report - the latter moves every run's score if the "
                          "selection changes, which makes gamma/eta incomparable "
                          "between one run of this script and the next.")
+parser.add_argument("--true-objective", action="store_true", default=False,
+                    dest="true_objective",
+                    help="Score each observation by the noiseless objective at the "
+                         "parameters it used, instead of the value the run recorded. "
+                         "Needs --ground-truth, and only means anything on a simulated "
+                         "campaign. m* is an optimum of the true surface, so on a noisy "
+                         "problem a front of recorded values beats it and rho_c comes out "
+                         "above 1 - this puts both ends of that comparison on the same "
+                         "surface. Pass it to plot_hypervolume too, or the table and the "
+                         "curve are scoring different things.")
+parser.add_argument("--input-feasible", action="store_true", default=False,
+                    dest="input_feasible",
+                    help="Drop from the front every observation whose parameters break "
+                         "the problem's own input constraints. Needs --ground-truth. Such "
+                         "a point is recorded like any other but the problem would never "
+                         "have allowed it, and m* never sees one, so a handful can double "
+                         "a campaign's hypervolume. Counted as an evaluation still, the "
+                         "way a --constraint violation is.")
 parser.add_argument("--patience", type=int, default=10,
                     help="Iterations of improvement below --tol that mark convergence "
                          "(default: %(default)s, as OptimizerBase.is_converged).")
@@ -197,11 +252,52 @@ for exp in load_experiments_from_map(MAP_PATH):
         # per-arm summary below never pools a real run in with a simulated one just
         # because they happen to share an optimizer.
         "arm": arm_label(exp, exp["run"]),
+        # Kept so --true-objective / --input-feasible can ask the problem about this
+        # observation. Empty for a record carrying none, which both passes then leave be.
+        "parameters": exp.get("parameters") or {},
     })
 
 if not runs:
     print("No data with the requested keys.")
     sys.exit(1)
+
+# ---- WHAT THE PROBLEM SAYS ABOUT THESE RECORDS ----
+# Both passes run here, on single observations, before any trace is built: replacing a
+# point's coordinates or striking it off the front has to happen while it is still one
+# observation. Flattened across runs so the objective is loaded and evaluated once for the
+# whole campaign rather than once per run.
+if args.true_objective or args.input_feasible:
+    if not args.ground_truth:
+        print("--true-objective and --input-feasible need --ground-truth: only the "
+              "problem can say what an observation truly measured, or whether it was "
+              "allowed at all.")
+        sys.exit(2)
+    flat = [item for items in runs.values() for item in items]
+    parameters = [item["parameters"] for item in flat]
+    if args.true_objective:
+        from pybo_gui.modules.bayesian_campaign_analysis._problem_view import true_results
+        truth = true_results(args.ground_truth, parameters, objective_keys)
+        replaced = 0
+        for item, values in zip(flat, truth):
+            if values is None:
+                continue
+            item["point"] = tuple(s * values[k] for s, k in zip(signs, objective_keys))
+            replaced += 1
+        print(f"--true-objective: {replaced} of {len(flat)} observations re-read off the "
+              f"noiseless objective.")
+    if args.input_feasible:
+        from pybo_gui.modules.bayesian_campaign_analysis._problem_view import input_feasible
+        allowed = input_feasible(args.ground_truth, parameters)
+        dropped = 0
+        for item, ok in zip(flat, allowed):
+            # `is False`, not a falsy test: None means the row carried no parameters to
+            # check, and treating that as a violation would strike off every reference
+            # measurement in a campaign that has any.
+            if ok is False:
+                item["feasible"] = False
+                dropped += 1
+        print(f"--input-feasible: {dropped} of {len(flat)} observations break the "
+              f"problem's input constraints and contribute no point.")
 
 # ---- REFERENCE POINT ----
 # The objective's own ref_point, when available - fixed regardless of which runs are in
@@ -209,6 +305,8 @@ if not runs:
 # score read from two different --constraint/selection combinations has to be the same
 # number, or it is not measuring the run - it is measuring the report.
 ref = None
+problem = None
+ref_from_problem = False
 if args.ground_truth:
     # Imported here, not at the top: a pybo objective is a torch object, so this line
     # costs five seconds of import - and every run of this script that does not ask for a
@@ -229,6 +327,7 @@ if args.ground_truth:
                 "which will move if the selection changes.")
     else:
         ref = tuple(s * ref_by_label[k] for s, k in zip(signs, objective_keys))
+        ref_from_problem = True
 
 if ref is None:
     # Over every run currently loaded, so at least this report is internally
@@ -243,6 +342,15 @@ if ref is None:
         span = hi - lo
         ref.append(hi + (REF_MARGIN * span if span > 0 else (abs(hi) * REF_MARGIN or 1.0)))
     ref = tuple(ref)
+
+# Where the corner above actually came from, which is not the same question as whether
+# --ground-truth was passed: a problem that names no ref_point for one of the objectives
+# falls through to the data-derived corner having been asked for the other. Everything
+# that turns on the reference being fixed - whether a declared max_hv can be believed,
+# whether a cached score stays valid when the selection changes - has to read this rather
+# than the flag.
+reference_source = "ground-truth" if (args.ground_truth and problem is not None
+                                      and ref_from_problem) else "selection"
 
 
 def metric_trace(items):
@@ -273,11 +381,75 @@ def metric_trace(items):
 
 
 traces = {run: metric_trace(items) for run, items in runs.items()}
+
+
+def declared_optimum():
+    """m* from the problem, or from a cached estimate of it, or None.
+
+    Tried in order of how much each is worth. A number given on the command line is not
+    tried here at all - it wins outright. Then:
+
+    * optimum.json, written by campaign_optimum from a dense sample of the true objective.
+      Only when its context matches this report's: an HV* measured over other objectives,
+      other senses or another reference point is a number from a different problem, and
+      dividing by it would be worse than having none. `signs` is compared as a list of
+      floats because JSON has no integer/float distinction to rely on.
+    * the problem's own declared max_hv (or best_value on one objective), which is a
+      literal an author put there. It carries no record of the reference point it was
+      measured from, so it is only trusted when this report uses the problem's own - the
+      case the --ground-truth branch above already established.
+
+    Both are skipped silently when absent; the caller reports which source won.
+    """
+    path = os.path.join(args.out_dir or data_path, "optimum.json")
+    try:
+        with open(path, encoding="utf-8") as file:
+            cached = json.load(file)
+    except (OSError, ValueError):
+        cached = None
+    if cached:
+        context_now = {"objectives": objective_keys, "signs": [float(s) for s in signs],
+                       "reference": [float(v) for v in ref]}
+        stored = cached.get("context") or {}
+        matches = (stored.get("objectives") == context_now["objectives"]
+                   and [float(v) for v in stored.get("signs", [])] == context_now["signs"]
+                   and [float(v) for v in stored.get("reference", [])] == context_now["reference"])
+        if matches and cached.get("hv_star") is not None:
+            return float(cached["hv_star"]), f"optimum.json ({path})"
+        if not matches:
+            print(f"! {path} was computed for a different objective set, sense or "
+                  f"reference point - ignoring it.")
+    if args.ground_truth and reference_source == "ground-truth":
+        key = "best_value" if len(ref) == 1 else "max_hv"
+        value = problem.get(key) if problem is not None else None
+        if value is not None:
+            if len(ref) == 1:
+                # A best_value is in the objective's own units, while the single-objective
+                # trace is -min(sign * raw) - the same "larger is better" space the
+                # hypervolume already lives in. -sign is what carries the declared value
+                # into it, for a minimized objective and a maximized one alike.
+                value = -signs[0] * float(value)
+            return float(value), f"the problem's declared {key}"
+    return None, None
+
+
 # One optimum for the campaign, not one per run: measured against its own final value
-# every run would score gamma_norm = 1, which says nothing. With no --optimum the best
-# any run reached stands in, so the others are read as a fraction of that.
-optimum = (args.optimum if args.optimum is not None
-           else float(np.nanmax([v for trace in traces.values() for v in trace])))
+# every run would score gamma_norm = 1, which says nothing. Failing every declared source,
+# the best any run reached stands in, so the others are read as a fraction of that.
+if args.optimum is not None:
+    optimum, optimum_source = float(args.optimum), "--optimum"
+else:
+    optimum, optimum_source = declared_optimum()
+    if optimum is None:
+        optimum = float(np.nanmax([v for trace in traces.values() for v in trace]))
+        optimum_source = "the best value reached in this campaign"
+# Whether m* came from outside this selection. rho_c and regret_c are absolute statements
+# about a run - how much of the optimum it reached, how far short it stopped - so an m*
+# that is merely the best run in the report cannot support them: that run would score
+# rho_c = 1 by construction and every other would be graded against whichever seed
+# happened to do well. gamma_norm and the it columns carry the same caveat and are left
+# defined regardless, for continuity with the reports written before this.
+known_optimum = optimum_source != "the best value reached in this campaign"
 
 rows = []
 for run, items in runs.items():
@@ -307,31 +479,45 @@ for run, items in runs.items():
     if args.tol_rel is not None and np.isfinite(m0) and m0 != 0:
         eps = args.tol_rel * abs(m0)
 
-    n_c, converged = n[-1], False
-    for i in range(int(n0) + args.patience - 1, len(m)):
-        window = np.diff(m[i - args.patience + 1:i + 1])
-        if window.size and np.all(np.abs(window) < eps):
-            n_c, converged = n[i], True
-            break
+    # Where the run stopped improving, or None if it never did - see _convergence for why
+    # the plateau is looked for from the end rather than from the start, and what a run
+    # without one is.
+    start = terminal_plateau(m, eps, args.patience, int(n0))
+    converged = start is not None
+    n_c = float(start + 1) if converged else np.nan
 
-    # The metric at convergence, which is what gamma_c and n_tau are measured against.
-    # Distinct from m_final: the run keeps going to the end of its budget, and the
-    # hypervolume only ever grows, so m_final >= m_c whenever anything was found after
-    # the run stopped counting as improving.
-    m_c = m[int(n_c) - 1]
+    # The metric at convergence. On a converged run the plateau is flat by construction, so
+    # m_c is within patience * eps of m_final - which is the point. They part company only
+    # when the run never settled, and then there is no m_c at all rather than the budget's
+    # last value standing in for one.
+    m_c = m[start] if converged else np.nan
     gain_c = m_c - m0
 
     gap = optimum - m0
     row = {"run": run, "arm": items[0]["arm"], "n_initial": int(n0),
            "m_initial": m0, "m_final": m_final, "m_c": m_c,
-           "gamma": 100.0 * (m_final - m0) / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
-           "gamma_c": 100.0 * gain_c / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
+           "gamma": 100.0 * gain_c / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
+           "gamma_budget": 100.0 * (m_final - m0) / abs(m0) if np.isfinite(m0) and m0 != 0 else np.nan,
            "gamma_norm": (m_final - m0) / gap if np.isfinite(gap) and gap > 0 else np.nan,
-           "n_c": int(n_c), "converged": converged,
+           # The two the paper draws as traces, at the one point a table can hold: where
+           # the run stopped improving. rho_c is that fraction of the optimum reached and
+           # regret_c what it still fell short by, so they answer "how good is this front"
+           # where gamma answers "how much did the optimizer add". Both are meaningless
+           # against an optimum that is merely the best this campaign happened to reach -
+           # every run would then be scored against the luckiest one - so they are left
+           # blank unless the optimum came from somewhere outside the selection.
+           "rho_c": m_c / optimum if known_optimum and optimum else np.nan,
+           "regret_c": optimum - m_c if known_optimum else np.nan,
+           # None rather than the budget's end when the run never settled - see the
+           # backward scan above. A count that is not a convergence point must not be
+           # readable as one.
+           "n_c": int(n_c) if converged else np.nan, "converged": converged,
            # The threshold this run was actually judged against. With --tol-rel it is
            # this run's own, so the shared setting alone does not say what was applied.
            "eps": eps}
-    row["eta"] = row["gamma"] / (n_c - n0) if n_c > n0 else np.nan
+    # Undefined without an n_c to divide by, which is the honest answer for a run that
+    # never stopped improving: it has no rate-to-convergence, not a slow one.
+    row["eta"] = row["gamma"] / (n_c - n0) if converged and n_c > n0 else np.nan
     for tau in taus:
         # Censored on purpose: a run that never clears the target has no it_tau, and the
         # aggregate below reports how many did rather than averaging the rest.
@@ -356,14 +542,15 @@ if not rows:
 
 per_run = pd.DataFrame(rows)
 metric_name = "best value" if len(ref) == 1 else "hypervolume"
-source = "--optimum" if args.optimum is not None else "the best value reached in this campaign"
+source = optimum_source
 
 print(f"\nMetric: {metric_name} over {', '.join(objective_keys)}")
-print(f"Optimum m*, from {source}.")
-if args.optimum is None:
+print(f"Optimum m* = {optimum:.6g}, from {source}.")
+if not known_optimum:
     print("  ! No declared optimum: targets are relative to the best this campaign "
           "reached,\n    so gamma_norm and it_tau are not comparable against another "
-          "campaign's numbers.")
+          "campaign's numbers, and rho_c/regret_c are blank.\n"
+          "    Run campaign_optimum to measure m* from the problem itself.")
 print(f"Convergence: {args.patience} iterations improving by less than "
       + (f"{args.tol_rel:g} of each run's own HV(n0).\n" if args.tol_rel is not None
          else f"{args.tol:g}.\n"))
@@ -383,18 +570,56 @@ def jsonable(value):
     return value
 
 
+def summarise(column, total):
+    """mean +- std over the values that exist, and how many that was.
+
+    The count is not decoration. gamma, eta, m_c and the two optimum-relative columns are
+    undefined for a run that never converged, and pandas drops those silently - so without
+    it, an arm where three runs of ten settled reports a mean that looks like the arm's,
+    and reads identically to one where all ten did. It is the same qualification the
+    it_tau columns already carry, for the same reason.
+
+    A single value has no sample spread to report, and "+- nan" would suggest the
+    calculation failed rather than that there was nothing to calculate.
+    """
+    values = column.dropna()
+    if values.empty:
+        return f"- (0/{total})"
+    spread = "" if len(values) < 2 else f" +- {values.std(ddof=1):.3g}"
+    count = "" if len(values) == total else f" ({len(values)}/{total})"
+    return f"{values.mean():.4g}{spread}{count}"
+
+
 agg, arms = [], []
 for arm, g in per_run.groupby("arm", sort=False):
-    row = {"arm": arm, "runs": len(g),
-           "gamma": f"{g['gamma'].mean():.4g} +- {g['gamma'].std(ddof=1):.3g}",
-           "gamma_c": f"{g['gamma_c'].mean():.4g} +- {g['gamma_c'].std(ddof=1):.3g}",
-           "gamma_norm": f"{g['gamma_norm'].mean():.4g} +- {g['gamma_norm'].std(ddof=1):.3g}",
-           "eta": f"{g['eta'].mean():.4g} +- {g['eta'].std(ddof=1):.3g}",
-           "converged": f"{int(g['converged'].sum())}/{len(g)}"}
-    entry = {"arm": arm, "runs": len(g), "converged": int(g["converged"].sum()),
+    total = len(g)
+    row = {"arm": arm, "runs": total,
+           "converged": f"{int(g['converged'].sum())}/{total}",
+           # Over the converged runs alone - a run with no n_c has no gain-at-convergence
+           # and no rate to reach it, and averaging the budget's end in as though it were
+           # one is what this reporting exists to prevent.
+           "gamma": summarise(g["gamma"], total),
+           "n_c": summarise(g["n_c"], total),
+           "eta": summarise(g["eta"], total),
+           # Over every run, converged or not: each one reached the end of its budget, so
+           # each one has a gain measured there.
+           "gamma_budget": summarise(g["gamma_budget"], total),
+           "gamma_norm": summarise(g["gamma_norm"], total)}
+    # Only where m* came from outside the selection. Without that they are all-NaN
+    # columns, and a column of "nan +- nan" in every row reads as a broken report rather
+    # than as a metric that was not available.
+    if known_optimum:
+        row["rho_c"] = summarise(g["rho_c"], total)
+        row["regret_c"] = summarise(g["regret_c"], total)
+    entry = {"arm": arm, "runs": total, "converged": int(g["converged"].sum()),
              "targets": {}}
-    for name in ("gamma", "gamma_c", "gamma_norm", "eta"):
-        entry[name] = {"mean": g[name].mean(), "std": g[name].std(ddof=1)}
+    for name in ("gamma", "gamma_budget", "gamma_norm", "rho_c", "regret_c", "eta", "n_c"):
+        # `n` alongside the mean: for the convergence-dependent columns it is the number of
+        # runs that converged, not the number in the arm, and a reader of the JSON has no
+        # other way to tell the two apart.
+        values = g[name].dropna()
+        entry[name] = {"mean": g[name].mean(), "std": g[name].std(ddof=1),
+                       "n": int(values.size)}
     for tau in taus:
         col = g[f"it{tau:g}"]
         hit = int(col.notna().sum())
@@ -418,7 +643,7 @@ print("\nPer arm - mean +- std, it_tau as median (reached/total), n_tau as media
 print(pd.DataFrame(agg).to_string(index=False))
 
 report = {"metric": metric_name, "objectives": objective_keys,
-          "optimum": args.optimum, "optimum_source": source,
+          "optimum": optimum, "optimum_source": source,
           "convergence": {"patience": args.patience, "tol": args.tol,
                           "tol_rel": args.tol_rel},
           "taus": taus, "arms": arms}
@@ -433,7 +658,7 @@ context = {"objectives": objective_keys,
            # against it stays comparable with any other. One derived from the loaded data
            # is not: it moves with the selection, which makes a cached score valid only
            # for the selection it was computed in.
-           "reference_source": "ground-truth" if args.ground_truth else "selection",
+           "reference_source": reference_source,
            "patience": args.patience, "tol": args.tol, "tol_rel": args.tol_rel,
            "taus": taus}
 
@@ -442,7 +667,7 @@ context = {"objectives": objective_keys,
 # so they mean nothing on their own and would go stale the moment a different set of runs
 # was scored. They stay in the campaign-level report below.
 SELF_CONTAINED = ("run", "arm", "n_initial", "m_initial", "m_final", "m_c",
-                  "gamma", "gamma_c", "n_c", "converged", "eta", "eps")
+                  "gamma", "gamma_budget", "n_c", "converged", "eta", "eps")
 written = 0
 for row in rows:
     run_dir = run_dirs.get(row["run"])

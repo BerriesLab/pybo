@@ -1,4 +1,6 @@
 import argparse
+import json
+import math
 import os
 import sys
 import matplotlib.pyplot as plt
@@ -50,6 +52,45 @@ parser.add_argument("--band", default="ci95", choices=BAND_MODES,
 parser.add_argument("--improvement", action="store_true", default=False,
                     help="Plot per-step hypervolume improvement (ΔHV) instead of the "
                          "cumulative hypervolume.")
+parser.add_argument("--metric", default="hv", choices=("hv", "normalized", "regret"),
+                    help="What the y axis measures (default: %(default)s). 'hv' is the "
+                         "hypervolume itself. 'normalized' is HV(n)/HV*, which reaches 1 "
+                         "at the optimum. 'regret' is HV* - HV(n), which reaches 0 there "
+                         "and is drawn on a log axis, so the *rate* a run converges at is "
+                         "readable rather than only where it ended up. The last two need "
+                         "an optimum: --optimum, or optimum.json from campaign_optimum, "
+                         "or the problem's declared max_hv.")
+parser.add_argument("--optimum", type=float, default=None,
+                    help="HV* for --metric normalized/regret. Given none, optimum.json is "
+                         "read from --score-dir when its context matches this plot's, and "
+                         "then the problem's declared max_hv is tried.")
+parser.add_argument("--score-dir", default=None, dest="score_dir",
+                    help="Where to look for the optimum.json campaign_optimum wrote "
+                         "(default: the campaign directory). The GUI keeps a selection's "
+                         "score in the workspace cache rather than beside the records, so "
+                         "it passes that entry here - the campaign directory holds the "
+                         "runs, not the reports about them.")
+parser.add_argument("--true-objective", action="store_true", default=False,
+                    dest="true_objective",
+                    help="Score each observation by the noiseless objective at the "
+                         "parameters it used, instead of the value the run recorded. "
+                         "Needs --ground-truth, and only means anything on a simulated "
+                         "campaign. HV* is an optimum of the true surface, so on a noisy "
+                         "problem a front of recorded values dominates more than HV* and "
+                         "the regret goes negative for most points - this puts both ends "
+                         "of that subtraction on the same surface. It changes only the "
+                         "score put on the optimizer's choices, never which points it "
+                         "chose or how many evaluations it spent.")
+parser.add_argument("--input-feasible", action="store_true", default=False,
+                    dest="input_feasible",
+                    help="Drop from the front every observation whose parameters break "
+                         "the problem's own input constraints. Needs --ground-truth. Such "
+                         "a point is recorded like any other but the problem would never "
+                         "have allowed it, and HV* never sees one - campaign_optimum draws "
+                         "through the sampler that rejects them - so a handful can double "
+                         "a campaign's hypervolume and put it above the optimum. Treated "
+                         "exactly as a --constraint violation is: the evaluation still "
+                         "counts, it just contributes no point.")
 parser.add_argument("--ground-truth", default="", dest="ground_truth",
                     help="Path to the run's objective.py. When given, the hypervolume "
                          "is measured from each objective's own declared ref_point "
@@ -135,11 +176,61 @@ for exp in load_experiments_from_map(MAP_PATH):
         "group_id": exp["group_id"],
         "feasible": is_feasible(r, constraints),
         "point":    point,
+        # Kept so --true-objective can re-read this observation off the noiseless
+        # surface. Empty for a record that carries none, which that pass then leaves
+        # alone.
+        "parameters": exp.get("parameters") or {},
     })
 
 if not rows:
     print("No data with the requested keys.")
     sys.exit(1)
+
+# ---- THE NOISELESS SURFACE, WHERE ASKED FOR ----
+# Before anything is grouped or made into a front: replacing a point's coordinates has to
+# happen while it is still one observation, or a group's mean would be an average of noisy
+# values that this then failed to correct.
+if args.true_objective:
+    if not args.ground_truth:
+        print("--true-objective needs --ground-truth: the noiseless value of an "
+              "observation can only come from the problem that produced it.")
+        sys.exit(2)
+    from pybo_gui.modules.bayesian_campaign_analysis._problem_view import true_results
+    truth = true_results(args.ground_truth, [r["parameters"] for r in rows], objective_keys)
+    replaced = 0
+    for row, values in zip(rows, truth):
+        if values is None:
+            continue
+        row["point"] = tuple(s * values[k] for s, k in zip(signs, objective_keys))
+        replaced += 1
+    print(f"--true-objective: {replaced} of {len(rows)} observations re-read off the "
+          f"noiseless objective.")
+    if replaced < len(rows):
+        print(f"  ! {len(rows) - replaced} recorded no parameters to re-read them at, and "
+              f"keep their measured values - so this plot mixes the two.")
+
+# Folded into the same `feasible` flag an output-constraint violation sets, so everything
+# downstream - the flat stretch in the curve, the evaluation still counting on the x axis,
+# the reference point ignoring it - already does the right thing without knowing which kind
+# of infeasibility it was.
+if args.input_feasible:
+    if not args.ground_truth:
+        print("--input-feasible needs --ground-truth: only the problem knows which "
+              "parameter vectors it allows.")
+        sys.exit(2)
+    from pybo_gui.modules.bayesian_campaign_analysis._problem_view import input_feasible
+    allowed = input_feasible(args.ground_truth, [r["parameters"] for r in rows])
+    dropped = unknown = 0
+    for row, ok in zip(rows, allowed):
+        if ok is None:
+            unknown += 1
+        elif not ok:
+            row["feasible"] = False
+            dropped += 1
+    print(f"--input-feasible: {dropped} of {len(rows)} observations break the problem's "
+          f"input constraints and contribute no point.")
+    if unknown:
+        print(f"  ! {unknown} recorded no parameters to check, and are left as they were.")
 
 # In grouped mode, collapse replicate experiments (same group_id) into one point per
 # group whose coordinates are the elementwise mean. Label comes from the group's first
@@ -182,6 +273,8 @@ if not feasible_rows:
 # A run's hypervolume read off two different selections has to be the same number, or
 # it is not measuring the run - it is measuring the selection.
 ref = None
+problem = None
+ref_from_problem = False
 if args.ground_truth:
     # Imported here, not at the top: a pybo objective is a torch object, so this line
     # costs five seconds of import - and every run of this script that does not ask for a
@@ -202,6 +295,7 @@ if args.ground_truth:
                 "which will move if the selection changes.")
     else:
         ref = tuple(s * ref_by_label[k] for s, k in zip(signs, objective_keys))
+        ref_from_problem = True
 
 if ref is None:
     # Range-based margin so the reference stays "worse" than every point in
@@ -255,6 +349,91 @@ for name, items in series.items():
     # gets a trace of its own rather than taking a plot down that was not aggregating.
     series_arm[name] = items[0].get("arm") or name
 
+# ---- RESCALE AGAINST THE OPTIMUM ----
+# Done here, once, on the traces themselves rather than at each of the three drawing
+# branches below: everything downstream - the per-arm averaging, the band, the shading -
+# then works on the quantity actually being plotted, and none of it has to know which.
+regret_floored = 0
+if args.metric != "hv":
+    if args.improvement:
+        # Both rewrite what a point means, and stacking them would take per-step gains of
+        # a quantity that is already a difference from the optimum.
+        print("--metric normalized/regret and --improvement do not combine: the first "
+              "measures the gap to the optimum, the second the gain over the previous "
+              "step. Pick one.")
+        sys.exit(2)
+
+    def find_optimum():
+        """HV* for this plot, and where it came from, or (None, None).
+
+        Same order as campaign_gain resolves it in, and the same reasons: an explicit
+        number, then a cached estimate whose context matches this plot's, then a literal
+        the problem declares - which is only believable when this plot is measuring from
+        the problem's own reference point, since the literal records no corner of its own.
+        """
+        if args.optimum is not None:
+            return float(args.optimum), "--optimum"
+        path = os.path.join(args.score_dir or data_path, "optimum.json")
+        try:
+            with open(path, encoding="utf-8") as file:
+                cached = json.load(file)
+        except (OSError, ValueError):
+            cached = None
+        if cached:
+            stored = cached.get("context") or {}
+            matches = (stored.get("objectives") == objective_keys
+                       and [float(v) for v in stored.get("signs", [])] == list(signs)
+                       and [float(v) for v in stored.get("reference", [])] == [float(v) for v in ref])
+            if matches and cached.get("hv_star") is not None:
+                return float(cached["hv_star"]), f"optimum.json ({path})"
+            if not matches:
+                print(f"! {path} was computed for a different objective set, sense or "
+                      f"reference point - ignoring it.")
+        if problem is not None and ref_from_problem:
+            key = "best_value" if single else "max_hv"
+            value = problem.get(key)
+            if value is not None:
+                return float(value), f"the problem's declared {key}"
+        return None, None
+
+    optimum, optimum_source = find_optimum()
+    if optimum is None:
+        print(f"--metric {args.metric} measures the gap to the optimum, and no optimum "
+              f"is known for this campaign. Compute one with campaign_optimum (it writes "
+              f"optimum.json beside the campaign), declare max_hv on the objective, or "
+              f"pass --optimum. Drawn against a guess, this curve would be a shape rather "
+              f"than a measurement.")
+        sys.exit(2)
+    print(f"HV* = {optimum:.6g}, from {optimum_source}.")
+
+    for name, (s_steps, s_hvs, s_labels) in traces.items():
+        if args.metric == "normalized":
+            scaled = [v / optimum if optimum else float("nan") for v in s_hvs]
+        else:
+            scaled = [optimum - v for v in s_hvs]
+        traces[name] = (s_steps, scaled, s_labels)
+
+    if args.metric == "regret":
+        # A run can dominate more than the estimated optimum, and then its regret is zero
+        # or negative and has no place on a log axis. Two things cause it, and they call
+        # for opposite responses, so the count is reported rather than quietly clipped:
+        # an HV* that is still climbing when the sampling stopped (raise --samples), and
+        # observations carrying noise, whose front sits above the noiseless surface it was
+        # drawn from by roughly the noise amplitude (nothing to fix - the run really did
+        # record that, and the true front is what it is).
+        values = [v for _s, ys, _l in traces.values() for v in ys]
+        positive = [v for v in values if v > 0]
+        regret_floored = sum(1 for v in values if v == v and v <= 0)
+        floor = (min(positive) * 0.1) if positive else 1e-9
+        for name, (s_steps, ys, s_labels) in traces.items():
+            traces[name] = (s_steps, [v if v > 0 else floor for v in ys], s_labels)
+        if regret_floored:
+            print(f"! {regret_floored} of {len(values)} points reached or passed HV*, so "
+                  f"their regret is not positive and cannot be drawn on a log axis. They "
+                  f"are pinned to {floor:.3g} (the dotted line). Either HV* is understated "
+                  f"- raise campaign_optimum --samples - or the observations are noisy, "
+                  f"and a noisy front legitimately dominates more than the true one.")
+
 all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
 
 # The runs of each arm, in the order their traces were built, ready to be averaged.
@@ -279,6 +458,21 @@ if args.aggregate_runs and args.improvement:
 # colours assigned by position to every existing label.
 _color, _marker, _line_style, _front_style = styler(
     fig_cfg, all_labels + sorted(arm_curves) if args.aggregate_runs else all_labels)
+
+def y_label():
+    """What the y axis is measuring, named once for all three drawing branches.
+
+    A single-objective campaign has no volume, so "hypervolume" is the wrong word for it
+    throughout - the metric is the best value reached, and the normalized and regret forms
+    of that are the same two questions asked of a value instead of a volume.
+    """
+    quantity = f"best {objective_keys[0]}" if single else "hypervolume"
+    if args.metric == "normalized":
+        return f"Normalized {quantity} " + r"$\rho$"
+    if args.metric == "regret":
+        return f"{quantity.capitalize()} regret " + r"$R(n)$"
+    return quantity.capitalize()
+
 
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
@@ -361,7 +555,18 @@ elif args.aggregate_runs:
     # is that a dozen overlapping curves is what made the arms hard to compare.
     legend_handles = []
     for arm in sorted(arm_curves):
-        mean, low, high = mean_band(arm_curves[arm], args.band)
+        if args.metric == "regret":
+            # Averaged in log space, because that is the space the axis draws in and the
+            # space the quantity lives in: a regret runs over decades, and an arithmetic
+            # mean of 100 and 0.1 is 50 - a number describing neither run. Worse, the
+            # interval around such a mean routinely reaches below zero, which on a log axis
+            # is not a wide band but a missing one, and the curve grows spikes to the
+            # bottom of the frame wherever one run has nearly converged. The geometric mean
+            # and a band symmetric in log space are positive by construction.
+            mean, low, high = (10.0 ** value for value in mean_band(
+                [[math.log10(v) for v in curve] for curve in arm_curves[arm]], args.band))
+        else:
+            mean, low, high = mean_band(arm_curves[arm], args.band)
         steps = range(1, len(mean) + 1)
         ax.fill_between(steps, low, high, color=_color(arm), alpha=0.18,
                         linewidth=0, zorder=2)
@@ -413,8 +618,7 @@ elif args.aggregate_runs:
         if len(lengths) > 1:
             print(f"! {arm}: runs of unequal length ({min(lengths)}-{max(lengths)} "
                   f"steps), truncated to {min(lengths)}")
-    ax.set_ylabel(f"Best {objective_keys[0]}" if single else "Hypervolume",
-                  fontsize=FONT_LABEL)
+    ax.set_ylabel(y_label(), fontsize=FONT_LABEL)
 else:
     for name, (s_steps, s_hvs, s_labels) in traces.items():
         if not single:
@@ -428,8 +632,22 @@ else:
                 facecolors=_color(lbl), edgecolors=SCATTER["edge_color"],
                 linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=4,
             )
-    ax.set_ylabel(f"Best {objective_keys[0]}" if single else "Hypervolume",
-                  fontsize=FONT_LABEL)
+    ax.set_ylabel(y_label(), fontsize=FONT_LABEL)
+
+if args.metric == "regret":
+    # Log, because regret decays toward zero: on a linear axis every arm's curve is
+    # pinned to the bottom of the frame long before it has finished converging, and the
+    # rate - which is what the metric exists to compare - is invisible.
+    ax.set_yscale("log")
+    if regret_floored:
+        floor = min(v for _s, ys, _l in traces.values() for v in ys)
+        ax.axhline(floor, color="#888888", linestyle=":", linewidth=0.8, alpha=0.7,
+                   zorder=1)
+elif args.metric == "normalized":
+    # Where the optimum is. Without it a curve flattening at 0.98 looks the same as one
+    # flattening at 1.0, which is the whole distinction this metric was chosen to draw.
+    ax.axhline(1.0, color=fig_cfg["colors"].get("ground_truth", "#8A8F98"),
+               linestyle="--", linewidth=1.0, alpha=0.9, zorder=1)
 
 ax.set_xlabel("Number of observations", fontsize=FONT_LABEL)
 
