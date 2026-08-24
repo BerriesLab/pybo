@@ -469,7 +469,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     for key in GROUP_KEYS:
         box = QCheckBox(key.replace("_", " "))
         box.setChecked(True)
-        box.setToolTip(KEY_TEXT[key])
+        # .get, not [key]: GROUP_KEYS is the one list a key is added to, and a new
+        # one arriving without a blurb here should cost it a tooltip, not take the
+        # whole tab down on a KeyError.
+        box.setToolTip(KEY_TEXT.get(key, ""))
         key_boxes[key] = box
 
     # What a merged point's bar shows. Separate from the band below: this is the spread of
