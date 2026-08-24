@@ -32,7 +32,9 @@ from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
     build_map, map_stamp, stamp_digest)
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
-from pybo_gui.gui.launchers import launch_analysis, run_off_thread, watch
+from pybo_gui.gui.launchers import (
+    launch_analysis, run_off_thread, stop_token, stopped_since, watch,
+)
 from pybo_gui.gui.message_log import post
 from pybo_gui.gui.widgets import (
     bind_label_entry, make_constraints_widget, make_objective_checklist,
@@ -1036,10 +1038,22 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         """Make sure a map exists, then run one of the analysis modules against it.
 
         The map may take a worker thread and a minute to build, so the launch is what
-        happens once it lands rather than the next line here.
+        happens once it lands rather than the next line here. That wait is also the one
+        window in which Stop plots has nothing to terminate, hence the token: pressed
+        while the map builds, it has to reach the plot that has not started yet.
         """
         post(f"Preparing {script}...")
-        _with_map(lambda ok: _run_script(script, *extra) if ok else None)
+        token = stop_token()
+
+        def _ready(ok) -> None:
+            if not ok:
+                return
+            if stopped_since(token):
+                post(f"{script} was dropped — Stop plots was pressed while its map built.")
+                return
+            _run_script(script, *extra)
+
+        _with_map(_ready)
 
     def _run_script(script: str, *extra) -> None:
         module = f"{MODULES}.{script}"

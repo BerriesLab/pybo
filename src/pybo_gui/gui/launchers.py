@@ -17,6 +17,27 @@ from PySide6.QtCore import QCoreApplication, QTimer
 # so a second window of the "same" plot is a comparison, not a duplicate.
 _procs: list = []
 
+# The ones stop_all has terminated and watch has yet to report on. terminate() gives the
+# child a non-zero exit code, which on its own is indistinguishable from a crash, so
+# without this a plot the user closed on purpose is announced as one that failed.
+_stopped: set = set()
+
+# How many stops there have been. A plot that is still waiting on something slow - its
+# campaign map, say - is not a process yet, so stop_all has nothing to terminate and it
+# would open once the wait ended, after the user asked for the opposite. Whoever queued
+# it takes a token first and asks stopped_since() before going ahead.
+_stop_count = 0
+
+
+def stop_token() -> int:
+    """The current stop count, to hand back to stopped_since() later."""
+    return _stop_count
+
+
+def stopped_since(token: int) -> bool:
+    """Whether stop_all has run since `token` was taken."""
+    return _stop_count != token
+
 
 def run_off_thread(work, on_done) -> None:
     """Run `work()` on a worker thread and hand what it returns to `on_done` here.
@@ -65,14 +86,29 @@ def launch_analysis(module: str, *args) -> subprocess.Popen:
     return proc
 
 
-def stop_all() -> None:
-    """Terminate every plot still running."""
+def stop_all() -> int:
+    """Terminate every plot still running, and say how many that was.
+
+    The count is what the caller reports: the button itself gives no sign it did
+    anything, so a stop that found nothing running looks exactly like one that closed
+    five windows. A plot still waiting on its campaign map is not a process yet, so it
+    is not counted here; the stop is recorded for it too, and it drops itself when the
+    map lands - see stopped_since.
+    """
+    global _stop_count
+    _stop_count += 1
+    stopped = 0
     for proc in list(_procs):
-        if proc.poll() is None:
+        # Already terminated but not yet dead, on a second press a moment after the first:
+        # it is on its way out, and counting it again would report it stopped twice.
+        if proc.poll() is None and proc not in _stopped:
             try:
                 proc.terminate()
             except OSError:
-                pass
+                continue
+            _stopped.add(proc)
+            stopped += 1
+    return stopped
 
 
 def watch(procs, on_start=None, on_done=None, on_fail=None, on_output=None) -> None:
@@ -104,6 +140,11 @@ def watch(procs, on_start=None, on_done=None, on_fail=None, on_output=None) -> N
                     if line and on_output is not None:
                         QTimer.singleShot(0, app, lambda l=line: on_output(l))
             proc.wait()
+        # A stop is not an outcome to report: whoever called stop_all has already said so,
+        # and the non-zero code terminate() leaves behind is not the script's own.
+        if any(p in _stopped for p in active):
+            _stopped.difference_update(active)
+            return
         # A plot that exits non-zero printed its reason to its own console, which the GUI
         # does not show - so without this it reads as "Done." and looks like it never ran.
         failed = [p.returncode for p in active if p.returncode]

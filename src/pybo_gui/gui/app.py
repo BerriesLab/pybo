@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QStatusBar
 
 from pybo_gui.gui import tab_campaign, tab_settings
 from pybo_gui.gui.launchers import stop_all
-from pybo_gui.gui.message_log import show_log
+from pybo_gui.gui.message_log import post, show_log
 from pybo_gui.gui.settings import Settings
 from pybo_gui.gui.step_list import StepListWindow
 
@@ -52,7 +52,8 @@ class MainWindow(QMainWindow):
         log.clicked.connect(lambda: show_log(self))
         bar.addPermanentWidget(log)
         stop = QPushButton("Stop plots")
-        stop.clicked.connect(stop_all)
+        stop.setToolTip("Close every plot window still open, and the process behind it")
+        stop.clicked.connect(self._stop_plots)
         bar.addPermanentWidget(stop)
 
         self.step_list.scan()
@@ -62,6 +63,16 @@ class MainWindow(QMainWindow):
         # otherwise look like it reported nothing. main() shows the main window after
         # this, which leaves that in front.
         show_log(self)
+
+    def _stop_plots(self) -> None:
+        # Pressing this used to be silent whatever it did. The log is the only place the
+        # GUI speaks, and each plot it stops would otherwise say only that it exited with
+        # a code nobody asked for - see launchers.stop_all.
+        stopped = stop_all()
+        if stopped:
+            post(f"Stopped {stopped} plot{'' if stopped == 1 else 's'}.")
+        else:
+            post("Stop plots: nothing was running.")
 
     def closeEvent(self, event):
         # The selector refuses to close on its own, so release it with us.
