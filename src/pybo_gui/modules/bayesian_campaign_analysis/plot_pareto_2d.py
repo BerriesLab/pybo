@@ -263,8 +263,15 @@ valid = [r for r in valid if not r["reference"]]
 # shown one-per-experiment in both grouped and non-grouped mode — they are never
 # aggregated. (In non-grouped mode these are also present in `valid`, but the
 # feasible drawing loop filters them out by `r["feasible"]`.)
-infeasible = [r for r in raw_rows
-              if r["x"] is not None and r["y"] is not None and not r["feasible"]]
+#
+# Dropped outright when runs are averaged. Aggregating asks what an arm does, and
+# answers it with one curve per arm; an infeasible point has no arm-level reading,
+# so it can only be drawn as itself. Scattering every run's individual violations
+# under a handful of mean fronts buries the very thing the option was chosen to
+# show, and does it worst on the arm that wasted the most evaluations.
+infeasible = [] if args.aggregate_runs else [
+    r for r in raw_rows
+    if r["x"] is not None and r["y"] is not None and not r["feasible"]]
 
 # ---- Z COLOR SCALE ----
 z_cmap = z_norm = None
@@ -415,7 +422,10 @@ for lbl in [] if args.aggregate_runs else all_labels:
 # markers (in both grouped and non-grouped mode) and excluded from the front.
 # When a color code is passed they are coloured on the shared z-scale (which
 # spans all points, so their true z value shows); otherwise dimmed gray.
-infeasible_pts = [] if args.aggregate_runs else infeasible
+# `infeasible` is already empty when runs are averaged, so this needs no second
+# check for it - and must not have one that overwrites the list, which is what the
+# z branch used to do.
+infeasible_pts = infeasible
 if use_z:
     infeasible_pts = [r for r in infeasible if r["z_val"] is not None]
 if infeasible_pts:
