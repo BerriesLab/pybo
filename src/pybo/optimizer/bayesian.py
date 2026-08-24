@@ -9,7 +9,6 @@ from gpytorch.kernels import Kernel
 from gpytorch.constraints import GreaterThan
 from gpytorch.mlls import SumMarginalLogLikelihood
 from botorch.optim import optimize_acqf
-from botorch.optim.optimize import optimize_acqf_list
 from botorch.sampling import MCSampler, SobolQMCNormalSampler
 from botorch.utils.multi_objective import is_non_dominated
 from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
@@ -17,7 +16,6 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.transforms import Normalize, Standardize
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.acquisition import AcquisitionFunction, MCAcquisitionFunction
-from botorch.acquisition.multi_objective.parego import qLogNParEGO
 
 from pybo.objectives.base_class import MCSingleObjectiveBase, MCMultiObjectiveBase
 from pybo.optimizer.base_class import OptimizerBase
@@ -73,7 +71,6 @@ class BayesianOptimizer(OptimizerBase):
         # ===== Model Attributes =====
         self._model: ModelListGP | None = None
         self._mll: SumMarginalLogLikelihood | None = None
-        self._acquisition_function_list: list[AcquisitionFunction] | None = None
         self._acqf_instance: AcquisitionFunction | None = None
         self._partitioning: NondominatedPartitioning | None = None
 
@@ -187,12 +184,6 @@ class BayesianOptimizer(OptimizerBase):
         if self._mll is None:
             print("A model has not been generated yet.")
         return self._mll
-
-    @property
-    def acquisition_function_list(self) -> list[AcquisitionFunction] | None:
-        if self._acquisition_function_list is None:
-            print("The acquisition function has not been initialized yet.")
-        return self._acquisition_function_list
 
     @property
     def partitioning(self) -> NondominatedPartitioning:
@@ -423,41 +414,63 @@ class BayesianOptimizer(OptimizerBase):
             print(f"Optimizing acquisition function... ", end="")
 
         with warnings.catch_warnings(record=True) as caught:
+            # record=True saves and restores the warning filters but does not set one, so
+            # whatever the caller had in force still applies - and a tutorial run with
+            # --verbose False calls filterwarnings("ignore") to keep its progress bar
+            # intact. That left `caught` empty exactly when nobody was watching, which is
+            # how a failed acquisition optimization could pass unnoticed.
+            warnings.simplefilter("always")
 
-            if isinstance(self._acqf_instance, qLogNParEGO):
-                self._new_X, _ = optimize_acqf_list(
-                    acq_function_list=self._acquisition_function_list,
-                    bounds=self._objective.bounds,
-                    num_restarts=self._n_acqf_opt_restarts,
-                    raw_samples=self._num_raw_samples,
-                    options={"batch_limit": 5, "maxiter": self._n_acqf_opt_max_iter},
-                )
-            else:
-                # If nonlinear inequality **input** constraints are provided, use a custom initial condition
-                # generator that selects "num_restarts" points. These points are distributed according to
-                # "fraction_of_previous_X" between the optimal points and randomly generated points.
-                self._new_X, _ = optimize_acqf(
-                    acq_function=self._acqf_instance,
-                    bounds=self._objective.bounds,
-                    q=self._batch_size,
-                    num_restarts=self._n_acqf_opt_restarts,
-                    raw_samples=self._num_raw_samples,
-                    options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
-                    inequality_constraints=self.objective.lin_ineq_X_con,
-                    equality_constraints=self.objective.lin_eq_X_con,
-                    nonlinear_inequality_constraints=self.objective.nonlin_ineq_X_con,
-                    sequential=True,
-                    ic_generator=self._ic_generator
-                    if self.objective.nonlin_ineq_X_con is not None
-                    else None,
-                    **{
-                        "fraction_of_previous_X": 0.8,
-                        "noise_scale": 0,
-                    } if self.objective.nonlin_ineq_X_con is not None
-                    else {}
-                )
+            # If nonlinear inequality **input** constraints are provided, use a custom initial condition
+            # generator that selects "num_restarts" points. These points are distributed according to
+            # "fraction_of_previous_X" between the optimal points and randomly generated points.
+            self._new_X, _ = optimize_acqf(
+                acq_function=self._acqf_instance,
+                bounds=self._objective.bounds,
+                q=self._batch_size,
+                num_restarts=self._n_acqf_opt_restarts,
+                raw_samples=self._num_raw_samples,
+                options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
+                inequality_constraints=self.objective.lin_ineq_X_con,
+                equality_constraints=self.objective.lin_eq_X_con,
+                nonlinear_inequality_constraints=self.objective.nonlin_ineq_X_con,
+                sequential=True,
+                ic_generator=self._ic_generator
+                if self.objective.nonlin_ineq_X_con is not None
+                else None,
+                **{
+                    "fraction_of_previous_X": 0.8,
+                    "noise_scale": 0,
+                } if self.objective.nonlin_ineq_X_con is not None
+                else {}
+            )
 
         self._warnings.extend(caught)
+
+        # What the constraints were for, checked on the answer rather than assumed from
+        # having passed them in. The acquisition optimizer is a numerical routine that can
+        # fail - and when it does it still returns a point, which is then measured and
+        # recorded like any other. A proposal outside the feasible region is not a slightly
+        # worse suggestion: the problem forbids it, so whatever is measured there says
+        # nothing about the problem, and on a fitted surrogate it is an extrapolation
+        # beyond the data that can come back physically impossible.
+        #
+        # Printed, not warned, and printed whatever `verbose` says. A warning goes through
+        # the filters, and the one caller that most needs to see this - a sweep running
+        # quietly - is precisely the one that has turned warnings off. This is the run
+        # recording a point it was not allowed to visit; a sweep that hides it produces a
+        # campaign nobody can tell is contaminated.
+        feasible = self._objective.is_X_feasible(X=self._new_X)
+        if not bool(feasible.all()):
+            ORANGE, RESET = "\033[38;5;208m", "\033[0m"
+            offending = self._new_X[~feasible].detach().cpu().numpy()
+            print(f"{ORANGE}! The acquisition optimizer returned "
+                  f"{int((~feasible).sum())} of {self._new_X.shape[0]} point(s) violating "
+                  f"the problem's input constraints, and they are about to be evaluated: "
+                  f"{offending}. The constraints were passed to optimize_acqf, so this is "
+                  f"it failing to satisfy them rather than not being told about them - on "
+                  f"a fitted surrogate, what comes back is an extrapolation outside the "
+                  f"data.{RESET}", flush=True)
 
         if verbose:
             self._print_success(msg=f"New X: {self._new_X.detach().cpu().numpy()}")
