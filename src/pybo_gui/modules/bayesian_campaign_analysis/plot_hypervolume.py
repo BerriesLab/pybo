@@ -373,12 +373,24 @@ if args.metric != "hv":
         """
         if args.optimum is not None:
             return float(args.optimum), "--optimum"
-        path = os.path.join(args.score_dir or data_path, "optimum.json")
-        try:
-            with open(path, encoding="utf-8") as file:
-                cached = json.load(file)
-        except (OSError, ValueError):
-            cached = None
+        # Beside the objective first, where campaign_optimum leaves it: HV* belongs to the
+        # problem rather than to any campaign run against it, and the objective's path is
+        # the one thing every reader already has - which is what lets this find an estimate
+        # computed from a terminal without being told where it went.
+        candidates = []
+        if args.ground_truth:
+            candidates.append(os.path.dirname(os.path.abspath(args.ground_truth)))
+        candidates.append(args.score_dir or data_path)
+
+        cached, path = None, None
+        for directory in candidates:
+            path = os.path.join(directory, "optimum.json")
+            try:
+                with open(path, encoding="utf-8") as file:
+                    cached = json.load(file)
+                break
+            except (OSError, ValueError):
+                continue
         if cached:
             stored = cached.get("context") or {}
             matches = (stored.get("objectives") == objective_keys

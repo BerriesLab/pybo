@@ -401,12 +401,25 @@ def declared_optimum():
 
     Both are skipped silently when absent; the caller reports which source won.
     """
-    path = os.path.join(args.out_dir or data_path, "optimum.json")
-    try:
-        with open(path, encoding="utf-8") as file:
-            cached = json.load(file)
-    except (OSError, ValueError):
-        cached = None
+    # Beside the objective, where campaign_optimum leaves it: HV* belongs to the problem
+    # rather than to any campaign run against it, and the objective's path is the one thing
+    # a reader always has. Failing that, the report's own directory, for an estimate that
+    # was deliberately put somewhere else with --out-dir.
+    candidates = []
+    if args.ground_truth:
+        candidates.append(os.path.dirname(os.path.abspath(args.ground_truth)))
+    candidates.append(args.out_dir or data_path)
+
+    cached, path = None, None
+    for directory in candidates:
+        path = os.path.join(directory, "optimum.json")
+        try:
+            with open(path, encoding="utf-8") as file:
+                cached = json.load(file)
+            break
+        except (OSError, ValueError):
+            continue
+
     if cached:
         context_now = {"objectives": objective_keys, "signs": [float(s) for s in signs],
                        "reference": [float(v) for v in ref]}

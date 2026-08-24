@@ -121,10 +121,12 @@ parser.add_argument("--refine", type=int, default=6,
                          "last, so the estimate is pushed onto the front rather than "
                          "waiting to land on it.")
 parser.add_argument("--out-dir", default=None,
-                    help="Where optimum.json is written (default: the campaign "
-                         "directory). Point this at the campaign root the runs were "
-                         "selected from, not a scratch map directory, so the estimate "
-                         "outlives the session that computed it.")
+                    help="Where optimum.json is written (default: beside the "
+                         "--ground-truth objective). HV* is a property of the problem, "
+                         "not of any campaign run against it, so it belongs with the "
+                         "problem - and that is the one path every reader of it already "
+                         "has, which is what lets a plot find an estimate computed from a "
+                         "terminal without being told where it went.")
 args = parser.parse_args()
 
 objective_keys = args.objective or [k for k in (args.x, args.y, args.z) if k]
@@ -427,7 +429,7 @@ payload = {"hv_star": hv_star,
                            "gain_percent": g} for r, sc, h, g in refined],
            "context": context}
 
-out_dir = args.out_dir or data_path
+out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.ground_truth))
 os.makedirs(out_dir, exist_ok=True)
 out_path = os.path.join(out_dir, "optimum.json")
 with open(out_path, "w", encoding="utf-8") as file:

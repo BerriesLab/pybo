@@ -386,42 +386,30 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_hvi = QPushButton("Plot HV improvement")
     btn_gain = QPushButton("Score campaign")
     btn_gain_ninit = QPushButton("Plot gain vs n_initial")
-    btn_optimum = QPushButton("Compute HV*")
 
     # One button per quantity rather than a mode the plot buttons read: each draws a
     # different figure, and a selector meant the same button produced a hypervolume or a
     # regret depending on a combo three rows away. The last two measure a campaign against
-    # the problem's own optimum, so they need HV* to exist - hence the controls below.
-    btn_rho = QPushButton("Plot normalized (rho)")
-    btn_rho.setToolTip("HV(n)/HV*, reaching 1 at the optimum. Needs HV*: press "
-                       "Compute HV* first.")
+    # the problem's own optimum, so they need HV* to exist - see optimum_label.
+    btn_rho = QPushButton("Plot norm. HV")
+    btn_rho.setToolTip("HV(n)/HV*, reaching 1 at the optimum. Needs HV*, which "
+                       "campaign_optimum computes from a terminal.")
     btn_regret = QPushButton("Plot regret")
     btn_regret.setToolTip("HV* − HV(n), reaching 0 at the optimum, on a log axis so the "
                           "rate a run converges at is readable rather than only where it "
-                          "ended up. Needs HV*: press Compute HV* first.")
+                          "ended up. Needs HV*, which campaign_optimum computes from a "
+                          "terminal.")
 
-    # HV* itself: computed by campaign_optimum from the problem, cached beside the
-    # campaign, and shown here so it is visible whether the metrics above have one to
-    # divide by at all. Read-only - the way to change it is to recompute it.
+    # HV*, shown but not computed here. Estimating it is minutes of sampling and refinement
+    # against knobs worth watching converge, which is a terminal's job rather than a button
+    # that blocks a window - and it is a property of the problem, so it is measured once and
+    # reused by every campaign run against that objective, not per selection. What the tab
+    # does is read it back, so it is visible whether the two buttons above have anything to
+    # divide by at all.
     optimum_label = QLabel("HV*: —")
-    optimum_label.setToolTip("The best hypervolume the problem allows, estimated from the "
-                             "objective by campaign_optimum and cached as optimum.json "
-                             "beside the campaign.")
-    opt_samples = QSpinBox()
-    opt_samples.setRange(1024, 100_000_000)
-    opt_samples.setSingleStep(16384)
-    opt_samples.setValue(65536)
-    opt_samples.setPrefix("samples ")
-    opt_samples.setToolTip("Quasi-random samples of the parameter box. Raise it until the "
-                           "printed table's trailing gain is a fraction of a percent.")
-    opt_refine = QSpinBox()
-    opt_refine.setRange(0, 50)
-    opt_refine.setValue(6)
-    opt_refine.setPrefix("refine ")
-    opt_refine.setToolTip("Rounds of local refinement after sampling. Sampling alone "
-                          "spreads points over the whole box and loses to an optimizer "
-                          "near the front, which leaves HV* below what a campaign reached "
-                          "and its regret negative. 0 turns it off.")
+    optimum_label.setToolTip("The best hypervolume the problem allows. Computed by "
+                             "campaign_optimum and stored as optimum.json beside the "
+                             "objective; this only reads it back.")
 
     # Convergence. n_c decides gamma, m_c and every n_tau, and --tol is in the metric's own
     # units, so a campaign whose hypervolume lives on a different scale needs a different
@@ -582,11 +570,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
     # Into the axes frame, not this one: they draw against the rows up there.
-    axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi))
-    # The two that measure against the optimum, on their own row: they draw the same trace
-    # as Plot HV against a different y axis, and both are unusable until HV* exists, which
-    # Plot HV never is.
-    axes_layout.addWidget(_row(btn_rho, btn_regret))
+    # One row: the three hypervolume buttons draw the same trace against different y axes,
+    # so they read as variants of each other rather than as separate tools.
+    axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_rho, btn_regret))
     # And with them, the options only these plots read: the front lines are the Pareto
     # plot's own, and the point labels are read by Pareto and the objective landscape.
     # The hypervolume takes none of the three.
@@ -595,11 +581,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     gt_row_slot.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy,
                                cb_gt_front))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
-    # The optimum every absolute metric divides by: the button that measures it, the two
-    # knobs that decide how well, and the value itself so it is visible whether there is
-    # one at all. Read by the score and by the HV plot alike, hence its own row above
-    # the settings those two share.
-    plot_layout.addWidget(_row(btn_optimum, opt_samples, opt_refine, optimum_label))
+    # The optimum every absolute metric divides by, shown so it is visible whether there is
+    # one at all - computing it is campaign_optimum's job, from a terminal. Read by the
+    # score and by the HV plots alike, hence its own row above the settings those share.
+    plot_layout.addWidget(_row(optimum_label))
     # What n_c is judged by, and the targets n_tau reports against. gamma, m_c and every
     # n_tau column move with these, so they belong beside the button that computes them.
     plot_layout.addWidget(_row(QLabel("Convergence:"), conv_patience,
@@ -634,7 +619,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # The two problem-view options and HV* need the objective just as much: all three
         # ask the problem something the records cannot answer.
         buttons = (btn_pareto, btn_hv, btn_hvi, btn_rho, btn_regret, btn_gain,
-                   btn_gain_ninit, btn_optimum, cb_true_obj, cb_input_feasible)
+                   btn_gain_ninit, cb_true_obj, cb_input_feasible)
         for button in buttons:
             button.setEnabled(ready)
         hint = "" if ready else "Load an objective first: it defines how many objectives "                                "the campaign has, and every plot needs that."
@@ -1368,43 +1353,41 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         return args
 
     def _show_optimum() -> None:
-        """Put the cached HV* beside the button, or a dash when there is none.
+        """Report whether an HV* exists for the loaded objective, and what it is.
 
-        Read off optimum.json rather than remembered from the last run: the file is what
-        the scripts themselves consult, so showing anything else could say a campaign has
-        an optimum when the scripts would not find one.
+        Read off optimum.json every time rather than remembered: that file is what the
+        plot scripts themselves consult, so showing anything else could say an optimum is
+        available when the scripts would not find one.
+
+        Looked for beside the objective, which is where campaign_optimum puts it and the
+        first place the scripts look. HV* describes the problem, not a selection of runs
+        against it, so one estimate serves every campaign on that objective.
         """
-        path = os.path.join(_gain_dir(), "optimum.json")
+        objective_path = obj_edit.text().strip()
+        if not objective_path:
+            optimum_label.setText("HV*: —")
+            return
+        path = os.path.join(os.path.dirname(os.path.abspath(objective_path)),
+                            "optimum.json")
         try:
             with open(path, encoding="utf-8") as file:
                 cached = json.load(file)
             value = cached["hv_star"]
             keys = ", ".join(cached.get("context", {}).get("objectives", []))
         except (OSError, ValueError, KeyError):
-            optimum_label.setText("HV*: — (press Compute HV*)")
+            optimum_label.setText("HV*: — (run campaign_optimum)")
+            optimum_label.setToolTip(
+                "No optimum.json beside this objective, so Plot norm. HV and Plot regret "
+                "have nothing to measure against. From a terminal:\n\n"
+                "  python -m pybo_gui.modules.bayesian_campaign_analysis"
+                ".campaign_optimum \\\n"
+                f"      --ground-truth {objective_path} --x <obj> --y <obj>\n\n"
+                "Keep --refine above 0: sampling alone leaves HV* below what a campaign "
+                "reaches, and its regret negative.")
             return
         optimum_label.setText(f"HV* = {value:.6g}  ({keys})")
-
-    def _compute_optimum() -> None:
-        """Measure HV* from the problem and cache it beside the campaign.
-
-        Not launched through _launch: this reads the objective, not the experiment map, so
-        making it wait on a map build would be a minute spent on something it never opens.
-        """
-        if state["problem"] is None:
-            post("Load an objective first — HV* is a property of the problem, and the "
-                 "records carry none.")
-            return
-        objectives = _metric_objective_args()
-        if objectives is None:
-            return
-        extra = objectives + ["--ground-truth", obj_edit.text(),
-                              "--samples", str(opt_samples.value()),
-                              "--refine", str(opt_refine.value()),
-                              "--out-dir", _gain_dir()]
-        # Refreshed on the way out, so the value beside the button is the one the file
-        # now holds rather than whatever was there before the run.
-        _run_script("campaign_optimum", *extra, verbose=True, after=_show_optimum)
+        optimum_label.setToolTip(f"Read from {path}. Computed by campaign_optimum; this "
+                                 f"only reads it back.")
 
     def _plot_hypervolume(improvement: bool, metric: str = "hv") -> None:
         """The hypervolume trace, on one of three y axes.
@@ -1524,7 +1507,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_rho.clicked.connect(lambda: _plot_hypervolume(False, "normalized"))
     btn_regret.clicked.connect(lambda: _plot_hypervolume(False, "regret"))
     btn_gain.clicked.connect(lambda: _score_campaign())
-    btn_optimum.clicked.connect(lambda: _compute_optimum())
     btn_gain_ninit.clicked.connect(lambda: _plot_gain_vs_ninitial())
 
     # Diagnostic rows: label, script, and whether it understands --grouped and
