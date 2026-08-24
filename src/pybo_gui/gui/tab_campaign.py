@@ -15,6 +15,7 @@ point all come from the run's objective.py. Every sense stays editable afterward
 objective is the default, not the last word.
 """
 import json
+import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -340,6 +341,15 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     for row in (x_row, y_row, z_row):
         axes_rows_layout.addWidget(row)
     axes_layout.addWidget(axes_rows)
+    # The ground truth goes straight under the axis rows: it is read *by* those axes - the
+    # surface is sampled over them, and the reference point it carries is what the
+    # hypervolume is measured from - so it belongs with them rather than below the buttons
+    # that draw them. Its widgets are built further down, so a placeholder holds the
+    # position; appending there instead would put the row after every option row.
+    gt_holder = QWidget()
+    gt_row_slot = QVBoxLayout(gt_holder)
+    gt_row_slot.setContentsMargins(0, 0, 0, 0)
+    axes_layout.addWidget(gt_holder)
     for combo, entry in ((x_combo, x_entry), (y_combo, y_entry), (z_combo, z_entry)):
         bind_label_entry(combo, entry)
     # Pins the diverging colormap's neutral midpoint to a value the user cares about
@@ -376,7 +386,76 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_hvi = QPushButton("Plot HV improvement")
     btn_gain = QPushButton("Score campaign")
     btn_gain_ninit = QPushButton("Plot gain vs n_initial")
-    btn_refresh = QPushButton("Refresh keys")
+    btn_optimum = QPushButton("Compute HV*")
+
+    # One button per quantity rather than a mode the plot buttons read: each draws a
+    # different figure, and a selector meant the same button produced a hypervolume or a
+    # regret depending on a combo three rows away. The last two measure a campaign against
+    # the problem's own optimum, so they need HV* to exist - hence the controls below.
+    btn_rho = QPushButton("Plot normalized (rho)")
+    btn_rho.setToolTip("HV(n)/HV*, reaching 1 at the optimum. Needs HV*: press "
+                       "Compute HV* first.")
+    btn_regret = QPushButton("Plot regret")
+    btn_regret.setToolTip("HV* − HV(n), reaching 0 at the optimum, on a log axis so the "
+                          "rate a run converges at is readable rather than only where it "
+                          "ended up. Needs HV*: press Compute HV* first.")
+
+    # HV* itself: computed by campaign_optimum from the problem, cached beside the
+    # campaign, and shown here so it is visible whether the metrics above have one to
+    # divide by at all. Read-only - the way to change it is to recompute it.
+    optimum_label = QLabel("HV*: —")
+    optimum_label.setToolTip("The best hypervolume the problem allows, estimated from the "
+                             "objective by campaign_optimum and cached as optimum.json "
+                             "beside the campaign.")
+    opt_samples = QSpinBox()
+    opt_samples.setRange(1024, 100_000_000)
+    opt_samples.setSingleStep(16384)
+    opt_samples.setValue(65536)
+    opt_samples.setPrefix("samples ")
+    opt_samples.setToolTip("Quasi-random samples of the parameter box. Raise it until the "
+                           "printed table's trailing gain is a fraction of a percent.")
+    opt_refine = QSpinBox()
+    opt_refine.setRange(0, 50)
+    opt_refine.setValue(6)
+    opt_refine.setPrefix("refine ")
+    opt_refine.setToolTip("Rounds of local refinement after sampling. Sampling alone "
+                          "spreads points over the whole box and loses to an optimizer "
+                          "near the front, which leaves HV* below what a campaign reached "
+                          "and its regret negative. 0 turns it off.")
+
+    # Convergence. n_c decides gamma, m_c and every n_tau, and --tol is in the metric's own
+    # units, so a campaign whose hypervolume lives on a different scale needs a different
+    # one - which is why this cannot sit at a hidden default.
+    conv_patience = QSpinBox()
+    conv_patience.setRange(2, 500)
+    conv_patience.setValue(10)
+    conv_patience.setPrefix("patience ")
+    conv_patience.setToolTip("Iterations improving by less than the tolerance that mark "
+                             "convergence. Too short and a plateau is read as an ending.")
+    conv_tol_rel = QLineEdit("1e-4")
+    conv_tol_rel.setValidator(QDoubleValidator(0.0, 1.0, 12))
+    conv_tol_rel.setMaximumWidth(90)
+    conv_tol_rel.setToolTip("Flatness threshold as a fraction of each run's own HV(n0), so "
+                            "one setting reads the same on a campaign whose hypervolume "
+                            "is 300 and on one where it is 3. Empty falls back to the "
+                            "absolute --tol default.")
+    tau_edit = QLineEdit("0.5, 0.9, 0.99")
+    tau_edit.setMaximumWidth(120)
+    tau_edit.setToolTip("Fractions of the achievable gain that n_tau reports the "
+                        "evaluation count for. Comma-separated.")
+
+    # Both ask the problem about the records rather than taking them at face value, and
+    # both only mean anything with an objective loaded.
+    cb_true_obj = QCheckBox("True objective")
+    cb_true_obj.setToolTip("Score each observation by the noiseless objective at the "
+                           "parameters it used, rather than the value recorded. Only "
+                           "meaningful on a simulated campaign, where it puts HV(n) and "
+                           "HV* on the same surface.")
+    cb_input_feasible = QCheckBox("Input-feasible only")
+    cb_input_feasible.setToolTip("Drop from the front every observation whose parameters "
+                                 "break the problem's input constraints. HV* never sees "
+                                 "such a point, so a handful can double a campaign's "
+                                 "hypervolume and push it above the optimum.")
     # Grouped averages the repeats of one setting within a run - same parameters, same
     # run - so its bars measure measurement spread. Averaging whole runs of an arm
     # against each other is the separate Average runs below. The error-bar mode only
@@ -503,17 +582,32 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
     # Into the axes frame, not this one: they draw against the rows up there.
-    axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi, btn_refresh))
+    axes_layout.addWidget(_row(btn_pareto, btn_hv, btn_hvi))
+    # The two that measure against the optimum, on their own row: they draw the same trace
+    # as Plot HV against a different y axis, and both are unusable until HV* exists, which
+    # Plot HV never is.
+    axes_layout.addWidget(_row(btn_rho, btn_regret))
     # And with them, the options only these plots read: the front lines are the Pareto
     # plot's own, and the point labels are read by Pareto and the objective landscape.
     # The hypervolume takes none of the three.
     axes_layout.addWidget(_row(cb_numbers, cb_front, cb_design_front))
-    # The ground truth belongs here too: it is drawn under these plots' points, and the
-    # reference point it carries is what the hypervolume above is measured from. Nothing
-    # in the Plots frame reads it.
-    axes_layout.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy,
+    # Into the slot reserved under the axis rows, not appended here - see gt_holder.
+    gt_row_slot.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy,
                                cb_gt_front))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
+    # The optimum every absolute metric divides by: the button that measures it, the two
+    # knobs that decide how well, and the value itself so it is visible whether there is
+    # one at all. Read by the score and by the HV plot alike, hence its own row above
+    # the settings those two share.
+    plot_layout.addWidget(_row(btn_optimum, opt_samples, opt_refine, optimum_label))
+    # What n_c is judged by, and the targets n_tau reports against. gamma, m_c and every
+    # n_tau column move with these, so they belong beside the button that computes them.
+    plot_layout.addWidget(_row(QLabel("Convergence:"), conv_patience,
+                               QLabel("tol/HV(n0):"), conv_tol_rel,
+                               QLabel("tau:"), tau_edit))
+    # Read by the score and the HV plot both, so a table and a curve of the same campaign
+    # are scoring the same thing.
+    plot_layout.addWidget(_row(cb_true_obj, cb_input_feasible))
     plot_page_layout.addWidget(plot_box)
 
     # ---- Diagnostics ---------------------------------------------------------
@@ -537,11 +631,17 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         be drawn against a guess.
         """
         ready = state["problem"] is not None
-        for button in (btn_pareto, btn_hv, btn_hvi, btn_gain, btn_gain_ninit):
+        # The two problem-view options and HV* need the objective just as much: all three
+        # ask the problem something the records cannot answer.
+        buttons = (btn_pareto, btn_hv, btn_hvi, btn_rho, btn_regret, btn_gain,
+                   btn_gain_ninit, btn_optimum, cb_true_obj, cb_input_feasible)
+        for button in buttons:
             button.setEnabled(ready)
         hint = "" if ready else "Load an objective first: it defines how many objectives "                                "the campaign has, and every plot needs that."
-        for button in (btn_pareto, btn_hv, btn_hvi, btn_gain, btn_gain_ninit):
+        for button in buttons:
             button.setToolTip(hint)
+        if ready:
+            _show_optimum()
 
     def _sync_ground_truth() -> None:
         """Only offer the ground truth when the objective that defines it is loaded."""
@@ -603,6 +703,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
         Objective labels when one is loaded, else whatever the selected steps happen to
         carry - so the tab is usable before an objective is picked, just without senses.
+
+        Called by the four things that can change what the keys should be: loading an
+        objective, changing the objective count, loading a map from a file, and Rebuild
+        map now. There is deliberately no button for it. With an objective loaded this
+        reads nothing but `problem`, which only those paths alter, so a manual press
+        re-derived identical data - and repopulate() resets the combos, so its one visible
+        effect was to discard the axes and senses the user had chosen.
         """
         problem = state["problem"]
         if problem is not None:
@@ -692,7 +799,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     browse.clicked.connect(_browse_objective)
     load_btn.clicked.connect(lambda: _load_objective(obj_edit.text()))
-    btn_refresh.clicked.connect(_refresh_keys)
 
     # ---- Objective-count wiring -----------------------------------------------
 
@@ -1034,13 +1140,15 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             args += ["--constraint", spec]
         return args
 
-    def _launch(script: str, *extra) -> None:
+    def _launch(script: str, *extra, verbose: bool = False) -> None:
         """Make sure a map exists, then run one of the analysis modules against it.
 
         The map may take a worker thread and a minute to build, so the launch is what
         happens once it lands rather than the next line here. That wait is also the one
         window in which Stop plots has nothing to terminate, hence the token: pressed
         while the map builds, it has to reach the plot that has not started yet.
+
+        `verbose` is for the scripts whose output *is* the result - see _run_script.
         """
         post(f"Preparing {script}...")
         token = stop_token()
@@ -1051,34 +1159,51 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             if stopped_since(token):
                 post(f"{script} was dropped — Stop plots was pressed while its map built.")
                 return
-            _run_script(script, *extra)
+            _run_script(script, *extra, verbose=verbose)
 
         _with_map(_ready)
 
-    def _run_script(script: str, *extra) -> None:
+    def _run_script(script: str, *extra, verbose: bool = False, after=None) -> None:
         module = f"{MODULES}.{script}"
         proc = launch_analysis(module, *extra)
-        # The log says what is running and how it ended, nothing more - a script that
-        # prints a table (campaign_gain) would otherwise bury every other message under
-        # it. Output is collected rather than posted, so a run that succeeds stays quiet
-        # and one that fails can still say why: an exit code alone leaves nothing to act
-        # on, and the reason is part of how it ended.
+        # For a plot, the log says what is running and how it ended and nothing more: the
+        # result is the window that opens, and a script that prints a table would bury
+        # every other message under it. Output is collected rather than posted, so a run
+        # that succeeds stays quiet and one that fails can still say why - an exit code
+        # alone leaves nothing to act on, and the reason is part of how it ended.
+        #
+        # A scoring script has no window. Its table is the whole result, and collected-
+        # and-discarded meant pressing Score campaign produced no numbers anywhere the
+        # GUI could show them. Those pass verbose=True and are echoed line by line.
         output = []
+
+        def _line(line: str) -> None:
+            output.append(line)
+            if verbose:
+                post(f"    {line}")
 
         def _failed(codes) -> None:
             post(f"{script} exited with {codes[0]}.")
-            for line in output[-4:]:
-                post(f"    {line}")
+            # Already echoed above, so repeating the tail would print it twice.
+            if not verbose:
+                for line in output[-4:]:
+                    post(f"    {line}")
             if not output:
                 post("    (it printed nothing - see its console.)")
             if codes[0] == 2:
-                post("    Exit 2 is a constraint that would not parse.")
+                post("    Exit 2 is a constraint that would not parse, or a metric asked "
+                     "for without the optimum it needs.")
+
+        def _done() -> None:
+            post(f"{script} finished.")
+            if after is not None:
+                after()
 
         watch([proc],
               on_start=lambda: post(f"Running {script}..."),
-              on_done=lambda: post(f"{script} finished."),
+              on_done=_done,
               on_fail=_failed,
-              on_output=output.append)
+              on_output=_line)
 
     def _aggregate_args() -> list:
         """The flags for collapsing an arm's runs into one curve, or nothing when off."""
@@ -1204,7 +1329,91 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             extra += _sense_args(*pairs)
         return extra
 
-    def _plot_hypervolume(improvement: bool) -> None:
+    def _problem_view_args() -> list:
+        """The two flags that ask the problem about the records rather than taking them at
+        face value. Shared by the score and the hypervolume plot, so a table and a curve of
+        the same campaign are never scoring different things."""
+        args = []
+        if cb_true_obj.isChecked():
+            args.append("--true-objective")
+        if cb_input_feasible.isChecked():
+            args.append("--input-feasible")
+        return args
+
+    def _convergence_args() -> list:
+        """--patience, --tol-rel and the --tau targets, as the scoring script takes them.
+
+        A blank tolerance is left out rather than sent as zero: campaign_gain then keeps
+        its own absolute --tol, where zero would mean no improvement is ever flat and no
+        run ever converges. A tau list that will not parse is reported and the defaults
+        stand, since a typo there should not silently rescore the campaign against targets
+        nobody chose.
+        """
+        args = ["--patience", str(conv_patience.value())]
+        tol = conv_tol_rel.text().strip()
+        if tol:
+            args += ["--tol-rel", tol]
+        raw = tau_edit.text().strip()
+        if raw:
+            try:
+                taus = [float(part) for part in raw.replace(";", ",").split(",")
+                        if part.strip()]
+            except ValueError:
+                taus = []
+            if not taus or any(not 0 < t <= 1 for t in taus):
+                post(f"Could not read the tau targets from {raw!r} — they must be "
+                     f"comma-separated fractions in (0, 1]. Using the defaults.")
+            else:
+                args += [flag for t in taus for flag in ("--tau", str(t))]
+        return args
+
+    def _show_optimum() -> None:
+        """Put the cached HV* beside the button, or a dash when there is none.
+
+        Read off optimum.json rather than remembered from the last run: the file is what
+        the scripts themselves consult, so showing anything else could say a campaign has
+        an optimum when the scripts would not find one.
+        """
+        path = os.path.join(_gain_dir(), "optimum.json")
+        try:
+            with open(path, encoding="utf-8") as file:
+                cached = json.load(file)
+            value = cached["hv_star"]
+            keys = ", ".join(cached.get("context", {}).get("objectives", []))
+        except (OSError, ValueError, KeyError):
+            optimum_label.setText("HV*: — (press Compute HV*)")
+            return
+        optimum_label.setText(f"HV* = {value:.6g}  ({keys})")
+
+    def _compute_optimum() -> None:
+        """Measure HV* from the problem and cache it beside the campaign.
+
+        Not launched through _launch: this reads the objective, not the experiment map, so
+        making it wait on a map build would be a minute spent on something it never opens.
+        """
+        if state["problem"] is None:
+            post("Load an objective first — HV* is a property of the problem, and the "
+                 "records carry none.")
+            return
+        objectives = _metric_objective_args()
+        if objectives is None:
+            return
+        extra = objectives + ["--ground-truth", obj_edit.text(),
+                              "--samples", str(opt_samples.value()),
+                              "--refine", str(opt_refine.value()),
+                              "--out-dir", _gain_dir()]
+        # Refreshed on the way out, so the value beside the button is the one the file
+        # now holds rather than whatever was there before the run.
+        _run_script("campaign_optimum", *extra, verbose=True, after=_show_optimum)
+
+    def _plot_hypervolume(improvement: bool, metric: str = "hv") -> None:
+        """The hypervolume trace, on one of three y axes.
+
+        `metric` is the flag plot_hypervolume takes: "hv", "normalized" or "regret". The
+        last two need an optimum; the script refuses with exit 2 and says so in the log
+        rather than drawing against a guess, so nothing is checked here - the check that
+        matters is the one the script makes against the optimum.json it will actually read.
+        """
         objectives = _metric_objective_args()
         if objectives is None:
             return
@@ -1222,16 +1431,46 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # happen to be selected alongside it.
         if state["problem"] is not None:
             extra += ["--ground-truth", obj_edit.text()]
+        extra += ["--metric", metric]
+        # Where Compute HV* left its estimate. The plot reads the map from the scratch
+        # directory but the optimum from the selection's cache entry, so it has to be told
+        # the second - the two are deliberately not the same place.
+        extra += ["--score-dir", _gain_dir()]
+        extra += _problem_view_args()
         _launch("plot_hypervolume", *extra)
 
     def _gain_dir() -> str:
-        """Where a campaign's score lives: the root the runs were selected from.
+        """Where a campaign-level score and HV* are written: this selection's cache entry.
 
-        Not the scratch directory the map is built in - that is rebuilt from the
-        selection every time and does not outlive the session, so a score written there
-        is lost the moment the GUI closes. Falls back to the scratch when no root has
-        been chosen, which is the only case with nowhere better to put it.
+        The workspace cache, under the same digest the map itself is cached at, because
+        both files answer a question asked *of a selection* - which arms, averaged how,
+        against which optimum - and the selection is exactly what that digest fingerprints.
+        Score the same set twice and the second run replaces the first; score a different
+        set and it lands somewhere else, instead of overwriting a report about other runs
+        that happened to share a directory.
+
+        Not the campaign root: writing a report into the tree the records live in leaves a
+        gain.json among the data that nothing there produced. Not the scratch directory
+        either - that is rebuilt from the selection every time and does not outlive the
+        session, so a score written there is lost when the GUI closes.
+
+        The per-run scores are a separate matter and do not come here. campaign_gain writes
+        those beside each run, where they belong: they describe that run, plot_gain_vs_ninitial
+        reads them back across selections the cache digest would keep apart, and
+        clear_cache deletes cache contents as things rebuilt on demand, which a score is
+        not.
+
+        Falls back to the campaign root, then the scratch, when there is no workspace or no
+        map has been built - both are cases with nowhere better to put it.
         """
+        cache = workspace.cache_dir()
+        if cache is not None and state.get("stamp"):
+            entry = cache / stamp_digest(state["stamp"])
+            try:
+                entry.mkdir(parents=True, exist_ok=True)
+                return str(entry)
+            except OSError:  # noqa: BLE001 - fall through to somewhere writable
+                pass
         return step_list.root or str(_scratch)
 
     def _score_campaign() -> None:
@@ -1247,7 +1486,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # would change a run's score depending on what was plotted beside it.
         if state["problem"] is not None:
             extra += ["--ground-truth", obj_edit.text()]
-        _launch("campaign_gain", *extra)
+        extra += _convergence_args() + _problem_view_args()
+        # verbose: the table this prints is the whole result. There is no window to look
+        # at, so collected-and-discarded output means pressing the button produces nothing.
+        _launch("campaign_gain", *extra, verbose=True)
 
     def _plot_gain_vs_ninitial() -> None:
         """Gain and cost against the initial design's size.
@@ -1279,7 +1521,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
     btn_hvi.clicked.connect(lambda: _plot_hypervolume(True))
+    btn_rho.clicked.connect(lambda: _plot_hypervolume(False, "normalized"))
+    btn_regret.clicked.connect(lambda: _plot_hypervolume(False, "regret"))
     btn_gain.clicked.connect(lambda: _score_campaign())
+    btn_optimum.clicked.connect(lambda: _compute_optimum())
     btn_gain_ninit.clicked.connect(lambda: _plot_gain_vs_ninitial())
 
     # Diagnostic rows: label, script, and whether it understands --grouped and
