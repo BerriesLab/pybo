@@ -254,3 +254,103 @@ def test_too_short_to_judge():
 def test_patience_must_be_positive():
     with pytest.raises(ValueError):
         terminal_plateau([1, 1, 1], eps=1.0, patience=0, n_initial=0)
+
+
+# ---- what the selected runs get grouped by ----
+
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys, pooled, series_key, series_label,
+)
+
+
+def record(run="bayesian_ninit10_replicate0_seed2063", optimizer="bayesian", n_initial=10,
+           iteration="step_003_rep00", observation=0, **parameters):
+    """One map record, with only the fields the grouping reads."""
+    return {"run": run, "optimizer": optimizer, "n_initial": n_initial,
+            "provenance": "synthetic", "technology": None,
+            "iteration": iteration, "observation": observation,
+            "parameters": parameters or {"V0": 80.0, "dV": 68.0}}
+
+
+def test_every_key_keeps_every_record_apart():
+    """The default. Two records of one run at one setting are still two measurements,
+    because they are different steps - which is what the repeat key has to notice."""
+    a = record(iteration="step_003_rep00")
+    b = record(iteration="step_040_rep00")     # same setting, later step
+    assert group_key(a, GROUP_KEYS) != group_key(b, GROUP_KEYS)
+
+
+def test_dropping_repeat_merges_measurements_at_one_setting():
+    a = record(iteration="step_003_rep00")
+    b = record(iteration="step_040_rep00")
+    keys = [k for k in GROUP_KEYS if k != "repeat"]
+    assert group_key(a, keys) == group_key(b, keys)
+
+
+def test_dropping_run_merges_one_setting_across_runs():
+    """The variability study: several runs measuring the same setting, which the old
+    (run, parameters) grouping could never pool."""
+    keys = [k for k in GROUP_KEYS if k not in ("run", "repeat")]
+    a = record(run="rep0", iteration="step_003_rep00")
+    b = record(run="rep1", iteration="step_012_rep00")
+    assert group_key(a, keys) == group_key(b, keys)
+    # A different setting still separates them - only the run was pooled over.
+    c = record(run="rep1", V0=81.0, dV=68.0)
+    assert group_key(a, keys) != group_key(c, keys)
+
+
+def test_parameters_snap_onto_the_rig_grid():
+    """A repeat is routinely recorded once as the rounded setpoint and once as the
+    proposal behind it, so the grid is what makes them one setting."""
+    asked = record(V0=80.4, dV=68.0)
+    set_to = record(V0=80.0, dV=68.0)
+    keys = [k for k in GROUP_KEYS if k != "repeat"]
+    assert group_key(asked, keys) != group_key(set_to, keys)
+    assert (group_key(asked, keys, {"V0": 1.0}) == group_key(set_to, keys, {"V0": 1.0}))
+
+
+def test_series_key_ignores_the_within_step_notions():
+    """A trace plot builds one curve per run, so what tells two curves apart cannot
+    depend on which measurement within a step a record is."""
+    a = record(iteration="step_003_rep00", V0=80.0)
+    b = record(iteration="step_040_rep01", V0=95.0)
+    assert series_key(a, GROUP_KEYS) == series_key(b, GROUP_KEYS)
+
+
+def test_series_key_separates_and_pools_runs_on_demand():
+    a = record(run="replicate0")
+    b = record(run="replicate1")
+    assert series_key(a, GROUP_KEYS) != series_key(b, GROUP_KEYS)
+    pooled_keys = [k for k in GROUP_KEYS if k != "run"]
+    assert series_key(a, pooled_keys) == series_key(b, pooled_keys)
+
+
+def test_dropping_n_initial_pools_the_design_sizes():
+    """Nine series (3 strategies x 3 sizes) become three."""
+    keys = [k for k in GROUP_KEYS if k not in ("run", "n_initial", "repeat")]
+    sizes = [series_key(record(run=f"r{n}", n_initial=n), keys) for n in (10, 15, 20)]
+    assert len(set(sizes)) == 1
+    other = series_key(record(optimizer="sobol"), keys)
+    assert other != sizes[0]
+
+
+def test_a_series_is_named_by_what_still_tells_it_apart():
+    assert series_label(record(), GROUP_KEYS) == "bayesian_ninit10_replicate0_seed2063"
+    no_run = [k for k in GROUP_KEYS if k != "run"]
+    assert series_label(record(), no_run) == "bayesian n10 synthetic"
+    no_size = [k for k in no_run if k != "n_initial"]
+    assert series_label(record(), no_size) == "bayesian synthetic"
+    assert series_label({"run": None}, (), fallback="unnamed") == "unnamed"
+
+
+def test_parse_keys_normalises_order_and_rejects_nonsense():
+    # Order is normalised so two spellings of one key set give one grouping - and one
+    # series label, which is built from that order.
+    assert parse_keys(["repeat", "run"]) == parse_keys(["run", "repeat"]) == ("run", "repeat")
+    with pytest.raises(GroupKeyError):
+        parse_keys(["strategy", "colour"])
+
+
+def test_pooled_names_what_the_band_swept_up():
+    assert pooled(GROUP_KEYS) == ()
+    assert pooled([k for k in GROUP_KEYS if k not in ("run", "repeat")]) == ("run", "repeat")

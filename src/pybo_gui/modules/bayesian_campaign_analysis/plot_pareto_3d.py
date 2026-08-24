@@ -19,6 +19,9 @@ from pybo_gui.modules.bayesian_campaign_analysis._aggregate import BAND_MODES
 from pybo_gui.modules.bayesian_campaign_analysis._reference import draw_reference
 from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
 parser.add_argument("--y", required=True, help="Result key for y axis (objective)")
@@ -29,8 +32,13 @@ parser.add_argument("--zcenter", type=float, default=None,
 parser.add_argument("--xlabel", default="", help="Override x-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--ylabel", default="", help="Override y-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--zlabel", default="", help="Override colorbar label (LaTeX accepted via $...$)")
-parser.add_argument("--grouped",      action="store_true", default=False,
-                    help="Aggregate per group_id")
+parser.add_argument("--group-by", action="append", default=None, dest="group_by",
+                    metavar="KEY",
+                    help="A key to group the selected runs by (repeatable). Records "
+                         "agreeing on every key given are averaged into one row. "
+                         "Naming all of them - the default - keeps every "
+                         "observation separate. Available: "
+                         f"{', '.join(GROUP_KEYS)}.")
 parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem",
                     help="Error-bar mode in grouped view. sem = uncertainty of the "
                          "group's mean, std = spread of one measurement, minmax = mean "
@@ -49,6 +57,17 @@ parser.add_argument("--band", default="ci95", choices=BAND_MODES,
                     help="What the reference band means, where a benchmark pools "
                          "more than one run (default: %(default)s).")
 args = parser.parse_args()
+try:
+    keys = parse_keys(GROUP_KEYS if args.group_by is None else args.group_by)
+except GroupKeyError as exc:
+    print(exc)
+    sys.exit(2)
+# Records at one setting merge exactly when the user stopped asking for repeated
+# measurements to be told apart.
+collapsing = "repeat" not in keys
+# Only the problem knows the rig's steps, and grouping by `parameters` has to snap
+# onto them or a setting recorded once rounded and once not stays two settings.
+resolutions = {}
 try:
     constraints = parse_constraints(args.constraint)
 except ConstraintError as exc:
@@ -117,6 +136,8 @@ for exp in load_experiments_from_map(MAP_PATH):
         "label":    _label(exp),
         # Only used to pool a benchmark's own runs together - see _reference.
         "run":      exp.get("run"),
+        # What merges records; the map's numeric id stays for the point tags.
+        "gkey":     group_key(exp, keys, resolutions),
         "group_id": exp["group_id"],
         "x":        column(exp, args.x),
         "y":        column(exp, args.y),
@@ -138,13 +159,13 @@ for exp in load_experiments_from_map(MAP_PATH):
 # constraints; every resulting group row is therefore feasible. The infeasible
 # experiments themselves are still drawn — as individual points (see below) —
 # they are just never folded into a group mean.
-if args.grouped:
+if collapsing:
     groups = {}
     order  = []
     for r in raw_rows:
         if r["x"] is None or r["y"] is None or r["z_val"] is None or not r["feasible"]:
             continue
-        gid = r["group_id"]
+        gid = r["gkey"]
         if gid not in groups:
             groups[gid] = []
             order.append(gid)
@@ -173,7 +194,8 @@ if args.grouped:
         rows.append({
             "label":    items[0]["label"],
             "run":      items[0]["run"],
-            "group_id": gid,
+            "gkey":     gid,
+            "group_id": items[0]["group_id"],
             "x":        x_mean,
             "x_err_lo": x_err_lo,
             "x_err_hi": x_err_hi,
@@ -254,7 +276,7 @@ for lbl in all_labels:
     if not subset:
         continue
 
-    if args.grouped:
+    if collapsing:
         for r in subset:
             fc = z_cmap(z_norm(r["z_val"]))
             # Drawn whenever there is something to draw, not only when the group has

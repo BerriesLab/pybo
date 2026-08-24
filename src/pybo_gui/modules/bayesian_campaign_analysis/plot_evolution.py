@@ -11,10 +11,29 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_initial, styler
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+
 parser = argparse.ArgumentParser(description="Per-parameter/result evolution plot.")
-parser.add_argument("--grouped", action="store_true", default=False,
-                    help="Average replicate experiments per group_id into one point.")
+parser.add_argument("--group-by", action="append", default=None, dest="group_by",
+                    metavar="KEY",
+                    help="A key to group the selected runs by (repeatable). Records "
+                         "agreeing on every key given are averaged into one row. "
+                         "Naming all of them - the default - keeps every "
+                         "observation separate. Available: "
+                         f"{', '.join(GROUP_KEYS)}.")
 args = parser.parse_args()
+try:
+    keys = parse_keys(GROUP_KEYS if args.group_by is None else args.group_by)
+except GroupKeyError as exc:
+    print(exc)
+    sys.exit(2)
+# Records at one setting merge exactly when the user stopped asking for repeated
+# measurements to be told apart.
+collapsing = "repeat" not in keys
+# Only the problem knows the rig's steps, and grouping by `parameters` has to snap
+# onto them or a setting recorded once rounded and once not stays two settings.
+resolutions = {}
 
 # ---- CONFIG ----
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
@@ -70,6 +89,8 @@ for exp in experiments:
     rows.append({
         "index":         exp["index"],
         "iteration":     exp.get(ITERATION_KEY),
+        # What merges records; the map's numeric id stays for the point tags.
+        "gkey":     group_key(exp, keys, resolutions),
         "group_id":      exp["group_id"],
         "run":           exp.get("run"),
         "label":         _label(exp),
@@ -80,10 +101,10 @@ for exp in experiments:
 # In grouped mode, collapse replicate experiments (same group_id) to one row whose
 # results are the elementwise mean; label/iteration/index come from the group's
 # first (chronological) experiment, parameters are shared within the group.
-if args.grouped:
+if collapsing:
     grouped, order = {}, []
     for r in rows:
-        gid = r["group_id"]
+        gid = r["gkey"]
         if gid not in grouped:
             grouped[gid] = []
             order.append(gid)
@@ -100,7 +121,8 @@ if args.grouped:
     rows = [{
         "index":      grouped[gid][0]["index"],
         "iteration":  grouped[gid][0]["iteration"],
-        "group_id":   gid,
+        "gkey":       gid,
+        "group_id":   items[0]["group_id"],
         "run":        grouped[gid][0]["run"],
         "label":      grouped[gid][0]["label"],
         "parameters": grouped[gid][0]["parameters"],

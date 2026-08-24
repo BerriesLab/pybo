@@ -32,6 +32,7 @@ from pybo_gui.configs import workspace
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
     build_map, map_stamp, stamp_digest)
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
+from pybo_gui.modules.bayesian_campaign_analysis._series import GROUP_KEYS
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import (
     launch_analysis, run_off_thread, stop_token, stopped_since, watch,
@@ -444,33 +445,42 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                                  "break the problem's input constraints. HV* never sees "
                                  "such a point, so a handful can double a campaign's "
                                  "hypervolume and push it above the optimum.")
-    # Grouped averages the repeats of one setting within a run - same parameters, same
-    # run - so its bars measure measurement spread. Averaging whole runs of an arm
-    # against each other is the separate Average runs below. The error-bar mode only
-    # means anything once this is on.
-    cb_grouped = QCheckBox("Grouped")
-    cb_grouped.setToolTip("Average the repeats of one setting within a run. The bars "
-                          "show measurement spread — a noisy objective, or --repeats. "
-                          "For spread between runs of an arm, use Average runs.")
-    rb_sem = QRadioButton("Std. error")
-    rb_sem.setChecked(True)
-    rb_std = QRadioButton("Std. dev.")
-    rb_minmax = QRadioButton("Min/max")
-    # What the three bars mean, since they answer different questions and the difference
-    # decides how a figure is read.
-    ERRORBAR_TEXT = {
-        rb_sem: "Std. error — how well the point's position is known. Repeats shrink it by √n.",
-        rb_std: "Std. dev. — how much a single measurement scatters. Repeats do not shrink it.",
-        rb_minmax: "Min/max — the plain range of the group's measurements.",
+    # One checkbox per grouping key. Ticked keys are what tells records apart, so every
+    # box ticked draws each observation on its own and unticking one pools over it. The two
+    # switches this replaced were fixed points in that space - Grouped was "untick repeat",
+    # Average runs was "untick run" - and between them they made most of it unreachable.
+    KEY_TEXT = {
+        "parameters": "Parameters — what makes two measurements the same setting. Untick "
+                      "it and every setting in a group merges, which is rarely wanted.",
+        "run": "Run — the folder a measurement came from. Untick it to pool runs: the "
+               "band then shows how differently the optimizer behaves from seed to seed.",
+        "strategy": "Strategy — bayesian, sobol, random. Untick it to pool strategies "
+                    "together, which is usually only wanted with everything else pooled.",
+        "n_initial": "Initial design size — untick it to compare strategies pooled over "
+                     "n10/n15/n20 instead of nine separate series.",
+        "provenance": "Provenance — real rig or simulated. Untick it and a rig's runs "
+                      "average together with a study's, which is rarely meaningful.",
+        "technology": "Technology — what produced the measurement, as opposed to what "
+                      "chose it.",
+        "repeat": "Repeat — each individual measurement. Untick it and repeats of one "
+                  "setting merge into a point whose bar is measurement noise.",
     }
-    # A different axis from Grouped: that averages the repeats of one setting within a
-    # step, this averages whole runs of an arm against each other. They compose, so both
-    # can be on at once.
-    cb_aggregate = QCheckBox("Average runs")
-    cb_aggregate.setToolTip("Average whole runs of one arm against each other, aligned "
-                            "by evaluation index. The band shows how differently the "
-                            "optimizer behaves from seed to seed. Composes with Grouped: "
-                            "repeats into a point, then runs into a curve.")
+    key_boxes = {}
+    for key in GROUP_KEYS:
+        box = QCheckBox(key.replace("_", " "))
+        box.setChecked(True)
+        box.setToolTip(KEY_TEXT[key])
+        key_boxes[key] = box
+
+    # What a merged point's bar shows. Separate from the band below: this is the spread of
+    # the measurements inside one group, that is the spread across the curves of a series.
+    err_combo = QComboBox()
+    err_combo.addItems(["sem", "std", "minmax"])
+    ERRORBAR_TEXT = {
+        "sem": "Std. error — how well the point's position is known. Repeats shrink it by √n.",
+        "std": "Std. dev. — how much a single measurement scatters. Repeats do not shrink it.",
+        "minmax": "Min/max — the plain range of the group's measurements.",
+    }
     band_combo = QComboBox()
     band_combo.addItems(["ci95", "sem", "std", "minmax"])
     BAND_TEXT = {
@@ -532,40 +542,43 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # The explanations live on the controls themselves rather than in a line underneath.
     # They describe what a control means, not what an action did, so the log is the wrong
     # place for them - and a tooltip is always available instead of only after a click.
-    for widget, text in ERRORBAR_TEXT.items():
-        widget.setEnabled(False)
-        widget.setToolTip(text)
-    cb_grouped.stateChanged.connect(
-        lambda _s: [w.setEnabled(cb_grouped.isChecked()) for w in ERRORBAR_TEXT])
+    for position, key in enumerate(ERRORBAR_TEXT):
+        err_combo.setItemData(position, ERRORBAR_TEXT[key], Qt.ItemDataRole.ToolTipRole)
     for position, key in enumerate(BAND_TEXT):
         band_combo.setItemData(position, BAND_TEXT[key], Qt.ItemDataRole.ToolTipRole)
 
-    def _on_band_change() -> None:
-        on = cb_aggregate.isChecked()
-        band_combo.setEnabled(on)
-        # The combo shows one entry at a time, so its own tooltip has to follow it: the
-        # per-item tooltips are only reachable once the list is open.
-        band_combo.setToolTip(BAND_TEXT[band_combo.currentText()] if on else "")
+    def _on_grouping_change() -> None:
+        """Keep the two spread controls offered only when something is pooled into them.
 
-    cb_aggregate.stateChanged.connect(lambda _s: _on_band_change())
-    band_combo.currentTextChanged.connect(lambda _t: _on_band_change())
-    _on_band_change()
+        The error bar describes a merged point and the band a merged curve, so each is
+        meaningless while its own kind of merging is off - and an enabled control that
+        changes nothing is worse than an absent one.
+        """
+        err_combo.setEnabled(not key_boxes["repeat"].isChecked())
+        band_combo.setEnabled(not key_boxes["run"].isChecked())
+        err_combo.setToolTip(ERRORBAR_TEXT[err_combo.currentText()]
+                             if err_combo.isEnabled() else "")
+        band_combo.setToolTip(BAND_TEXT[band_combo.currentText()]
+                              if band_combo.isEnabled() else "")
+
+    for _box in key_boxes.values():
+        _box.stateChanged.connect(lambda _s: _on_grouping_change())
+    err_combo.currentTextChanged.connect(lambda _t: _on_grouping_change())
+    band_combo.currentTextChanged.connect(lambda _t: _on_grouping_change())
+    _on_grouping_change()
 
     # Filled here, where the widgets exist, but shown at the top of the page.
-    group_layout.addWidget(_row(cb_grouped, rb_sem, rb_std, rb_minmax))
+    group_layout.addWidget(_row(*(key_boxes[k] for k in GROUP_KEYS)))
+    group_layout.addWidget(_row(QLabel("Error bar:"), err_combo,
+                                QLabel("Band:"), band_combo))
     group_layout.addWidget(_grouping_note(
-        "Averages the repeats of one setting within a run — same run, same parameters. "
-        "The bar is measurement spread: a noisy objective, or --repeats. "
-        "Acted on by Pareto, HV, objective and evolution; the others do not take it "
-        "yet."))
-    group_layout.addWidget(_row(cb_aggregate, QLabel("Band:"), band_combo))
-    group_layout.addWidget(_grouping_note(
-        "Pools runs that share an arm — same optimizer (bayesian / sobol / random), "
-        "same initial-design size, same provenance (real rig or simulated) — and "
-        "averages them at each evaluation index. Runs differing only by seed become one "
-        "curve, and the band is how differently the optimizer behaves from seed to "
-        "seed. Acted on by HV and Pareto 2D so far. Composes with Grouped: repeats into "
-        "a point, then runs into a curve."))
+        "Records that agree on every ticked key are one group, drawn as its mean. Every "
+        "box ticked - the default - draws each observation on its own. Untick repeat and "
+        "the repeats of a setting merge, with the error bar showing measurement spread. "
+        "Untick run as well and they merge across runs, which is what a variability study "
+        "measures. Untick run but keep repeat and whole runs average into one curve per "
+        "series instead, with the band showing seed-to-seed spread — untick n_initial too "
+        "and the design sizes pool, giving one curve per strategy."))
     plot_page_layout.insertWidget(0, group_box)
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
@@ -823,11 +836,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         btn_hv.setText("Plot best value" if is_single else "Plot HV")
         btn_hvi.setText("Plot improvement" if is_single else "Plot HV improvement")
         btn_pareto.setEnabled(not is_many)
-        # Grouping and point labels belong to the scatter, which 4+ objectives has none of.
-        for widget in (cb_grouped, cb_numbers):
-            widget.setEnabled(not is_many)
-        for widget in ERRORBAR_TEXT:
-            widget.setEnabled(cb_grouped.isChecked() and not is_many)
+        # Point labels belong to the scatter, which 4+ objectives has none of. The
+        # grouping keys stay live either way: the hypervolume still pools by them.
+        cb_numbers.setEnabled(not is_many)
         # The key lists mean different things per objective count, so they are rebuilt
         # rather than left showing the previous one's.
         _refresh_keys()
@@ -1190,17 +1201,20 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
               on_fail=_failed,
               on_output=_line)
 
-    def _aggregate_args() -> list:
-        """The flags for collapsing an arm's runs into one curve, or nothing when off."""
-        if not cb_aggregate.isChecked():
-            return []
-        return ["--aggregate-runs", "--band", band_combo.currentText()]
+    def _group_by_args(bands: bool = True) -> list:
+        """The ticked keys, and the two spread controls they make meaningful.
 
-    def _grouped_args() -> list:
-        if not cb_grouped.isChecked():
-            return []
-        mode = "sem" if rb_sem.isChecked() else "std" if rb_std.isChecked() else "minmax"
-        return ["--grouped", "--errorbar", mode]
+        Every plot takes --group-by. --band is only understood by the ones that average
+        whole curves, hence `bands`; --errorbar only by the ones that draw a merged point,
+        and every one of those takes it, so it needs no flag of its own.
+        """
+        args = [flag for key in GROUP_KEYS if key_boxes[key].isChecked()
+                for flag in ("--group-by", key)]
+        if not key_boxes["repeat"].isChecked():
+            args += ["--errorbar", err_combo.currentText()]
+        if bands and not key_boxes["run"].isChecked():
+            args += ["--band", band_combo.currentText()]
+        return args
 
     def _plot_objective() -> None:
         """The single-objective landscape: the objective over the one or two parameters
@@ -1221,7 +1235,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         for combo, entry in pairs:
             extra += ["--parameter", combo.currentText(),
                       "--parameter-label", entry.text()]
-        extra += _grouped_args()
+        extra += _group_by_args(bands=False)
         if cb_numbers.isChecked():
             extra.append("--show-numbers")
         extra += _sense_args((obj, x_sense)) + _ground_truth_args()
@@ -1240,7 +1254,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             if not z:
                 post("Three objectives needs a z objective.")
                 return
-            extra += _grouped_args()
+            extra += _group_by_args(bands=False)
             if cb_numbers.isChecked():
                 extra.append("--show-numbers")
             extra += ["--x", x, "--y", y, "--z", z,
@@ -1251,7 +1265,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             extra += _sense_args((x, x_sense), (y, y_sense), (z, z_sense))
             _launch("plot_pareto_3d", *extra)
             return
-        extra += _grouped_args()
+        extra += _group_by_args()
         if cb_numbers.isChecked():
             extra.append("--show-numbers")
         extra += ["--x", x, "--y", y,
@@ -1261,7 +1275,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             if z_center_entry.text():
                 extra += ["--zcenter", z_center_entry.text()]
         extra += _sense_args((x, x_sense), (y, y_sense)) + _ground_truth_args()
-        extra += _aggregate_args()
         # Said either way rather than left to the plot's own judgement: the checkbox is
         # the answer, constrained problem or not.
         extra += ["--front-line", "always" if cb_front.isChecked() else "never"]
@@ -1401,12 +1414,14 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         if objectives is None:
             return
         extra = _constraint_args() + (["--improvement"] if improvement else []) + objectives
-        if cb_grouped.isChecked():
-            extra.append("--grouped")
-        # The per-step gain view rewrites what a point means, and the plot refuses the
-        # two together, so the flags are only added to the cumulative one.
-        if not improvement:
-            extra += _aggregate_args()
+        extra += _group_by_args()
+        # The per-step gain view rewrites what a point on the curve means, and the plot
+        # refuses to average runs into it. So that view keeps runs apart however the boxes
+        # stand, rather than being refused for a setting that is about the other buttons.
+        if improvement and not key_boxes["run"].isChecked():
+            extra += ["--group-by", "run"]
+            post("Plot HV improvement keeps runs separate: per-step gains cannot be "
+                 "averaged across runs.")
         # Where the hypervolume is measured from. Sent whenever an objective is loaded,
         # regardless of the Ground truth checkbox - that one is about drawing the
         # sampled surface, a separate question from having a fixed reference point, and
@@ -1525,8 +1540,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         button = QPushButton("Plot")
         button.clicked.connect(
             lambda _checked=False, s=script, g=grouped, a=aggregates:
-            _launch(s, *(["--grouped"] if g and cb_grouped.isChecked() else []),
-                    *(_aggregate_args() if a else [])))
+            _launch(s, *(_group_by_args(bands=a) if g else [])))
         diag_layout.addWidget(_row(label, button))
 
     # An objective usually sits with the tutorial that produced the data, so offer the

@@ -13,7 +13,9 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    DASHES, arm_label, base_label, is_initial, styler)
+    DASHES, base_label, is_initial, styler)
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -31,21 +33,19 @@ parser.add_argument("--zcenter", type=float, default=None,
 parser.add_argument("--xlabel", default="", help="Override x-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--ylabel", default="", help="Override y-axis label (LaTeX accepted via $...$)")
 parser.add_argument("--zlabel", default="", help="Override colorbar label (LaTeX accepted via $...$)")
-parser.add_argument("--grouped",      action="store_true", default=False,
-                    help="Aggregate per group_id")
+parser.add_argument("--group-by", action="append", default=None, dest="group_by",
+                    metavar="KEY",
+                    help="A key to group the selected runs by (repeatable). Records "
+                         "agreeing on every key given are one point, at their mean and "
+                         "with an error bar. Naming all of them - the default - draws "
+                         "every observation on its own. "
+                         f"Available: {', '.join(GROUP_KEYS)}. Leave out `repeat` and "
+                         "repeats of a setting merge; leave out `run` as well and they "
+                         "merge across runs, which is what a variability study measures.")
 parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem",
-                    help="Error-bar mode in grouped view. sem = uncertainty of the "
-                         "group's mean, std = spread of one measurement, minmax = mean "
-                         "to the group's min and max. sem and std both fold in the "
-                         "measurement variance the run recorded, when it recorded one.")
+                    help="What the error bar on a merged point shows (default: "
+                         "%(default)s). Only drawn where something merged.")
 parser.add_argument("--show-numbers", action="store_true", default=False)
-parser.add_argument("--aggregate-runs", action="store_true", default=False,
-                    help="Replace the per-run fronts with one mean front per arm, read "
-                         "onto a shared grid, plus a band. 2-D only. The grid spans "
-                         "every run's range; where a run hasn't reached a given point "
-                         "it drops out of that point's mean instead of the whole arm "
-                         "being skipped, so the band widens - or the line thins to a "
-                         "single run - toward the edges.")
 parser.add_argument("--band", default="ci95", choices=BAND_MODES,
                     help="What the band around the aggregated front shows (default: "
                          "%(default)s).")
@@ -100,6 +100,23 @@ try:
 except ConstraintError as exc:
     print(exc)
     sys.exit(2)
+try:
+    keys = parse_keys(GROUP_KEYS if args.group_by is None else args.group_by)
+except GroupKeyError as exc:
+    print(exc)
+    sys.exit(2)
+# The two things the keys switch on, and they are separate mechanisms. Merging repeats
+# into one point with an error bar is what dropping `repeat` asks for; averaging whole
+# runs' fronts onto a shared grid is what dropping `run` asks for. They compose: repeats
+# become a point, then runs become a mean front.
+collapsing = "repeat" not in keys
+# Averaging whole runs' fronts onto a shared grid only applies while the runs are still
+# there to average. Dropping `repeat` *and* `run` together already merged the measurements
+# across runs into one cloud per series - that is the variability view, where each point
+# carries the spread of the runs that made it - and a front through that cloud is simply
+# its front. Running the front averaging on top would find one run per merged point and
+# report a mean over a handful of them.
+aggregating = "run" not in keys and not collapsing
 
 # ---- CONFIG ----
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
@@ -143,6 +160,22 @@ maximize = set(args.maximize)
 sx = -1.0 if args.x in maximize else 1.0
 sy = -1.0 if args.y in maximize else 1.0
 
+# ---- THE RIG'S GRID ----
+# Grouping by `parameters` has to snap them onto the rig's own steps first, or two records
+# of one setting stay apart whenever it was written once as the rounded setpoint and once
+# as the proposal behind it. Only the problem knows those steps, so this is the one thing
+# read off it before the rows; without a --ground-truth the values are compared as
+# recorded, which is what every map got before resolutions existed.
+#
+# Imported here rather than at the top: a pybo objective is a torch object, and a plot that
+# asks for no ground truth should not pay five seconds to find that out.
+resolutions = {}
+if args.ground_truth:
+    from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
+        load_objective, problem_definition)
+    resolutions = {p["label"]: p.get("resolution")
+                   for p in problem_definition(load_objective(args.ground_truth))["parameters"]}
+
 # ---- LOAD ----
 use_z = bool(args.z)
 
@@ -163,13 +196,17 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
-        # The arm whose runs get averaged together. From optimizer and provenance,
-        # not the label: under the default labelling the label names the run, which
-        # separates the very runs that have to be pooled.
-        "arm":      arm_label(exp, _label(exp)),
-        # Kept alongside the label so pooling by arm still separates the runs when the
-        # map was built by strategy, where the label no longer names them.
+        # The series whose fronts get averaged together, named from the keys that still
+        # tell it apart - not from the label, which under the default labelling names the
+        # run and so separates the very runs that are meant to pool.
+        "arm":      series_label(exp, keys, fallback=_label(exp)),
+        # Kept alongside the label so pooling still separates the runs when the map was
+        # built by strategy, where the label no longer names them.
         "run":      exp.get("run"),
+        # Which records are the same measurement and merge into one point.
+        "gkey":     group_key(exp, keys, resolutions),
+        # The map's own numeric id, kept only because --show-numbers tags points with it.
+        # Not what merges them: that is `gkey`, which follows the chosen keys.
         "group_id": exp["group_id"],
         "x":        column(exp, args.x),
         "y":        column(exp, args.y),
@@ -191,13 +228,13 @@ for exp in load_experiments_from_map(MAP_PATH):
 # constraints; every resulting group row is therefore feasible. The infeasible
 # experiments themselves are still drawn — as individual points (see below) —
 # they are just never folded into a group mean.
-if args.grouped:
+if collapsing:
     groups = {}
     order  = []
     for r in raw_rows:
         if r["x"] is None or r["y"] is None or not r["feasible"]:
             continue
-        gid = r["group_id"]
+        gid = r["gkey"]
         if gid not in groups:
             groups[gid] = []
             order.append(gid)
@@ -226,10 +263,14 @@ if args.grouped:
             x_err_lo = x_err_hi = sd_x
             y_err_lo = y_err_hi = sd_y
         rows.append({
-            "label":    items[0]["label"],
+            # A merged point that spans runs cannot wear one member's run name, or the
+            # legend claims a run for a point most of whose measurements came from others.
+            # Its series name is what it actually stands for.
+            "label":    items[0]["label"] if "run" in keys else items[0]["arm"],
             "arm":      items[0]["arm"],
             "run":      items[0]["run"],
-            "group_id": gid,
+            "gkey":     gid,
+            "group_id": items[0]["group_id"],
             "x":        x_mean,
             "x_err_lo": x_err_lo,
             "x_err_hi": x_err_hi,
@@ -269,7 +310,7 @@ valid = [r for r in valid if not r["reference"]]
 # so it can only be drawn as itself. Scattering every run's individual violations
 # under a handful of mean fronts buries the very thing the option was chosen to
 # show, and does it worst on the arm that wasted the most evaluations.
-infeasible = [] if args.aggregate_runs else [
+infeasible = [] if aggregating else [
     r for r in raw_rows
     if r["x"] is not None and r["y"] is not None and not r["feasible"]]
 
@@ -297,7 +338,7 @@ FRONT_LABELS     = sorted({r["label"] for r in valid})
 # Arms take a colour of their own when aggregating, so a mean front is not confused
 # with any one run's. Left alone otherwise: adding names shifts the colours the styler
 # assigns by position.
-_arms = sorted({r["arm"] for r in valid}) if args.aggregate_runs else []
+_arms = sorted({r["arm"] for r in valid}) if aggregating else []
 _label_color, _label_marker, _line_style, _front_style = styler(fig_cfg, list(FRONT_LABELS) + _arms)
 
 # ---- PLOT ----
@@ -349,7 +390,7 @@ _last_sc       = None
 # Skipped entirely when aggregating: a dozen runs' observations are what made the
 # picture unreadable, which is the reason for asking to collapse them, and one legend
 # entry per run buries the two that name the mean fronts.
-for lbl in [] if args.aggregate_runs else all_labels:
+for lbl in [] if aggregating else all_labels:
     marker = _label_marker(lbl)
     subset = [r for r in valid if r["label"] == lbl and r["feasible"]]
     if use_z:
@@ -357,7 +398,7 @@ for lbl in [] if args.aggregate_runs else all_labels:
     if not subset:
         continue
 
-    if args.grouped:
+    if collapsing:
         if use_z:
             colors_pts = [z_cmap(z_norm(r["z_val"])) for r in subset]
         else:
@@ -472,7 +513,7 @@ if args.show_numbers:
 # undominated at the end belongs on that run's front. Grouping by base is also what keeps
 # --label-by provenance honest - there "initial" and "proposed" are bases in their own
 # right, so asking for them apart still draws them apart.
-if args.aggregate_runs:
+if aggregating:
     # One mean front per arm instead of one per run. The runs of an arm reach their
     # fronts at x values none of the others visited, so they cannot be averaged point by
     # point: each is read onto a shared grid first. All of it happens in signed
@@ -532,7 +573,7 @@ draw_reference(ax, reference_valid, sx, sy, args.band,
                fig_cfg["colors"].get("reference", "#E62020"), SCATTER["marker_size"],
                FRONT["edge_width"], legend_handles)
 
-if args.aggregate_runs:
+if aggregating:
     front_groups = []
 elif args.front_scope == "initial-vs-all":
     # The design and the campaign, not a series each: together they say what proposing

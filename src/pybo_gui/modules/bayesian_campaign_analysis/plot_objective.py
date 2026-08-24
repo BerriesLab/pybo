@@ -16,6 +16,9 @@ from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, styl
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+
 parser = argparse.ArgumentParser(
     description="Single-objective campaign: the objective over one or two parameters.")
 parser.add_argument("--objective", required=True,
@@ -32,8 +35,13 @@ parser.add_argument("--parameter-label", action="append", default=[],
 parser.add_argument("--maximize", action="append", default=[],
                     help="Result key of an objective to maximize (repeatable). Decides "
                          "which observation is the best one. Default: minimize.")
-parser.add_argument("--grouped", action="store_true", default=False,
-                    help="Aggregate per group_id")
+parser.add_argument("--group-by", action="append", default=None, dest="group_by",
+                    metavar="KEY",
+                    help="A key to group the selected runs by (repeatable). Records "
+                         "agreeing on every key given are averaged into one row. "
+                         "Naming all of them - the default - keeps every "
+                         "observation separate. Available: "
+                         f"{', '.join(GROUP_KEYS)}.")
 parser.add_argument("--errorbar", choices=["sem", "std", "minmax"], default="sem",
                     help="Error-bar mode in grouped view. sem = uncertainty of the "
                          "group's mean, std = spread of one measurement, minmax = mean "
@@ -62,6 +70,17 @@ parser.add_argument("--constraint", action="append", default=[],
                          "Only feasible experiments can be the best one; infeasible "
                          "ones are shown dimmed.")
 args = parser.parse_args()
+try:
+    keys = parse_keys(GROUP_KEYS if args.group_by is None else args.group_by)
+except GroupKeyError as exc:
+    print(exc)
+    sys.exit(2)
+# Records at one setting merge exactly when the user stopped asking for repeated
+# measurements to be told apart.
+collapsing = "repeat" not in keys
+# Only the problem knows the rig's steps, and grouping by `parameters` has to snap
+# onto them or a setting recorded once rounded and once not stays two settings.
+resolutions = {}
 try:
     constraints = parse_constraints(args.constraint)
 except ConstraintError as exc:
@@ -119,6 +138,8 @@ for exp in load_experiments_from_map(MAP_PATH):
     r = exp.get("results", {})
     raw_rows.append({
         "label":    _label(exp),
+        # What merges records; the map's numeric id stays for the point tags.
+        "gkey":     group_key(exp, keys, resolutions),
         "group_id": exp["group_id"],
         "pars":     [column(exp, key) for key in par_keys],
         "obj":      column(exp, args.objective),
@@ -139,12 +160,12 @@ def _complete(row):
 # the objective is averaged. Not runs of an arm pooled together: that is --aggregate-runs,
 # a different axis. Infeasible experiments are
 # left out of the mean and drawn individually below, as in the Pareto plots.
-if args.grouped:
+if collapsing:
     groups, order = {}, []
     for r in raw_rows:
         if not _complete(r) or not r["feasible"]:
             continue
-        gid = r["group_id"]
+        gid = r["gkey"]
         if gid not in groups:
             groups[gid] = []
             order.append(gid)
@@ -165,7 +186,8 @@ if args.grouped:
             err_lo = err_hi = estimate(objs, [it["obj_var"] for it in items])
         rows.append({
             "label":    items[0]["label"],
-            "group_id": gid,
+            "gkey":     gid,
+            "group_id": items[0]["group_id"],
             # Shared within the group, so the first member's are the group's.
             "pars":     list(items[0]["pars"]),
             "obj":      obj_mean,
@@ -265,7 +287,7 @@ for lbl in all_labels:
                                   norm=gt_norm, **shared)
         else:
             ax.scatter(xs, ys, facecolors=face_color, **shared)
-    elif args.grouped:
+    elif collapsing:
         for r in subset:
             # Drawn whenever there is something to draw, not only when the group has
             # repeats: a single measurement with a recorded variance has a real bar.

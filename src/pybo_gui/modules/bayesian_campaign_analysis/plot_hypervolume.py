@@ -13,8 +13,9 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
     hypervolume_nd, pareto_front_nd,
 )
-from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    arm_label, base_label, is_initial, styler)
+from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial, styler
+from pybo_gui.modules.bayesian_campaign_analysis._series import (
+    GROUP_KEYS, GroupKeyError, group_key, parse_keys, pooled, series_key, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -38,12 +39,16 @@ parser.add_argument("--constraint", action="append", default=[],
                          "An infeasible experiment contributes no point to the "
                          "hypervolume but still counts as an evaluation, so the curve "
                          "goes flat there rather than losing a step off the x axis.")
-parser.add_argument("--grouped", action="store_true", default=False,
-                    help="Average replicate experiments per group_id into one point.")
-parser.add_argument("--aggregate-runs", action="store_true", default=False,
-                    help="Collapse the runs of each arm into one mean curve with a band, "
-                         "instead of drawing a curve per run. Runs are matched by step "
-                         "and truncated to the shortest.")
+parser.add_argument("--group-by", action="append", default=None, dest="group_by",
+                    metavar="KEY",
+                    help="A key to group the selected runs by (repeatable). Records "
+                         "agreeing on every key given are one group, drawn as its mean "
+                         "with a band. More keys means a finer split; naming all of them "
+                         "- the default - draws a curve per run and pools nothing. "
+                         f"Available: {', '.join(GROUP_KEYS)}. Leave out `run` and the "
+                         "curves of the runs that remain alike are averaged; leave out "
+                         "`n_initial` too and design sizes pool into one curve per "
+                         "strategy.")
 parser.add_argument("--band", default="ci95", choices=BAND_MODES,
                     help="What the band around the aggregated mean shows (default: "
                          "%(default)s). ci95 says where the arm's mean lies, so it is the "
@@ -104,6 +109,17 @@ try:
 except ConstraintError as exc:
     print(exc)
     sys.exit(2)
+try:
+    # None, not []: an empty --group-by list is "group everything into one", which is a
+    # real request, while giving the flag no times at all means "leave it as it was".
+    keys = parse_keys(GROUP_KEYS if args.group_by is None else args.group_by)
+except GroupKeyError as exc:
+    print(exc)
+    sys.exit(2)
+# A trace is cumulative within one campaign, so a run is always the unit of a curve
+# whatever is ticked. What the keys decide is which runs' curves are averaged together -
+# and that is exactly whether `run` is one of them.
+aggregating = "run" not in keys
 
 # Objective keys: explicit --objective list (N-D) or the --x/--y[/--z] trio.
 objective_keys = list(args.objective) or [k for k in (args.x, args.y, args.z) if k]
@@ -147,6 +163,24 @@ def _label(exp):
     return (exp.get("experiment_type") or exp.get("optimizer") or "unknown").lower()
 
 
+# ---- THE PROBLEM, WHEN ONE WAS GIVEN ----
+# Loaded before the rows rather than beside the reference point it is mostly here for:
+# grouping by `parameters` has to snap them onto the rig's own grid first, and the
+# resolutions live on the problem. Two records are then the same setting exactly when the
+# rig could not have set them apart - which matters because a repeat is routinely recorded
+# once as the rounded setpoint and once as the proposal that produced it.
+#
+# Imported here, not at the top: a pybo objective is a torch object, so this costs five
+# seconds of import, and a run that asks for no ground truth still pays nothing. Same
+# reasoning as _ground_truth's lazy botorch import, and as _hypervolume being torch-free.
+problem = None
+resolutions = {}
+if args.ground_truth:
+    from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
+        load_objective, problem_definition)
+    problem = problem_definition(load_objective(args.ground_truth))
+    resolutions = {p["label"]: p.get("resolution") for p in problem["parameters"]}
+
 # ---- LOAD ----
 rows = []
 for exp in load_experiments_from_map(MAP_PATH):
@@ -168,12 +202,17 @@ for exp in load_experiments_from_map(MAP_PATH):
     point = tuple(s * v for s, v in zip(signs, raw))
     rows.append({
         "label":    _label(exp),
-        # The arm the run belongs to, which is what several runs get averaged within.
-        # Both optimizer and provenance, not the label: the label is whatever the map
-        # was built by, and under the default it names the run, so it tells the runs of
-        # one arm apart instead of holding them together.
-        "arm":      arm_label(exp, _label(exp)),
-        "group_id": exp["group_id"],
+        # The run this observation belongs to. Always carried, whether or not `run` is one
+        # of the keys: a hypervolume only accumulates within one campaign, so a run is the
+        # unit of a trace even when several runs' traces are about to be averaged.
+        "run":      exp.get("run"),
+        # Which curve this run's trace joins, and what to call it. Both from the keys, so
+        # dropping `run` pools runs and dropping `n_initial` as well pools design sizes.
+        "series":   series_key(exp, keys),
+        "series_name": series_label(exp, keys, fallback=_label(exp)),
+        # Which records are the same measurement and collapse into one evaluation. With
+        # every key ticked this is unique per record and nothing collapses.
+        "collapse": (exp.get("run"), group_key(exp, keys, resolutions)),
         "feasible": is_feasible(r, constraints),
         "point":    point,
         # Kept so --true-objective can re-read this observation off the noiseless
@@ -237,26 +276,30 @@ if args.input_feasible:
 # row. Only the feasible members are averaged, so a group's point is never pulled by a
 # reading that violated a constraint; a group with no feasible member keeps its slot on
 # the x axis and contributes no point.
-if args.grouped:
-    grouped, order = {}, []
-    for r in rows:
-        gid = r["group_id"]
-        if gid not in grouped:
-            grouped[gid] = []
-            order.append(gid)
-        grouped[gid].append(r)
-    rows = [{
-        "label": grouped[gid][0]["label"],
-        "feasible": any(it["feasible"] for it in grouped[gid]),
-        # A group is repeats of one setting within one run, so the whole of it belongs
-        # to that run's arm. Carried through, or aggregating would lose the very field
-        # it pools by the moment the two options are used together.
-        "arm": grouped[gid][0]["arm"],
-        "point": tuple(
-            sum(it["point"][d] for it in grouped[gid] if it["feasible"])
-            / max(1, sum(1 for it in grouped[gid] if it["feasible"]))
-            for d in range(len(objective_keys))),
-    } for gid in order]
+grouped, order = {}, []
+for r in rows:
+    gid = r["collapse"]
+    if gid not in grouped:
+        grouped[gid] = []
+        order.append(gid)
+    grouped[gid].append(r)
+if len(grouped) < len(rows):
+    print(f"Collapsed {len(rows)} observations into {len(grouped)} evaluations "
+          f"(grouping by {', '.join(keys)}).")
+rows = [{
+    # Every field is the group's first member's, except the point and the feasibility.
+    # Within one group the records agree on all of them by construction - that is what
+    # made them a group - so the first is as good as any.
+    "label": grouped[gid][0]["label"],
+    "run": grouped[gid][0]["run"],
+    "series": grouped[gid][0]["series"],
+    "series_name": grouped[gid][0]["series_name"],
+    "feasible": any(it["feasible"] for it in grouped[gid]),
+    "point": tuple(
+        sum(it["point"][d] for it in grouped[gid] if it["feasible"])
+        / max(1, sum(1 for it in grouped[gid] if it["feasible"]))
+        for d in range(len(objective_keys))),
+} for gid in order]
 
 # ---- FIXED REFERENCE POINT ----
 # From the feasible points alone: the reference exists to bound the volume the front
@@ -273,16 +316,8 @@ if not feasible_rows:
 # A run's hypervolume read off two different selections has to be the same number, or
 # it is not measuring the run - it is measuring the selection.
 ref = None
-problem = None
 ref_from_problem = False
-if args.ground_truth:
-    # Imported here, not at the top: a pybo objective is a torch object, so this line
-    # costs five seconds of import - and every run of this script that does not ask for a
-    # ground truth was paying it for nothing. Same reasoning as _ground_truth's own lazy
-    # botorch import, and as _hypervolume being extracted torch-free in the first place.
-    from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
-        load_objective, problem_definition)
-    problem = problem_definition(load_objective(args.ground_truth))
+if problem is not None:
     ref_by_label = {o["label"]: o["ref_point"] for o in problem["objectives"]}
     missing = [k for k in objective_keys if k not in ref_by_label]
     unset = [k for k in objective_keys
@@ -314,15 +349,18 @@ if ref is None:
 # ---- INCREMENTAL HYPERVOLUME, ONE TRACE PER SERIES ----
 # Each run is its own campaign, so its hypervolume starts from its own first observation
 # rather than continuing wherever the previous run left off. A run's initial design and
-# its proposals share a trace - they are one campaign - which is what base_label groups.
+# its proposals share a trace - they are one campaign - which is why by_run keys on the run.
 # The reference point stays global, so the traces are on one scale and comparable.
-series = {}
+# Keyed on the run itself, not on a label: a run is the unit of a campaign whatever the
+# grouping keys are, and its initial design and its proposals share one trace because they
+# are one campaign. Which traces then average together is series_key's business, below.
+by_run = {}
 for r in rows:
-    series.setdefault(base_label(r["label"]), []).append(r)
+    by_run.setdefault(r["run"], []).append(r)
 
 traces = {}
 series_arm = {}
-for name, items in series.items():
+for name, items in by_run.items():
     s_steps, s_hvs, s_labels, seen = [], [], [], []
     for spent, r in enumerate(items, start=1):
         # Only a feasible point joins the set the metric is measured on; an infeasible
@@ -345,9 +383,9 @@ for name, items in series.items():
         s_steps.append(spent)
         s_labels.append(r["label"])
     traces[name] = (s_steps, s_hvs, s_labels)
-    # Falls back to the series' own name: a row that reached here without an arm still
-    # gets a trace of its own rather than taking a plot down that was not aggregating.
-    series_arm[name] = items[0].get("arm") or name
+    # Which curve this run's trace joins. With `run` among the keys every run is its own
+    # series and nothing averages; without it, the runs alike on the remaining keys pool.
+    series_arm[name] = (items[0]["series"], items[0]["series_name"])
 
 # ---- RESCALE AGAINST THE OPTIMUM ----
 # Done here, once, on the traces themselves rather than at each of the three drawing
@@ -451,25 +489,29 @@ all_labels     = sorted({r["label"] for r in rows if r["label"] is not None})
 # The runs of each arm, in the order their traces were built, ready to be averaged.
 # n_initial travels alongside each curve so the aggregated view can shade its own
 # initial-design span, the same distinction the single-campaign view draws.
+# Keyed on the series name, which is what the legend shows and what colours are assigned
+# by: two runs that pool share a name by construction, since the name is built from the
+# very keys that made them one series.
 arm_curves = {}
 arm_n_initial = {}
 for name, (_s_steps, s_hvs, s_labels) in traces.items():
-    arm = series_arm[name]
+    _key, arm = series_arm[name]
     arm_curves.setdefault(arm, []).append(s_hvs)
     arm_n_initial.setdefault(arm, []).append(sum(1 for lbl in s_labels if is_initial(lbl)))
 
-if args.aggregate_runs and args.improvement:
+if aggregating and args.improvement:
     # Both rewrite what a point on the curve means, and stacking them would average
     # per-step gains that were already floored onto a shared log decade.
-    raise SystemExit("--aggregate-runs and --improvement do not combine: the first "
-                     "averages runs of a cumulative curve, the second replaces that "
-                     "curve with per-step gains. Pick one.")
+    print("Pooling runs and --improvement do not combine: the first averages runs of a "
+          "cumulative curve, the second replaces that curve with per-step gains. Either "
+          "add `run` to --group-by, or drop --improvement.")
+    sys.exit(2)
 
 # Arms take a colour of their own when aggregating, so the mean curve is not confused
 # with any single run's. Left alone otherwise, since adding names here would shift the
 # colours assigned by position to every existing label.
 _color, _marker, _line_style, _front_style = styler(
-    fig_cfg, all_labels + sorted(arm_curves) if args.aggregate_runs else all_labels)
+    fig_cfg, all_labels + sorted(arm_curves) if aggregating else all_labels)
 
 def y_label():
     """What the y axis is measuring, named once for all three drawing branches.
@@ -489,7 +531,7 @@ def y_label():
 # ---- PLOT ----
 fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["hypervolume"])
 
-if len(traces) == 1 and not args.aggregate_runs:
+if len(traces) == 1 and not aggregating:
     # One campaign: shade where each phase of it ran, as the single-sequence view did.
     # Initial and proposed share a colour by design (_labels.styler pairs a design with
     # the proposals it belongs to, so marker and dash are what tell them apart there) -
@@ -561,7 +603,7 @@ if args.improvement:
             )
     ax.set_ylabel(f"Improvement in best {objective_keys[0]}" if single else
                   r"Hypervolume improvement ($\Delta$HV)", fontsize=FONT_LABEL)
-elif args.aggregate_runs:
+elif aggregating:
     # One curve per arm: the mean over its runs at each step, and the band asked for.
     # The individual runs are not drawn underneath - the point of asking for this view
     # is that a dozen overlapping curves is what made the arms hard to compare.
@@ -591,7 +633,8 @@ elif args.aggregate_runs:
         legend_handles.append(mlines.Line2D(
             [], [], color=_color(arm), linewidth=1.6, linestyle=_line_style(arm),
             marker=_marker(arm), markersize=5,
-            label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
+            label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]),
+                                   pooled_over=pooled(keys))))
     # Where each arm's initial design ends. Arms that differ only by strategy share one
     # design window, and then this is the single neutral span it always was. A sweep over
     # --n-initial makes the design size the very thing being compared, and there a span
