@@ -50,7 +50,7 @@ class BayesianOptimizer(OptimizerBase):
             batch_size: int = 1,
             mc_samples: int = 256,
             raw_samples: int = 1024,
-            n_acqf_opt_max_iter: int = 250,
+            n_acqf_opt_max_iter: int = 2000,
             n_acqf_opt_restarts: int = 20,
             n_model_fit_restarts: int = 50,
     ):
