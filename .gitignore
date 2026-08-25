@@ -52,3 +52,4 @@ __pycache__/
 # A GUI session's own settings: it holds an absolute path to this machine's
 # workspace, which means nothing on another one. Created on first use.
 /src/pybo_gui/configs/gui_app/state.json
+/todo.txt
