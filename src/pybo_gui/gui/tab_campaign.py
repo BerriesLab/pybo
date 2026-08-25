@@ -462,8 +462,6 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                       "average together with a study's, which is rarely meaningful.",
         "technology": "Technology — what produced the measurement, as opposed to what "
                       "chose it.",
-        "repeat": "Repeat — each individual measurement. Untick it and repeats of one "
-                  "setting merge into a point whose bar is measurement noise.",
     }
     key_boxes = {}
     for key in GROUP_KEYS:
@@ -475,8 +473,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         box.setToolTip(KEY_TEXT.get(key, ""))
         key_boxes[key] = box
 
-    # What a merged point's bar shows. Separate from the band below: this is the spread of
-    # the measurements inside one group, that is the spread across the curves of a series.
+    # What a merged point's bar shows - the spread of the repeats behind it, which only
+    # exists where a setting was measured more than once in one run. Separate from the band
+    # below, which is the spread across the curves of a series.
     err_combo = QComboBox()
     err_combo.addItems(["sem", "std", "minmax"])
     ERRORBAR_TEXT = {
@@ -557,7 +556,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         meaningless while its own kind of merging is off - and an enabled control that
         changes nothing is worse than an absent one.
         """
-        err_combo.setEnabled(not key_boxes["repeat"].isChecked())
+        # The error bar is always available: repeats of a setting always merge, so a
+        # campaign that measured any has a bar to show. The band needs runs pooled.
+        err_combo.setEnabled(True)
         band_combo.setEnabled(not key_boxes["run"].isChecked())
         err_combo.setToolTip(ERRORBAR_TEXT[err_combo.currentText()]
                              if err_combo.isEnabled() else "")
@@ -575,13 +576,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     group_layout.addWidget(_row(QLabel("Error bar:"), err_combo,
                                 QLabel("Band:"), band_combo))
     group_layout.addWidget(_grouping_note(
-        "Records that agree on every ticked key are one group, drawn as its mean. Every "
-        "box ticked - the default - draws each observation on its own. Untick repeat and "
-        "the repeats of a setting merge, with the error bar showing measurement spread. "
-        "Untick run as well and they merge across runs, which is what a variability study "
-        "measures. Untick run but keep repeat and whole runs average into one curve per "
-        "series instead, with the band showing seed-to-seed spread — untick n_initial too "
-        "and the design sizes pool, giving one curve per strategy."))
+        "Records that agree on every ticked key are one group, drawn as its mean. Repeats "
+        "of a setting within a run always merge — they are one measurement made twice, and "
+        "the error bar is their spread. Every box ticked, the default, then draws one "
+        "point per setting per run and one curve per run. Untick run and whole runs "
+        "average into one curve or front per series, with the band showing how differently "
+        "the optimizer behaves from seed to seed; untick n_initial as well and the design "
+        "sizes pool, giving one series per strategy."))
     plot_page_layout.insertWidget(0, group_box)
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
@@ -1213,8 +1214,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         """
         args = [flag for key in GROUP_KEYS if key_boxes[key].isChecked()
                 for flag in ("--group-by", key)]
-        if not key_boxes["repeat"].isChecked():
-            args += ["--errorbar", err_combo.currentText()]
+        args += ["--errorbar", err_combo.currentText()]
         if bands and not key_boxes["run"].isChecked():
             args += ["--band", band_combo.currentText()]
         return args

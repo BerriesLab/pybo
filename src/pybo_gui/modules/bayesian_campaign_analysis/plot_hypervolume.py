@@ -15,7 +15,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial, styler
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, parse_keys, pooled, series_key, series_label)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys, pooled, series_key, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -210,9 +210,8 @@ for exp in load_experiments_from_map(MAP_PATH):
         # dropping `run` pools runs and dropping `n_initial` as well pools design sizes.
         "series":   series_key(exp, keys),
         "series_name": series_label(exp, keys, fallback=_label(exp)),
-        # Which records are the same measurement and collapse into one evaluation. With
-        # every key ticked this is unique per record and nothing collapses.
-        "collapse": (exp.get("run"), group_key(exp, keys, resolutions)),
+        # Which records are the same measurement and collapse into one evaluation.
+        "collapse": merge_key(exp, keys, resolutions),
         "feasible": is_feasible(r, constraints),
         "point":    point,
         # Kept so --true-objective can re-read this observation off the noiseless

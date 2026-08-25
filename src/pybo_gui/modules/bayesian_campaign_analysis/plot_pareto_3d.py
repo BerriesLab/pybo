@@ -20,7 +20,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._reference import draw_referenc
 from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--x", required=True, help="Result key for x axis (objective)")
@@ -62,9 +62,6 @@ try:
 except GroupKeyError as exc:
     print(exc)
     sys.exit(2)
-# Records at one setting merge exactly when the user stopped asking for repeated
-# measurements to be told apart.
-collapsing = "repeat" not in keys
 # Only the problem knows the rig's steps, and grouping by `parameters` has to snap
 # onto them or a setting recorded once rounded and once not stays two settings.
 resolutions = {}
@@ -137,7 +134,7 @@ for exp in load_experiments_from_map(MAP_PATH):
         # Only used to pool a benchmark's own runs together - see _reference.
         "run":      exp.get("run"),
         # What merges records; the map's numeric id stays for the point tags.
-        "gkey":     group_key(exp, keys, resolutions),
+        "gkey":     merge_key(exp, keys, resolutions),
         "group_id": exp["group_id"],
         "x":        column(exp, args.x),
         "y":        column(exp, args.y),
@@ -159,65 +156,56 @@ for exp in load_experiments_from_map(MAP_PATH):
 # constraints; every resulting group row is therefore feasible. The infeasible
 # experiments themselves are still drawn — as individual points (see below) —
 # they are just never folded into a group mean.
-if collapsing:
-    groups = {}
-    order  = []
-    for r in raw_rows:
-        if r["x"] is None or r["y"] is None or r["z_val"] is None or not r["feasible"]:
-            continue
-        gid = r["gkey"]
-        if gid not in groups:
-            groups[gid] = []
-            order.append(gid)
-        groups[gid].append(r)
+groups = {}
+order  = []
+for r in raw_rows:
+    if r["x"] is None or r["y"] is None or r["z_val"] is None or not r["feasible"]:
+        continue
+    gid = r["gkey"]
+    if gid not in groups:
+        groups[gid] = []
+        order.append(gid)
+    groups[gid].append(r)
 
-    rows = []
-    for gid in order:
-        items = groups[gid]
-        xs = [it["x"]     for it in items]
-        ys = [it["y"]     for it in items]
-        zs = [it["z_val"] for it in items]
-        x_mean, y_mean = float(np.mean(xs)), float(np.mean(ys))
-        if args.errorbar == "minmax":
-            x_err_lo = x_mean - float(np.min(xs))
-            x_err_hi = float(np.max(xs)) - x_mean
-            y_err_lo = y_mean - float(np.min(ys))
-            y_err_hi = float(np.max(ys)) - y_mean
-        else:
-            # Both modes reconcile the repeats' scatter with the recorded measurement
-            # variance rather than adding them - see _uncertainty.
-            estimate = mean_sd if args.errorbar == "sem" else total_sd
-            sd_x = estimate(xs, [it["x_var"] for it in items])
-            sd_y = estimate(ys, [it["y_var"] for it in items])
-            x_err_lo = x_err_hi = sd_x
-            y_err_lo = y_err_hi = sd_y
-        rows.append({
-            "label":    items[0]["label"],
-            "run":      items[0]["run"],
-            "gkey":     gid,
-            "group_id": items[0]["group_id"],
-            "x":        x_mean,
-            "x_err_lo": x_err_lo,
-            "x_err_hi": x_err_hi,
-            "y":        y_mean,
-            "y_err_lo": y_err_lo,
-            "y_err_hi": y_err_hi,
-            "z_val":    float(np.mean(zs)),
-            "n":        len(items),
-            "feasible": True,
-            # One run per group (group_id keys on run - see build_group_map), so
-            # every item in the group agrees on this.
-            "reference": items[0]["reference"],
-        })
-    valid = rows
-else:
-    valid = [r for r in raw_rows
-             if r["x"] is not None and r["y"] is not None and r["z_val"] is not None]
-    for r in valid:
-        r["x_err_lo"] = r["x_err_hi"] = 0.0
-        r["y_err_lo"] = r["y_err_hi"] = 0.0
-        r["n"]        = 1
-
+rows = []
+for gid in order:
+    items = groups[gid]
+    xs = [it["x"]     for it in items]
+    ys = [it["y"]     for it in items]
+    zs = [it["z_val"] for it in items]
+    x_mean, y_mean = float(np.mean(xs)), float(np.mean(ys))
+    if args.errorbar == "minmax":
+        x_err_lo = x_mean - float(np.min(xs))
+        x_err_hi = float(np.max(xs)) - x_mean
+        y_err_lo = y_mean - float(np.min(ys))
+        y_err_hi = float(np.max(ys)) - y_mean
+    else:
+        # Both modes reconcile the repeats' scatter with the recorded measurement
+        # variance rather than adding them - see _uncertainty.
+        estimate = mean_sd if args.errorbar == "sem" else total_sd
+        sd_x = estimate(xs, [it["x_var"] for it in items])
+        sd_y = estimate(ys, [it["y_var"] for it in items])
+        x_err_lo = x_err_hi = sd_x
+        y_err_lo = y_err_hi = sd_y
+    rows.append({
+        "label":    items[0]["label"],
+        "run":      items[0]["run"],
+        "gkey":     gid,
+        "group_id": items[0]["group_id"],
+        "x":        x_mean,
+        "x_err_lo": x_err_lo,
+        "x_err_hi": x_err_hi,
+        "y":        y_mean,
+        "y_err_lo": y_err_lo,
+        "y_err_hi": y_err_hi,
+        "z_val":    float(np.mean(zs)),
+        "n":        len(items),
+        "feasible": True,
+        # One run per group (group_id keys on run - see build_group_map), so
+        # every item in the group agrees on this.
+        "reference": items[0]["reference"],
+    })
+valid = rows
 # ---- REFERENCE (pulled out of the ordinary per-label series) ----
 # A run flagged as the user's benchmark stops being "just another run": it is drawn
 # once, apart, through _reference - see below - instead of taking its usual place
@@ -276,41 +264,31 @@ for lbl in all_labels:
     if not subset:
         continue
 
-    if collapsing:
-        for r in subset:
-            fc = z_cmap(z_norm(r["z_val"]))
-            # Drawn whenever there is something to draw, not only when the group has
-            # repeats: a single measurement with a recorded variance has a real bar.
-            xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["x_err_hi"] else None
-            yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["y_err_hi"] else None
-            ax.errorbar(
-                [r["x"]], [r["y"]],
-                xerr=xerr, yerr=yerr,
-                fmt=marker,
-                markerfacecolor=fc,
-                markeredgecolor=SCATTER["edge_color"],
-                markeredgewidth=SCATTER["edge_width"],
-                ecolor="gray",
-                markersize=SCATTER["marker_size"] ** 0.5,
-                linewidth=0.8,
-                capsize=3,
-                alpha=SCATTER["alpha"],
-                zorder=3,
-            )
-        _last_sc = ax.scatter(
-            [r["x"] for r in subset], [r["y"] for r in subset],
-            c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
-            s=0, zorder=0,
+    for r in subset:
+        fc = z_cmap(z_norm(r["z_val"]))
+        # Drawn whenever there is something to draw, not only when the group has
+        # repeats: a single measurement with a recorded variance has a real bar.
+        xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["x_err_hi"] else None
+        yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["y_err_hi"] else None
+        ax.errorbar(
+            [r["x"]], [r["y"]],
+            xerr=xerr, yerr=yerr,
+            fmt=marker,
+            markerfacecolor=fc,
+            markeredgecolor=SCATTER["edge_color"],
+            markeredgewidth=SCATTER["edge_width"],
+            ecolor="gray",
+            markersize=SCATTER["marker_size"] ** 0.5,
+            linewidth=0.8,
+            capsize=3,
+            alpha=SCATTER["alpha"],
+            zorder=3,
         )
-    else:
-        _last_sc = ax.scatter(
-            [r["x"] for r in subset], [r["y"] for r in subset],
-            c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
-            s=SCATTER["marker_size"], marker=marker,
-            edgecolors=SCATTER["edge_color"],
-            linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3,
-        )
-
+    _last_sc = ax.scatter(
+        [r["x"] for r in subset], [r["y"] for r in subset],
+        c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
+        s=0, zorder=0,
+    )
     legend_handles.append(
         mlines.Line2D([], [], linestyle="None", marker=marker,
                       markerfacecolor="gray", markeredgecolor=SCATTER["edge_color"],

@@ -17,7 +17,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, m
 from pybo_gui.modules.bayesian_campaign_analysis._legend import place_legend
 
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys)
 
 parser = argparse.ArgumentParser(
     description="Single-objective campaign: the objective over one or two parameters.")
@@ -75,9 +75,6 @@ try:
 except GroupKeyError as exc:
     print(exc)
     sys.exit(2)
-# Records at one setting merge exactly when the user stopped asking for repeated
-# measurements to be told apart.
-collapsing = "repeat" not in keys
 # Only the problem knows the rig's steps, and grouping by `parameters` has to snap
 # onto them or a setting recorded once rounded and once not stays two settings.
 resolutions = {}
@@ -139,7 +136,7 @@ for exp in load_experiments_from_map(MAP_PATH):
     raw_rows.append({
         "label":    _label(exp),
         # What merges records; the map's numeric id stays for the point tags.
-        "gkey":     group_key(exp, keys, resolutions),
+        "gkey":     merge_key(exp, keys, resolutions),
         "group_id": exp["group_id"],
         "pars":     [column(exp, key) for key in par_keys],
         "obj":      column(exp, args.objective),
@@ -160,49 +157,42 @@ def _complete(row):
 # the objective is averaged. Not runs of an arm pooled together: that is --aggregate-runs,
 # a different axis. Infeasible experiments are
 # left out of the mean and drawn individually below, as in the Pareto plots.
-if collapsing:
-    groups, order = {}, []
-    for r in raw_rows:
-        if not _complete(r) or not r["feasible"]:
-            continue
-        gid = r["gkey"]
-        if gid not in groups:
-            groups[gid] = []
-            order.append(gid)
-        groups[gid].append(r)
+groups, order = {}, []
+for r in raw_rows:
+    if not _complete(r) or not r["feasible"]:
+        continue
+    gid = r["gkey"]
+    if gid not in groups:
+        groups[gid] = []
+        order.append(gid)
+    groups[gid].append(r)
 
-    rows = []
-    for gid in order:
-        items = groups[gid]
-        objs = [it["obj"] for it in items]
-        obj_mean = float(np.mean(objs))
-        if args.errorbar == "minmax":
-            err_lo = max(0.0, obj_mean - float(np.min(objs)))
-            err_hi = max(0.0, float(np.max(objs)) - obj_mean)
-        else:
-            # Both modes reconcile the repeats' scatter with the recorded measurement
-            # variance rather than adding them - see _uncertainty.
-            estimate = mean_sd if args.errorbar == "sem" else total_sd
-            err_lo = err_hi = estimate(objs, [it["obj_var"] for it in items])
-        rows.append({
-            "label":    items[0]["label"],
-            "gkey":     gid,
-            "group_id": items[0]["group_id"],
-            # Shared within the group, so the first member's are the group's.
-            "pars":     list(items[0]["pars"]),
-            "obj":      obj_mean,
-            "err_lo":   err_lo,
-            "err_hi":   err_hi,
-            "n":        len(items),
-            "feasible": True,
-        })
-    valid = rows
-else:
-    valid = [r for r in raw_rows if _complete(r)]
-    for r in valid:
-        r["err_lo"] = r["err_hi"] = 0.0
-        r["n"] = 1
-
+rows = []
+for gid in order:
+    items = groups[gid]
+    objs = [it["obj"] for it in items]
+    obj_mean = float(np.mean(objs))
+    if args.errorbar == "minmax":
+        err_lo = max(0.0, obj_mean - float(np.min(objs)))
+        err_hi = max(0.0, float(np.max(objs)) - obj_mean)
+    else:
+        # Both modes reconcile the repeats' scatter with the recorded measurement
+        # variance rather than adding them - see _uncertainty.
+        estimate = mean_sd if args.errorbar == "sem" else total_sd
+        err_lo = err_hi = estimate(objs, [it["obj_var"] for it in items])
+    rows.append({
+        "label":    items[0]["label"],
+        "gkey":     gid,
+        "group_id": items[0]["group_id"],
+        # Shared within the group, so the first member's are the group's.
+        "pars":     list(items[0]["pars"]),
+        "obj":      obj_mean,
+        "err_lo":   err_lo,
+        "err_hi":   err_hi,
+        "n":        len(items),
+        "feasible": True,
+    })
+valid = rows
 if not valid:
     print("No data with the requested keys.")
     sys.exit(1)
@@ -287,7 +277,7 @@ for lbl in all_labels:
                                   norm=gt_norm, **shared)
         else:
             ax.scatter(xs, ys, facecolors=face_color, **shared)
-    elif collapsing:
+    else:
         for r in subset:
             # Drawn whenever there is something to draw, not only when the group has
             # repeats: a single measurement with a recorded variance has a real bar.
@@ -299,14 +289,6 @@ for lbl in all_labels:
                 markersize=SCATTER["marker_size"] ** 0.5, linewidth=0.8, capsize=3,
                 alpha=SCATTER["alpha"], zorder=3,
             )
-    else:
-        ax.scatter(
-            [r["pars"][0] for r in subset], [r["obj"] for r in subset],
-            s=SCATTER["marker_size"], marker=marker, facecolors=face_color,
-            edgecolors=SCATTER["edge_color"], linewidths=SCATTER["edge_width"],
-            alpha=SCATTER["alpha"], zorder=3,
-        )
-
     legend_handles.append(
         mlines.Line2D([], [], linestyle="None", marker=marker,
                       markerfacecolor="gray" if color_by_obj else face_color,

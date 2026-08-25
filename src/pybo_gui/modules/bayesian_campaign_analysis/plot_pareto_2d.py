@@ -15,7 +15,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_const
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
     DASHES, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, parse_keys, series_label)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label, attainment_grid, step_interpolate)
@@ -109,14 +109,7 @@ except GroupKeyError as exc:
 # into one point with an error bar is what dropping `repeat` asks for; averaging whole
 # runs' fronts onto a shared grid is what dropping `run` asks for. They compose: repeats
 # become a point, then runs become a mean front.
-collapsing = "repeat" not in keys
-# Averaging whole runs' fronts onto a shared grid only applies while the runs are still
-# there to average. Dropping `repeat` *and* `run` together already merged the measurements
-# across runs into one cloud per series - that is the variability view, where each point
-# carries the spread of the runs that made it - and a front through that cloud is simply
-# its front. Running the front averaging on top would find one run per merged point and
-# report a mean over a handful of them.
-aggregating = "run" not in keys and not collapsing
+aggregating = "run" not in keys
 
 # ---- CONFIG ----
 MAP_PATH   = os.path.join(data_path, "experiment_map.json")
@@ -204,7 +197,7 @@ for exp in load_experiments_from_map(MAP_PATH):
         # built by strategy, where the label no longer names them.
         "run":      exp.get("run"),
         # Which records are the same measurement and merge into one point.
-        "gkey":     group_key(exp, keys, resolutions),
+        "gkey":     merge_key(exp, keys, resolutions),
         # The map's own numeric id, kept only because --show-numbers tags points with it.
         # Not what merges them: that is `gkey`, which follows the chosen keys.
         "group_id": exp["group_id"],
@@ -228,70 +221,62 @@ for exp in load_experiments_from_map(MAP_PATH):
 # constraints; every resulting group row is therefore feasible. The infeasible
 # experiments themselves are still drawn — as individual points (see below) —
 # they are just never folded into a group mean.
-if collapsing:
-    groups = {}
-    order  = []
-    for r in raw_rows:
-        if r["x"] is None or r["y"] is None or not r["feasible"]:
-            continue
-        gid = r["gkey"]
-        if gid not in groups:
-            groups[gid] = []
-            order.append(gid)
-        groups[gid].append(r)
+groups = {}
+order  = []
+for r in raw_rows:
+    if r["x"] is None or r["y"] is None or not r["feasible"]:
+        continue
+    gid = r["gkey"]
+    if gid not in groups:
+        groups[gid] = []
+        order.append(gid)
+    groups[gid].append(r)
 
-    rows = []
-    for gid in order:
-        items = groups[gid]
-        xs    = [it["x"] for it in items]
-        ys    = [it["y"] for it in items]
-        zs    = [it["z_val"] for it in items if it["z_val"] is not None] if use_z else []
-        x_mean, y_mean = float(np.mean(xs)), float(np.mean(ys))
-        if args.errorbar == "minmax":
-            x_err_lo = max(0.0, x_mean - float(np.min(xs)))
-            x_err_hi = max(0.0, float(np.max(xs)) - x_mean)
-            y_err_lo = max(0.0, y_mean - float(np.min(ys)))
-            y_err_hi = max(0.0, float(np.max(ys)) - y_mean)
-        else:
-            # NB: don't reuse sx/sy here — those hold the Pareto-sense signs
-            # used to compute the fronts further down.
-            # Both modes reconcile the repeats' scatter with the recorded measurement
-            # variance rather than adding them - see _uncertainty.
-            estimate = mean_sd if args.errorbar == "sem" else total_sd
-            sd_x = estimate(xs, [it["x_var"] for it in items])
-            sd_y = estimate(ys, [it["y_var"] for it in items])
-            x_err_lo = x_err_hi = sd_x
-            y_err_lo = y_err_hi = sd_y
-        rows.append({
-            # A merged point that spans runs cannot wear one member's run name, or the
-            # legend claims a run for a point most of whose measurements came from others.
-            # Its series name is what it actually stands for.
-            "label":    items[0]["label"] if "run" in keys else items[0]["arm"],
-            "arm":      items[0]["arm"],
-            "run":      items[0]["run"],
-            "gkey":     gid,
-            "group_id": items[0]["group_id"],
-            "x":        x_mean,
-            "x_err_lo": x_err_lo,
-            "x_err_hi": x_err_hi,
-            "y":        y_mean,
-            "y_err_lo": y_err_lo,
-            "y_err_hi": y_err_hi,
-            "z_val":    float(np.mean(zs)) if zs else None,
-            "n":        len(items),
-            "feasible": True,
-            # One run per group (group_id keys on run - see build_group_map), so
-            # every item in the group agrees on this.
-            "reference": items[0]["reference"],
-        })
-    valid = rows
-else:
-    valid = [r for r in raw_rows if r["x"] is not None and r["y"] is not None]
-    for r in valid:
-        r["x_err_lo"] = r["x_err_hi"] = 0.0
-        r["y_err_lo"] = r["y_err_hi"] = 0.0
-        r["n"]        = 1
-
+rows = []
+for gid in order:
+    items = groups[gid]
+    xs    = [it["x"] for it in items]
+    ys    = [it["y"] for it in items]
+    zs    = [it["z_val"] for it in items if it["z_val"] is not None] if use_z else []
+    x_mean, y_mean = float(np.mean(xs)), float(np.mean(ys))
+    if args.errorbar == "minmax":
+        x_err_lo = max(0.0, x_mean - float(np.min(xs)))
+        x_err_hi = max(0.0, float(np.max(xs)) - x_mean)
+        y_err_lo = max(0.0, y_mean - float(np.min(ys)))
+        y_err_hi = max(0.0, float(np.max(ys)) - y_mean)
+    else:
+        # NB: don't reuse sx/sy here — those hold the Pareto-sense signs
+        # used to compute the fronts further down.
+        # Both modes reconcile the repeats' scatter with the recorded measurement
+        # variance rather than adding them - see _uncertainty.
+        estimate = mean_sd if args.errorbar == "sem" else total_sd
+        sd_x = estimate(xs, [it["x_var"] for it in items])
+        sd_y = estimate(ys, [it["y_var"] for it in items])
+        x_err_lo = x_err_hi = sd_x
+        y_err_lo = y_err_hi = sd_y
+    rows.append({
+        # A merged point that spans runs cannot wear one member's run name, or the
+        # legend claims a run for a point most of whose measurements came from others.
+        # Its series name is what it actually stands for.
+        "label":    items[0]["label"] if "run" in keys else items[0]["arm"],
+        "arm":      items[0]["arm"],
+        "run":      items[0]["run"],
+        "gkey":     gid,
+        "group_id": items[0]["group_id"],
+        "x":        x_mean,
+        "x_err_lo": x_err_lo,
+        "x_err_hi": x_err_hi,
+        "y":        y_mean,
+        "y_err_lo": y_err_lo,
+        "y_err_hi": y_err_hi,
+        "z_val":    float(np.mean(zs)) if zs else None,
+        "n":        len(items),
+        "feasible": True,
+        # One run per group (group_id keys on run - see build_group_map), so
+        # every item in the group agrees on this.
+        "reference": items[0]["reference"],
+    })
+valid = rows
 # ---- REFERENCE (pulled out of the ordinary per-label series) ----
 # A run flagged as the user's benchmark stops being "just another run": it is drawn
 # once, apart, through _reference - see below - instead of taking its usual place
@@ -398,56 +383,37 @@ for lbl in [] if aggregating else all_labels:
     if not subset:
         continue
 
-    if collapsing:
-        if use_z:
-            colors_pts = [z_cmap(z_norm(r["z_val"])) for r in subset]
-        else:
-            face_color = _label_color(lbl)
-            colors_pts = [face_color] * len(subset)
-        for r, fc in zip(subset, colors_pts):
-            # Drawn whenever there is something to draw, not only when the group has
-            # repeats: a single measurement with a recorded variance has a real bar.
-            xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["x_err_hi"] else None
-            yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["y_err_hi"] else None
-            ax.errorbar(
-                [r["x"]], [r["y"]],
-                xerr=xerr, yerr=yerr,
-                fmt=marker,
-                markerfacecolor=fc,
-                markeredgecolor=SCATTER["edge_color"],
-                markeredgewidth=SCATTER["edge_width"],
-                ecolor=fc if isinstance(fc, str) else "gray",
-                markersize=SCATTER["marker_size"] ** 0.5,
-                linewidth=0.8,
-                capsize=3,
-                alpha=SCATTER["alpha"],
-                zorder=3,
-            )
-        if use_z:
-            # invisible scatter to anchor the colorbar
-            _last_sc = ax.scatter(
-                [r["x"] for r in subset], [r["y"] for r in subset],
-                c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
-                s=0, zorder=0,
-            )
+    if use_z:
+        colors_pts = [z_cmap(z_norm(r["z_val"])) for r in subset]
     else:
-        if use_z:
-            _last_sc = ax.scatter(
-                [r["x"] for r in subset], [r["y"] for r in subset],
-                c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
-                s=SCATTER["marker_size"], marker=marker,
-                edgecolors=SCATTER["edge_color"],
-                linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3,
-            )
-        else:
-            face_color = _label_color(lbl)
-            ax.scatter(
-                [r["x"] for r in subset], [r["y"] for r in subset],
-                s=SCATTER["marker_size"], marker=marker,
-                facecolors=face_color, edgecolors=SCATTER["edge_color"],
-                linewidths=SCATTER["edge_width"], alpha=SCATTER["alpha"], zorder=3,
-            )
-
+        face_color = _label_color(lbl)
+        colors_pts = [face_color] * len(subset)
+    for r, fc in zip(subset, colors_pts):
+        # Drawn whenever there is something to draw, not only when the group has
+        # repeats: a single measurement with a recorded variance has a real bar.
+        xerr = [[r["x_err_lo"]], [r["x_err_hi"]]] if r["x_err_hi"] else None
+        yerr = [[r["y_err_lo"]], [r["y_err_hi"]]] if r["y_err_hi"] else None
+        ax.errorbar(
+            [r["x"]], [r["y"]],
+            xerr=xerr, yerr=yerr,
+            fmt=marker,
+            markerfacecolor=fc,
+            markeredgecolor=SCATTER["edge_color"],
+            markeredgewidth=SCATTER["edge_width"],
+            ecolor=fc if isinstance(fc, str) else "gray",
+            markersize=SCATTER["marker_size"] ** 0.5,
+            linewidth=0.8,
+            capsize=3,
+            alpha=SCATTER["alpha"],
+            zorder=3,
+        )
+    if use_z:
+        # invisible scatter to anchor the colorbar
+        _last_sc = ax.scatter(
+            [r["x"] for r in subset], [r["y"] for r in subset],
+            c=[r["z_val"] for r in subset], cmap=z_cmap, norm=z_norm,
+            s=0, zorder=0,
+        )
     legend_face = "gray" if use_z else _label_color(lbl)
     legend_handles.append(
         # Marker only: the front line is one style shared by every series, so it is named

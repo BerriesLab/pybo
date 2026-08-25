@@ -12,7 +12,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._labels import base_label, is_i
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, parse_keys)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys)
 
 parser = argparse.ArgumentParser(description="Per-parameter/result evolution plot.")
 parser.add_argument("--group-by", action="append", default=None, dest="group_by",
@@ -28,9 +28,6 @@ try:
 except GroupKeyError as exc:
     print(exc)
     sys.exit(2)
-# Records at one setting merge exactly when the user stopped asking for repeated
-# measurements to be told apart.
-collapsing = "repeat" not in keys
 # Only the problem knows the rig's steps, and grouping by `parameters` has to snap
 # onto them or a setting recorded once rounded and once not stays two settings.
 resolutions = {}
@@ -90,7 +87,7 @@ for exp in experiments:
         "index":         exp["index"],
         "iteration":     exp.get(ITERATION_KEY),
         # What merges records; the map's numeric id stays for the point tags.
-        "gkey":     group_key(exp, keys, resolutions),
+        "gkey":     merge_key(exp, keys, resolutions),
         "group_id":      exp["group_id"],
         "run":           exp.get("run"),
         "label":         _label(exp),
@@ -101,33 +98,32 @@ for exp in experiments:
 # In grouped mode, collapse replicate experiments (same group_id) to one row whose
 # results are the elementwise mean; label/iteration/index come from the group's
 # first (chronological) experiment, parameters are shared within the group.
-if collapsing:
-    grouped, order = {}, []
-    for r in rows:
-        gid = r["gkey"]
-        if gid not in grouped:
-            grouped[gid] = []
-            order.append(gid)
-        grouped[gid].append(r)
+grouped, order = {}, []
+for r in rows:
+    gid = r["gkey"]
+    if gid not in grouped:
+        grouped[gid] = []
+        order.append(gid)
+    grouped[gid].append(r)
 
-    def _mean_results(items):
-        out = {}
-        for k in result_keys:
-            vals = [it["results"].get(k) for it in items]
-            vals = [v for v in vals if isinstance(v, (int, float)) and not isinstance(v, bool)]
-            out[k] = sum(vals) / len(vals) if vals else None
-        return out
+def _mean_results(items):
+    out = {}
+    for k in result_keys:
+        vals = [it["results"].get(k) for it in items]
+        vals = [v for v in vals if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        out[k] = sum(vals) / len(vals) if vals else None
+    return out
 
-    rows = [{
-        "index":      grouped[gid][0]["index"],
-        "iteration":  grouped[gid][0]["iteration"],
-        "gkey":       gid,
-        "group_id":   items[0]["group_id"],
-        "run":        grouped[gid][0]["run"],
-        "label":      grouped[gid][0]["label"],
-        "parameters": grouped[gid][0]["parameters"],
-        "results":    _mean_results(grouped[gid]),
-    } for gid in order]
+rows = [{
+    "index":      grouped[gid][0]["index"],
+    "iteration":  grouped[gid][0]["iteration"],
+    "gkey":       gid,
+    "group_id":   grouped[gid][0]["group_id"],
+    "run":        grouped[gid][0]["run"],
+    "label":      grouped[gid][0]["label"],
+    "parameters": grouped[gid][0]["parameters"],
+    "results":    _mean_results(grouped[gid]),
+} for gid in order]
 
 all_labels = sorted({r["label"] for r in rows})
 _color, _marker, _, _ = styler(fig_cfg, all_labels)
