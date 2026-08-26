@@ -3,13 +3,13 @@
 -e .
 
 torch~=2.8.0
-botorch~=0.13.0
+botorch~=0.18.1
 pyBO~=0.3.0
 ImageIO~=2.37.2
 numpy~=2.2.5
 matplotlib~=3.10.1
 scipy~=1.15.2
-gpytorch~=1.14
+gpytorch~=1.15.2
 PySide6~=6.11.1
 PyYAML~=6.0.2
 asteval~=1.0.9

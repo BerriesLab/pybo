@@ -341,8 +341,15 @@ def test_a_series_is_named_by_what_still_tells_it_apart():
     assert series_label({"run": None}, (), fallback="unnamed") == "unnamed"
 
 
-def test_parse_keys_normalises_order_and_rejects_nonsense():
-    assert parse_keys(["run", "parameters"]) == parse_keys(["parameters", "run"])
+def test_parse_keys_preserves_order_dedupes_and_rejects_nonsense():
+    # Order is the caller's own choice now, not normalised away - it decides
+    # series_label's part order, and the GUI's reorderable key list depends on it
+    # actually reaching the script. Grouping itself is unaffected either way: which
+    # records pool together is a plain equality test on the chosen keys.
+    assert parse_keys(["run", "parameters"]) == ("run", "parameters")
+    assert parse_keys(["parameters", "run"]) == ("parameters", "run")
+    # A repeated key collapses to its first occurrence rather than erroring.
+    assert parse_keys(["run", "run", "parameters"]) == ("run", "parameters")
     with pytest.raises(GroupKeyError):
         parse_keys(["strategy", "colour"])
     # The key that used to exist and no longer does, so a stale command says so.

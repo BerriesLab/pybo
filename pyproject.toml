@@ -14,12 +14,12 @@ authors = [
 ]
 dependencies = [
     "numpy >= 2.2",
-    "botorch == 0.13.0",
+    "botorch == 0.18.1",
     "matplotlib >= 3.10",
     "scipy >= 1.15",
     "scikit-optimize >= 0.10",
     "scikit-learn >= 1.6",
-    "gpytorch == 1.14",
+    "gpytorch == 1.15.2",
     "torch == 2.8.0",
     "sympy == 1.14.0",
     "pandas >= 2.3",
