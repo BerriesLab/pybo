@@ -21,8 +21,9 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog,
+    QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView,
+    QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QRadioButton,
     QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -32,7 +33,6 @@ from pybo_gui.configs import workspace
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
     build_map, map_stamp, stamp_digest)
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
-from pybo_gui.modules.bayesian_campaign_analysis._series import GROUP_KEYS
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import (
     launch_analysis, run_off_thread, stop_token, stopped_since, watch,
@@ -463,15 +463,57 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         "technology": "Technology — what produced the measurement, as opposed to what "
                       "chose it.",
     }
-    key_boxes = {}
-    for key in GROUP_KEYS:
-        box = QCheckBox(key.replace("_", " "))
-        box.setChecked(True)
-        # .get, not [key]: GROUP_KEYS is the one list a key is added to, and a new
+    # Display text for a key's checkbox, where it should read as something other than
+    # the key itself with underscores swapped for spaces. Independent of _series._FIELD,
+    # which spells these same keys for a different reason - looking a value up on an
+    # experiment record - so a cosmetic rename here can't silently change what that reads.
+    KEY_LABEL = {
+        "parameters": "Parameters",
+        "run": "Folder",
+        "strategy": "Optimizer",
+        "n_initial": "Initial Population Size",
+        "provenance": "Experiment Type",
+        "technology": "Technology",
+    }
+    # The starting arrangement, dragged from here rather than fixed: --group-by now sends
+    # keys in whatever order the list holds them, since a series' label is built by walking
+    # that same order (see _series.parse_keys) - so dragging "technology" ahead of
+    # "strategy" is what makes a label read "gaas bayesian" instead of "bayesian gaas".
+    # It never changes *which* records pool together, which is a plain equality test on the
+    # ticked keys and comes out the same whatever order they're listed in.
+    DEFAULT_KEY_ORDER = ("parameters", "strategy", "n_initial", "provenance", "technology", "run")
+    key_items = {}
+    key_order_list = QListWidget()
+    key_order_list.setFlow(QListView.Flow.LeftToRight)
+    key_order_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+    key_order_list.setFrameShape(QFrame.Shape.NoFrame)
+    key_order_list.setSpacing(4)
+    key_order_list.setFixedHeight(34)
+    key_order_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    key_order_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    key_order_list.setToolTip("Drag to reorder. Ticked keys are what tells records apart; "
+                              "their order here is only what a series label lists first.")
+    for key in DEFAULT_KEY_ORDER:
+        item = QListWidgetItem(KEY_LABEL.get(key, key.replace("_", " ")))
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable
+                      | Qt.ItemFlag.ItemIsDragEnabled)
+        item.setCheckState(Qt.CheckState.Checked)
+        # .get, not [key]: DEFAULT_KEY_ORDER is the one list a key is added to, and a new
         # one arriving without a blurb here should cost it a tooltip, not take the
         # whole tab down on a KeyError.
-        box.setToolTip(KEY_TEXT.get(key, ""))
-        key_boxes[key] = box
+        item.setToolTip(KEY_TEXT.get(key, ""))
+        item.setData(Qt.ItemDataRole.UserRole, key)
+        key_order_list.addItem(item)
+        key_items[key] = item
+
+    def _key_checked(key: str) -> bool:
+        return key_items[key].checkState() == Qt.CheckState.Checked
+
+    def _checked_keys_in_order() -> list:
+        """The ticked keys, in the list's current (user-dragged) order."""
+        return [key_order_list.item(i).data(Qt.ItemDataRole.UserRole)
+                for i in range(key_order_list.count())
+                if key_order_list.item(i).checkState() == Qt.CheckState.Checked]
 
     # What a merged point's bar shows - the spread of the repeats behind it, which only
     # exists where a setting was measured more than once in one run. Separate from the band
@@ -559,20 +601,20 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # The error bar is always available: repeats of a setting always merge, so a
         # campaign that measured any has a bar to show. The band needs runs pooled.
         err_combo.setEnabled(True)
-        band_combo.setEnabled(not key_boxes["run"].isChecked())
+        band_combo.setEnabled(not _key_checked("run"))
         err_combo.setToolTip(ERRORBAR_TEXT[err_combo.currentText()]
                              if err_combo.isEnabled() else "")
         band_combo.setToolTip(BAND_TEXT[band_combo.currentText()]
                               if band_combo.isEnabled() else "")
 
-    for _box in key_boxes.values():
-        _box.stateChanged.connect(lambda _s: _on_grouping_change())
+    # itemChanged also fires on a plain drag reorder in PySide6 - harmless, since this
+    # only reads check state, not position.
+    key_order_list.itemChanged.connect(lambda _item: _on_grouping_change())
     err_combo.currentTextChanged.connect(lambda _t: _on_grouping_change())
     band_combo.currentTextChanged.connect(lambda _t: _on_grouping_change())
     _on_grouping_change()
 
-    # Filled here, where the widgets exist, but shown at the top of the page.
-    group_layout.addWidget(_row(*(key_boxes[k] for k in GROUP_KEYS)))
+    group_layout.addWidget(key_order_list)
     group_layout.addWidget(_row(QLabel("Error bar:"), err_combo,
                                 QLabel("Band:"), band_combo))
     group_layout.addWidget(_grouping_note(
@@ -582,7 +624,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         "point per setting per run and one curve per run. Untick run and whole runs "
         "average into one curve or front per series, with the band showing how differently "
         "the optimizer behaves from seed to seed; untick n_initial as well and the design "
-        "sizes pool, giving one series per strategy."))
+        "sizes pool, giving one series per strategy. Drag a key left or right to change "
+        "the order a series' label lists it in - that never changes what pools together."))
     plot_page_layout.insertWidget(0, group_box)
     # Scoring is its own row: the first writes gain.json and the second reads it, so
     # they run in that order and neither belongs beside the drawing buttons.
@@ -1212,10 +1255,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         whole curves, hence `bands`; --errorbar only by the ones that draw a merged point,
         and every one of those takes it, so it needs no flag of its own.
         """
-        args = [flag for key in GROUP_KEYS if key_boxes[key].isChecked()
-                for flag in ("--group-by", key)]
+        args = [flag for key in _checked_keys_in_order() for flag in ("--group-by", key)]
         args += ["--errorbar", err_combo.currentText()]
-        if bands and not key_boxes["run"].isChecked():
+        if bands and not _key_checked("run"):
             args += ["--band", band_combo.currentText()]
         return args
 
@@ -1421,7 +1463,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # The per-step gain view rewrites what a point on the curve means, and the plot
         # refuses to average runs into it. So that view keeps runs apart however the boxes
         # stand, rather than being refused for a setting that is about the other buttons.
-        if improvement and not key_boxes["run"].isChecked():
+        if improvement and not _key_checked("run"):
             extra += ["--group-by", "run"]
             post("Plot HV improvement keeps runs separate: per-step gains cannot be "
                  "averaged across runs.")

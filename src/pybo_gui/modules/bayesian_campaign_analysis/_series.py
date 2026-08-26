@@ -38,8 +38,9 @@ WHAT IS NOT A KEY
 """
 from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import _snap
 
-# In the order the GUI shows them: what a measurement was taken at, then where it came
-# from, then which of several identical ones it is.
+# The valid keys, and the order --group-by defaults to with none named. The GUI's own
+# order is the user's to set - see tab_campaign's reorderable grouping list - and no
+# longer follows this tuple.
 GROUP_KEYS = ("parameters", "run", "strategy", "n_initial",
               "provenance", "technology")
 
@@ -57,18 +58,22 @@ class GroupKeyError(ValueError):
 
 
 def parse_keys(values) -> tuple:
-    """The keys named on the command line, in GROUP_KEYS order.
+    """The keys named on the command line, in the order given.
 
-    Order is normalised rather than taken as given: the key set is what decides grouping,
-    so two invocations naming the same keys differently have to produce the same series -
-    including the same series *labels*, which are built from this order.
+    Which records pool together is a plain equality test on the chosen keys, so it comes
+    out the same whatever order they're listed in - only series_label's part order reads
+    this order. A repeated key collapses to its first occurrence rather than erroring: the
+    GUI's reorderable list can't produce one, but a hand-typed --group-by could.
     """
     unknown = [v for v in values if v not in GROUP_KEYS]
     if unknown:
         raise GroupKeyError(f"Unknown --group-by {unknown}. "
                         f"Available: {', '.join(GROUP_KEYS)}")
-    chosen = set(values)
-    return tuple(k for k in GROUP_KEYS if k in chosen)
+    seen = []
+    for v in values:
+        if v not in seen:
+            seen.append(v)
+    return tuple(seen)
 
 
 def merge_key(exp: dict, keys, resolutions: dict | None = None) -> tuple:
