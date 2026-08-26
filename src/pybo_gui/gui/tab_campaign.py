@@ -1255,15 +1255,18 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
               on_fail=_failed,
               on_output=_line)
 
-    def _group_by_args(bands: bool = True) -> list:
+    def _group_by_args(bands: bool = True, errorbar: bool = True) -> list:
         """The ticked keys, and the two spread controls they make meaningful.
 
         Every plot takes --group-by. --band is only understood by the ones that average
-        whole curves, hence `bands`; --errorbar only by the ones that draw a merged point,
-        and every one of those takes it, so it needs no flag of its own.
+        whole curves, hence `bands`; --errorbar only by the ones that draw a merged
+        point, hence `errorbar` - plot_hypervolume and plot_evolution draw neither
+        merged points nor (for evolution) averaged curves, so both flags would be
+        arguments their own parser has never heard of.
         """
         args = [flag for key in _checked_keys_in_order() for flag in ("--group-by", key)]
-        args += ["--errorbar", err_combo.currentText()]
+        if errorbar:
+            args += ["--errorbar", err_combo.currentText()]
         if bands and not _key_checked("run"):
             args += ["--band", band_combo.currentText()]
         return args
@@ -1466,7 +1469,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         if objectives is None:
             return
         extra = _constraint_args() + (["--improvement"] if improvement else []) + objectives
-        extra += _group_by_args()
+        extra += _group_by_args(errorbar=False)
         # The per-step gain view rewrites what a point on the curve means, and the plot
         # refuses to average runs into it. So that view keeps runs apart however the boxes
         # stand, rather than being refused for a setting that is about the other buttons.
@@ -1592,7 +1595,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         button = QPushButton("Plot")
         button.clicked.connect(
             lambda _checked=False, s=script, g=grouped, a=aggregates:
-            _launch(s, *(_group_by_args(bands=a) if g else [])))
+            _launch(s, *(_group_by_args(bands=a, errorbar=False) if g else [])))
         diag_layout.addWidget(_row(label, button))
 
     # An objective usually sits with the tutorial that produced the data, so offer the
