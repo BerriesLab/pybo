@@ -27,7 +27,6 @@ class MainWindow(QMainWindow):
     def __init__(self, root: str = ""):
         super().__init__()
         self.setWindowTitle("pyBO — campaign analysis")
-        self.resize(760, 520)
 
         self.step_list = StepListWindow(parent=self, initial_root=root)
         # One object shared by every tab: Settings writes to it, the campaign tab reads
@@ -55,6 +54,12 @@ class MainWindow(QMainWindow):
         stop.setToolTip("Close every plot window still open, and the process behind it")
         stop.clicked.connect(self._stop_plots)
         bar.addPermanentWidget(stop)
+
+        # Sized to what the tabs actually need rather than a fixed guess: the Plot tab's
+        # "Pareto and hypervolume" box alone won't fit in a window much smaller than this,
+        # and a hardcoded resize() here used to open the window too small for it, squeezing
+        # every row down below its own minimum size.
+        self.resize(self.sizeHint())
 
         self.step_list.scan()
         self.step_list.show()
