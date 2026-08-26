@@ -481,7 +481,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # "strategy" is what makes a label read "gaas bayesian" instead of "bayesian gaas".
     # It never changes *which* records pool together, which is a plain equality test on the
     # ticked keys and comes out the same whatever order they're listed in.
-    DEFAULT_KEY_ORDER = ("parameters", "strategy", "n_initial", "provenance", "technology", "run")
+    DEFAULT_KEY_ORDER = ("provenance", "strategy", "n_initial", "parameters", "technology", "run")
+    # Ticked by default: what the campaign was (experiment type, optimizer, design size)
+    # and what setting was measured (parameters). Technology and run start unticked -
+    # pooling across them is the common case, not the exception.
+    DEFAULT_TICKED = {"provenance", "strategy", "n_initial", "parameters"}
     key_items = {}
     key_order_list = QListWidget()
     key_order_list.setFlow(QListView.Flow.LeftToRight)
@@ -497,7 +501,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         item = QListWidgetItem(KEY_LABEL.get(key, key.replace("_", " ")))
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable
                       | Qt.ItemFlag.ItemIsDragEnabled)
-        item.setCheckState(Qt.CheckState.Checked)
+        item.setCheckState(Qt.CheckState.Checked if key in DEFAULT_TICKED
+                           else Qt.CheckState.Unchecked)
         # .get, not [key]: DEFAULT_KEY_ORDER is the one list a key is added to, and a new
         # one arriving without a blurb here should cost it a tooltip, not take the
         # whole tab down on a KeyError.
@@ -813,10 +818,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         # only that let an empty or misspelled path take the application down.
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - a bad path must not kill the tab
             state["problem"] = None
+            settings.objective_path = ""
             post(f"Could not load: {exc}")
             _sync_ground_truth()
             return
         state["problem"] = problem
+        settings.objective_path = path
         # The count comes from the problem now, so loading one is what changes it - the
         # radio buttons used to fire this and no longer exist.
         _on_objective_count_change()

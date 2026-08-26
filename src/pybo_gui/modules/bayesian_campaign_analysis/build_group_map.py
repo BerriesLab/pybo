@@ -20,27 +20,10 @@ import argparse
 import json
 from pathlib import Path
 
-# Not a grouping policy and not a knob: what decides whether two records are the same
-# setting is the parameter's resolution. This only absorbs float formatting for the
-# parameters that have none, so two records meaning the same number still meet.
-_DUST_DECIMALS = 6
-
-
-def _snap(value, resolution):
-    """The grid point `value` stands for, or None when it was never recorded.
-
-    A resolution is the rig's own step, in the parameter's units, so the value snaps to
-    that grid: two records land together exactly when the rig could not have told them
-    apart. Without one there is no grid to snap to and the value is compared as measured,
-    give or take float formatting.
-    """
-    if value is None:
-        return None
-    if resolution:
-        # Rounding the multiple rather than the product keeps the key free of the float
-        # dust that value/resolution*resolution leaves behind.
-        return round(round(value / resolution) * resolution, 10)
-    return round(value, _DUST_DECIMALS)
+# Shared with build_polynomial_gt.py, which needs the same rig-grid snap and lives in
+# core pybo - so this can't stay pybo_gui-only without pulling the GUI package into a
+# script meant to keep running from a terminal on its own.
+from pybo.utils.helpers import snap as _snap
 
 
 def _setting_key(entry: dict, resolutions: dict) -> tuple:

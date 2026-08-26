@@ -2,6 +2,7 @@ import argparse
 import json
 import glob
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.compose import TransformedTargetRegressor
+
+from pybo.utils.helpers import snap
 
 
 def _records_to_frame(records):
@@ -21,7 +24,7 @@ def _records_to_frame(records):
     return df if not df.empty and df.notna().all(axis=None) else None
 
 
-def _pooled_noise_std(X, Y, decimals):
+def _pooled_noise_std(X, Y, decimals, resolutions=None):
     """Pooled within-setting std per column of Y, as (std, n_groups, dof), or
     (None, 0, 0) when no setting was measured more than once.
 
@@ -38,13 +41,22 @@ def _pooled_noise_std(X, Y, decimals):
     proposal that produced it, so the rounding has to land on the rig's grid to
     put them back together.
 
+    `resolutions`, when given, snaps each column to its own resolution (the same
+    rig-grid snap build_group_map uses for the same reason) instead of `decimals`
+    rounding every column alike - a flat decimals count cannot be right for two
+    parameters at very different scales, e.g. one in tens and another in tens of
+    thousands.
+
     Pooled, not averaged: group sizes are uneven, and dividing the total squared
     deviation by the total degrees of freedom weights each group by what it
     actually contributes. Groups of one carry no degrees of freedom and drop out
     rather than counting as a variance of zero, which would pull a plain average
     of per-group variances toward nothing.
     """
-    key = X.round(decimals)
+    if resolutions:
+        key = X.apply(lambda col: col.map(lambda v: snap(v, resolutions.get(col.name))))
+    else:
+        key = X.round(decimals)
     key = pd.Series(list(key.itertuples(index=False, name=None)), index=Y.index)
 
     squares = pd.Series(0.0, index=Y.columns)
@@ -72,6 +84,27 @@ def main():
     parser.add_argument("--root-dir", default="",
                         help="Root folder of the Bayesian optimization run, searched "
                              "recursively for experiment.json files (default: %(default)s)")
+    parser.add_argument("--experiments", action="append", default=[],
+                        help="An experiment.json file, or a folder containing one, to "
+                             "fit on - repeat for more than one. Given at least one, "
+                             "this replaces --root-dir's recursive search entirely: it "
+                             "is how a hand-picked list of individual experiments "
+                             "(excluding a bad replicate, say) reaches the fit.")
+    parser.add_argument("--map",
+                        help="An experiment_map.json (build_experiment_map's own "
+                             "format - one flat record per observation, already "
+                             "resolved from a directory selection) to fit on instead of "
+                             "opening experiment.json files directly. Takes priority "
+                             "over --experiments and --root-dir. Requires --objective: "
+                             "the map merges objectives, constraints and trackers into "
+                             "one 'results' dict, and only the objective's own cfg "
+                             "labels say which quantity is which.")
+    parser.add_argument("--objective",
+                        help="Path to the objective.py these experiments belong to. "
+                             "Its par_cfg resolutions drive the pooled-noise-std "
+                             "grouping instead of --group-decimals, the same rig-grid "
+                             "snap build_group_map uses elsewhere. Without one, "
+                             "--group-decimals is used as before.")
     parser.add_argument("--degree", type=int, default=2,
                         help="Polynomial degree (default: %(default)s)")
     parser.add_argument("--out",
@@ -119,32 +152,67 @@ def main():
     root_dir = args.root_dir
     degree = args.degree
 
-    paths = glob.glob(f"{root_dir}/**/*experiment.json", recursive=True)
-    if not paths:
-        raise SystemExit(f"No experiment.json found under {root_dir} (searched recursively)")
+    resolutions = {}
+    objective = None
+    if args.objective:
+        from pybo.objectives.loader import load_objective
+        objective = load_objective(args.objective)
+        resolutions = {cfg.label: cfg.resolution for cfg in objective.par_cfg}
+
     parameter_records = []
     objective_records = []
     constraint_records = []
     tracker_records = []
     n_skipped_source = 0
-    for path in paths:
-        # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
-        # like "Tool Wear (μm)" on the way in.
-        with open(path, encoding="utf-8") as f:
-            json_file = json.load(f)
-        for observation in json_file["data"]:
-            if args.source != "all" and observation.get("source") != args.source:
+
+    if args.map:
+        if objective is None:
+            raise SystemExit("--map requires --objective, to split its merged "
+                             "'results' back into objectives/constraints/trackers.")
+        obj_labels = {cfg.label for cfg in objective.obj_cfg or []}
+        con_labels = {cfg.label for cfg in objective.ineq_Y_con_cfg or []}
+        trk_labels = {cfg.label for cfg in objective.trk_cfg or []}
+        with open(args.map, encoding="utf-8") as f:
+            experiments = json.load(f)["experiments"]
+        source_label = f"{args.map} ({len(experiments)} observation(s))"
+        for entry in experiments:
+            if args.source != "all" and entry.get("source") != args.source:
                 n_skipped_source += 1
                 continue
-            parameter_records.append(observation["parameters"])
-            objective_records.append(observation["objectives"])
-            constraint_records.append(observation["constraints"])
-            tracker_records.append(observation["trackers"])
+            results = entry["results"]
+            parameter_records.append(entry["parameters"])
+            objective_records.append({k: v for k, v in results.items() if k in obj_labels})
+            constraint_records.append({k: v for k, v in results.items() if k in con_labels})
+            tracker_records.append({k: v for k, v in results.items() if k in trk_labels})
+    else:
+        if args.experiments:
+            paths = [str(p / "experiment.json") if p.is_dir() else str(p)
+                    for p in (Path(entry) for entry in args.experiments)]
+            source_label = f"{len(paths)} selected experiment(s)"
+        else:
+            paths = glob.glob(f"{root_dir}/**/*experiment.json", recursive=True)
+            source_label = f"{root_dir} (searched recursively)"
+        if not paths:
+            raise SystemExit(f"No experiment.json found under {source_label}")
+        for path in paths:
+            # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
+            # like "Tool Wear (μm)" on the way in.
+            with open(path, encoding="utf-8") as f:
+                json_file = json.load(f)
+            for observation in json_file["data"]:
+                if args.source != "all" and observation.get("source") != args.source:
+                    n_skipped_source += 1
+                    continue
+                parameter_records.append(observation["parameters"])
+                objective_records.append(observation["objectives"])
+                constraint_records.append(observation["constraints"])
+                tracker_records.append(observation["trackers"])
+
     if args.source != "all":
         print(f"--source {args.source}: fitting on {len(parameter_records)} observation(s), "
               f"{n_skipped_source} excluded")
     if not parameter_records:
-        raise SystemExit(f"No observation matched --source {args.source} under {root_dir}")
+        raise SystemExit(f"No observation matched --source {args.source} under {source_label}")
 
     X = _records_to_frame(parameter_records)
     Y_obj = _records_to_frame(objective_records)
@@ -174,10 +242,12 @@ def main():
             print("computed from measurements rather than measured, so no noise of its "
                   "own: make\nthe noisy constraint out of the noisy quantities behind it")
         else:
-            noise_std, n_groups, dof = _pooled_noise_std(X, Y, args.group_decimals)
+            noise_std, n_groups, dof = _pooled_noise_std(X, Y, args.group_decimals, resolutions)
             if noise_std is None:
-                print(f"no setting measured more than once at --group-decimals "
-                      f"{args.group_decimals}, noise std not estimated")
+                grouped_by = (f"each parameter's own resolution from {args.objective}"
+                             if resolutions else f"--group-decimals {args.group_decimals}")
+                print(f"no setting measured more than once, grouped by {grouped_by} - "
+                      f"noise std not estimated")
             else:
                 print(f"\npooled noise std over {n_groups} repeated settings, {dof} dof:")
                 print(noise_std)
@@ -266,7 +336,7 @@ def main():
         if show: print(f"\n# --- {block}: paste into {method} ---")
         if show: print(f"# Columns are in the records' order: {', '.join(Y.columns)}.")
         if show: print(f"# Reorder the stack to match the order the objective declares them in.")
-        if show: print(f"# Fitted from {root_dir} at degree {degree}, R2 = {pipeline.score(X, Y):.4g}.")
+        if show: print(f"# Fitted from {source_label} at degree {degree}, R2 = {pipeline.score(X, Y):.4g}.")
         if show: print(f"    def {method}(self, X: Tensor, noisy: bool = False) -> Tensor:")
         for k, (mean, scale) in enumerate(zip(scaler.mean_, scaler.scale_)):
             if show: print(f"        x{k} = (X[..., {k}] - {mean:.6g}) / {scale:.6g}")

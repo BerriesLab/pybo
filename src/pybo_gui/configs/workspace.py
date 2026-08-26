@@ -91,6 +91,22 @@ def cache_dir() -> Path | None:
     return cache
 
 
+def gt_map_cache_dir() -> Path | None:
+    """Where a map built for the ground-truth tab is kept, or None with no workspace.
+
+    A sibling of cache_dir(), not the same directory: the ground-truth tab and the
+    campaign plots build maps from selections that are free to differ, and sharing one
+    cache would mean one's rebuild could evict or be mistaken for the other's -
+    keeping them apart is what "same method, files that don't overwrite" means here.
+    """
+    workspace = get_workspace()
+    if workspace is None:
+        return None
+    cache = workspace / "gt_map_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
 def new_instance_dir() -> Path:
     """A fresh directory for this session to write its maps into.
 
@@ -137,17 +153,17 @@ def usage() -> dict | None:
     root = get_workspace()
     if root is None:
         return None
-    cache = root / "map_cache"
-    cached = _dir_size(cache) if cache.is_dir() else 0
+    caches = [root / "map_cache", root / "gt_map_cache"]
+    cached = sum(_dir_size(c) for c in caches if c.is_dir())
     total = _dir_size(root)
-    return {"total": total, "cache": cached, "sessions": total - cached,
-            "entries": len(list(cache.iterdir())) if cache.is_dir() else 0}
+    entries = sum(len(list(c.iterdir())) for c in caches if c.is_dir())
+    return {"total": total, "cache": cached, "sessions": total - cached, "entries": entries}
 
 
 def clear_cache() -> int:
     """Delete the cached maps, returning the bytes freed.
 
-    Only map_cache, and only its contents: a cached map is rebuilt from the records on
+    Only the caches, and only their contents: a cached map is rebuilt from the records on
     demand, so losing it costs time and nothing else. The session directories are left
     alone - one of them holds the map the running GUI is pointing its plots at, and
     another may be what a crashed session left to be recovered.
@@ -155,10 +171,11 @@ def clear_cache() -> int:
     root = get_workspace()
     if root is None:
         return 0
-    cache = root / "map_cache"
-    if not cache.is_dir():
-        return 0
-    freed = _dir_size(cache)
-    for entry in cache.iterdir():
-        shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
+    freed = 0
+    for cache in (root / "map_cache", root / "gt_map_cache"):
+        if not cache.is_dir():
+            continue
+        freed += _dir_size(cache)
+        for entry in cache.iterdir():
+            shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
     return freed

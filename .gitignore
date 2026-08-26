@@ -52,4 +52,7 @@ __pycache__/
 # A GUI session's own settings: it holds an absolute path to this machine's
 # workspace, which means nothing on another one. Created on first use.
 /src/pybo_gui/configs/gui_app/state.json
+# The ground-truth tab's own last-used fit settings - same reasoning, this machine's
+# own choice, not something to share through the repo.
+/src/pybo_gui/configs/gui_app/ground_truth_state.json
 /todo.txt

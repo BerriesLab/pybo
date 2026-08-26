@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QStatusBar, QTabWidget
 
-from pybo_gui.gui import tab_campaign, tab_settings
+from pybo_gui.gui import tab_campaign, tab_ground_truth, tab_settings
 from pybo_gui.gui.launchers import stop_all
 from pybo_gui.gui.message_log import post, show_log
 from pybo_gui.gui.settings import Settings
@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         constructor, plots = tab_campaign.build(self.step_list, self.settings)
         tabs.addTab(constructor, "Bayesian campaign constructor")
         tabs.addTab(plots, "Plot")
+        tabs.addTab(tab_ground_truth.build(self.step_list, self.settings), "Ground truth")
         tabs.addTab(tab_settings.build(self.settings), "Settings")
         self.setCentralWidget(tabs)
 

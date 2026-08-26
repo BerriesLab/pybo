@@ -16,6 +16,12 @@ from pybo_gui.configs.figure_settings import store
 class Settings:
     """What the tabs share. Style access is delegated to the figure-settings store."""
 
+    # Plain session state, not proxied to a store like the two properties below: which
+    # objective is loaded is a fact about this running window, not a setting to survive
+    # a restart. Set by the constructor tab on a successful load, read by the ground
+    # truth tab so it doesn't need a second Browse/Load row for the same file.
+    objective_path: str = ""
+
     @property
     def plot_style(self):
         """The active publisher style, or None when the campaign uses the bare defaults."""

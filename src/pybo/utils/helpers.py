@@ -116,3 +116,26 @@ def project_linear_equalities(X: Tensor, lin_eq_cons) -> Tensor:
     # solve (A A^T) Y^T = error^T
     Y = torch.linalg.solve(A @ A.T, error.T).T  # (n, m)
     return X - Y @ A
+
+
+# Not a grouping policy and not a knob: what decides whether two records are the same
+# setting is the parameter's resolution. This only absorbs float formatting for the
+# parameters that have none, so two records meaning the same number still meet.
+_SNAP_DUST_DECIMALS = 6
+
+
+def snap(value, resolution):
+    """The grid point `value` stands for, or None when it was never recorded.
+
+    A resolution is the rig's own step, in the parameter's units, so the value snaps to
+    that grid: two records land together exactly when the rig could not have told them
+    apart. Without one there is no grid to snap to and the value is compared as measured,
+    give or take float formatting.
+    """
+    if value is None:
+        return None
+    if resolution:
+        # Rounding the multiple rather than the product keeps the key free of the float
+        # dust that value/resolution*resolution leaves behind.
+        return round(round(value / resolution) * resolution, 10)
+    return round(value, _SNAP_DUST_DECIMALS)
