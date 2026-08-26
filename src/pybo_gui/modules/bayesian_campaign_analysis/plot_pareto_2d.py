@@ -13,7 +13,7 @@ from pybo_gui.configs.settings import data_path
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 from pybo_gui.modules.bayesian_campaign_analysis._labels import (
-    DASHES, base_label, is_initial, styler)
+    DASHES, INITIAL_SUFFIX, base_label, is_initial, styler)
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
     GROUP_KEYS, GroupKeyError, merge_key, parse_keys, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._uncertainty import total_sd, mean_sd
@@ -191,8 +191,12 @@ for exp in load_experiments_from_map(MAP_PATH):
         "label":    _label(exp),
         # The series whose fronts get averaged together, named from the keys that still
         # tell it apart - not from the label, which under the default labelling names the
-        # run and so separates the very runs that are meant to pool.
-        "arm":      series_label(exp, keys, fallback=_label(exp)),
+        # run and so separates the very runs that are meant to pool. base_label, not
+        # _label: the fallback only fires when no ticked key survives to name a series
+        # (e.g. only "parameters" ticked), and _label's raw " (initial)" suffix would
+        # then split a run's own initial and proposed points into two arms instead of
+        # pooling them - is_initial(r["label"]) is how they're told apart when wanted.
+        "arm":      series_label(exp, keys, fallback=base_label(_label(exp))),
         # Kept alongside the label so pooling still separates the runs when the map was
         # built by strategy, where the label no longer names them.
         "run":      exp.get("run"),
@@ -275,6 +279,12 @@ for gid in order:
         # One run per group (group_id keys on run - see build_group_map), so
         # every item in the group agrees on this.
         "reference": items[0]["reference"],
+        # Independent of "label" above, which the non-run-grouped case overwrites with
+        # the arm name: a group's members already agree on the keys ticked - parameters
+        # among them, ordinarily - so a proposed point essentially never shares a
+        # setting with an initial one, and items[0] speaks for the group's source the
+        # same way it already does for "arm"/"run"/"group_id".
+        "is_initial": is_initial(items[0]["label"]),
     })
 valid = rows
 # ---- REFERENCE (pulled out of the ordinary per-label series) ----
@@ -479,19 +489,13 @@ if args.show_numbers:
 # undominated at the end belongs on that run's front. Grouping by base is also what keeps
 # --label-by provenance honest - there "initial" and "proposed" are bases in their own
 # right, so asking for them apart still draws them apart.
-if aggregating:
-    # One mean front per arm instead of one per run. The runs of an arm reach their
-    # fronts at x values none of the others visited, so they cannot be averaged point by
-    # point: each is read onto a shared grid first. All of it happens in signed
-    # (minimisation) space, so "the best y attained at or before this x" is one rule
-    # whichever way an axis runs, and the result is signed back at the end.
-    by_arm = {}
-    for r in valid:
-        if r["feasible"]:
-            by_arm.setdefault(r["arm"], {}).setdefault(
-                r["run"] or base_label(r["label"]), []).append(
-                (sx * r["x"], sy * r["y"]))
-
+def _draw_arm_bands(by_arm, *, color_fn, linewidth, linestyle_fn, label_fn, alpha=0.18):
+    """One mean attainment front per arm, from by_arm[arm][run] -> [(x, y), ...] in
+    signed (minimisation) space. Shared by the aggregated overall front below and its
+    initial-design counterpart - the runs of an arm reach their fronts at x values none
+    of the others visited, so either way they are read onto a shared grid before being
+    averaged, rather than point by point; only which points feed `by_arm` differs.
+    """
     for arm in sorted(by_arm):
         fronts = []
         for pts in by_arm[arm].values():
@@ -507,10 +511,10 @@ if aggregating:
             continue
         curves = [step_interpolate(fx, fy, grid) for fx, fy in fronts]
         mean, low, high = mean_band(curves, args.band)
-        color = _label_color(arm)
+        color = color_fn(arm)
         # Back out of signed space to plot in the objectives' own units.
         gx = sx * grid
-        ax.fill_between(gx, sy * low, sy * high, color=color, alpha=0.18,
+        ax.fill_between(gx, sy * low, sy * high, color=color, alpha=alpha,
                         linewidth=0, zorder=2)
         # Drawn through the corners of the mean attainment surface rather than as the
         # staircase it strictly is. The surface is a step function - between two front
@@ -527,11 +531,49 @@ if aggregating:
             if not corners_y or not (np.isclose(myi, corners_y[-1], equal_nan=True)):
                 corners_x.append(gxi)
                 corners_y.append(myi)
+        linestyle = linestyle_fn(arm)
         ax.plot(corners_x, corners_y,
-                color=color, linewidth=1.4, linestyle=_line_style(arm), zorder=3)
+                color=color, linewidth=linewidth, linestyle=linestyle, zorder=3)
         legend_handles.append(mlines.Line2D(
-            [], [], color=color, linewidth=1.4, linestyle=_line_style(arm),
-            label=arm_legend_label(arm.capitalize(), args.band, len(fronts))))
+            [], [], color=color, linewidth=linewidth, linestyle=linestyle,
+            label=label_fn(arm, len(fronts))))
+
+
+if aggregating:
+    # One mean front per arm instead of one per run - see _draw_arm_bands.
+    by_arm = {}
+    for r in valid:
+        if r["feasible"]:
+            by_arm.setdefault(r["arm"], {}).setdefault(
+                r["run"] or base_label(r["label"]), []).append(
+                (sx * r["x"], sy * r["y"]))
+    _draw_arm_bands(
+        by_arm, color_fn=_label_color, linewidth=1.4, linestyle_fn=_line_style,
+        label_fn=lambda arm, n: arm_legend_label(arm.capitalize(), args.band, n))
+
+    if args.front_scope == "initial-vs-all":
+        # Pooling runs does not erase which of their points were the initial design -
+        # that is still each observation's own source, --group-by is silent on it. This
+        # is the aggregated counterpart of the design/overall split below: the same
+        # mean-attainment averaging, restricted to initial-sourced points, so what the
+        # design alone reached is visible even with runs pooled together.
+        by_arm_design = {}
+        for r in valid:
+            if r["feasible"] and r["is_initial"]:
+                by_arm_design.setdefault(r["arm"], {}).setdefault(
+                    r["run"] or base_label(r["label"]), []).append(
+                    (sx * r["x"], sy * r["y"]))
+        def _design_name(arm: str) -> str:
+            # Guards against doubling the suffix on an arm name that already carries
+            # one (a degenerate --group-by can still produce this upstream - see the
+            # "arm" comment above), rather than trusting that can never happen here too.
+            return arm if arm.endswith(INITIAL_SUFFIX) else f"{arm}{INITIAL_SUFFIX}"
+
+        _draw_arm_bands(
+            by_arm_design, color_fn=lambda _arm: FRONT["design_color"],
+            linewidth=FRONT["design_linewidth"], linestyle_fn=lambda _arm: (0, DASHES["initial"]),
+            label_fn=lambda arm, n: arm_legend_label(
+                _design_name(arm.capitalize()), args.band, n))
 
 # Drawn unconditionally - independent of --aggregate-runs, which is about the
 # ordinary series above, not the benchmark.
@@ -547,7 +589,7 @@ elif args.front_scope == "initial-vs-all":
     # included - a front over the proposals alone draws a curve through points the design
     # had already beaten, so it is not a front of anything the campaign attained.
     front_groups = [
-        ("design", [r for r in valid if r["feasible"] and is_initial(r["label"])]),
+        ("design", [r for r in valid if r["feasible"] and r["is_initial"]]),
         ("overall", [r for r in valid if r["feasible"]]),
     ]
 else:
