@@ -447,31 +447,6 @@ class BayesianOptimizer(OptimizerBase):
 
         self._warnings.extend(caught)
 
-        # What the constraints were for, checked on the answer rather than assumed from
-        # having passed them in. The acquisition optimizer is a numerical routine that can
-        # fail - and when it does it still returns a point, which is then measured and
-        # recorded like any other. A proposal outside the feasible region is not a slightly
-        # worse suggestion: the problem forbids it, so whatever is measured there says
-        # nothing about the problem, and on a fitted surrogate it is an extrapolation
-        # beyond the data that can come back physically impossible.
-        #
-        # Printed, not warned, and printed whatever `verbose` says. A warning goes through
-        # the filters, and the one caller that most needs to see this - a sweep running
-        # quietly - is precisely the one that has turned warnings off. This is the run
-        # recording a point it was not allowed to visit; a sweep that hides it produces a
-        # campaign nobody can tell is contaminated.
-        feasible = self._objective.is_X_feasible(X=self._new_X)
-        if not bool(feasible.all()):
-            ORANGE, RESET = "\033[38;5;208m", "\033[0m"
-            offending = self._new_X[~feasible].detach().cpu().numpy()
-            print(f"{ORANGE}! The acquisition optimizer returned "
-                  f"{int((~feasible).sum())} of {self._new_X.shape[0]} point(s) violating "
-                  f"the problem's input constraints, and they are about to be evaluated: "
-                  f"{offending}. The constraints were passed to optimize_acqf, so this is "
-                  f"it failing to satisfy them rather than not being told about them - on "
-                  f"a fitted surrogate, what comes back is an extrapolation outside the "
-                  f"data.{RESET}", flush=True)
-
         if verbose:
             self._print_success(msg=f"New X: {self._new_X.detach().cpu().numpy()}")
             self._print_caught_warnings()
