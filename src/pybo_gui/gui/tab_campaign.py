@@ -1564,13 +1564,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             return
         extra = _constraint_args() + (["--improvement"] if improvement else []) + objectives
         extra += _group_by_args(errorbar=False)
-        # The per-step gain view rewrites what a point on the curve means, and the plot
-        # refuses to average runs into it. So that view keeps runs apart however the boxes
-        # stand, rather than being refused for a setting that is about the other buttons.
-        if improvement and not _key_checked("run"):
-            extra += ["--group-by", "run"]
-            post("Plot HV improvement keeps runs separate: per-step gains cannot be "
-                 "averaged across runs.")
+        # Grouped exactly like Plot HV, by whatever the boxes say - no override here.
+        # Ticking off `run` while --improvement is on averages per-step gains across
+        # runs, which the script refuses (exit 2) rather than draw a misleading curve;
+        # _failed already surfaces that refusal's own message, which says to tick
+        # `run` or drop --improvement, so the two buttons never silently disagree on
+        # what "as grouped" means.
         # Where the hypervolume is measured from. Sent whenever an objective is loaded,
         # regardless of the Ground truth checkbox - that one is about drawing the
         # sampled surface, a separate question from having a fixed reference point, and
