@@ -28,8 +28,11 @@ from pybo_gui.configs import ground_truth as gt_store
 from pybo_gui.configs import workspace
 from pybo_gui.gui.launchers import launch_analysis, run_off_thread, watch
 from pybo_gui.gui.message_log import post
+from pybo_gui.gui.widgets import make_objective_checklist
 from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
     build_map, map_stamp, stamp_digest)
+from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import (
+    load_objective, problem_definition)
 
 
 def _build_gt_map(roots: list) -> tuple:
@@ -89,11 +92,12 @@ def _populate_preview(tree: QTreeWidget, records: list) -> None:
     tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
 
 
-def _show_result(parent: QWidget, text: str) -> None:
+def _show_result(parent: QWidget, text: str,
+                  title: str = "Ground truth — paste into objective.py") -> None:
     """Mirrors tab_campaign._view_json_dialog's shape: a non-modal QDialog owned by
     `parent`, so Qt's own parent-child ownership keeps it alive."""
     dlg = QDialog(parent)
-    dlg.setWindowTitle("Ground truth — paste into objective.py")
+    dlg.setWindowTitle(title)
     dlg.resize(700, 600)
     v = QVBoxLayout(dlg)
     txt = QPlainTextEdit()
@@ -111,14 +115,19 @@ def build(step_list, settings) -> QWidget:
     saved = gt_store.get_state()
     # Which map the last "Build experiment map" produced, read by "Build ground truth" -
     # a plain dict rather than a bare variable so the nested closures below can write it.
-    state = {"map_path": None}
+    # obj_checklist_path is the objective the HV* checklist was last populated from, so a
+    # tab switch that finds nothing changed does not re-import and re-run the objective
+    # module (torch and all) just to redraw the same rows.
+    state = {"map_path": None, "obj_checklist_path": None}
 
     class _Tab(QWidget):
-        """Refreshes the objective label whenever this tab becomes visible, so a
-        reload in the constructor tab shows up here without a cross-tab signal."""
+        """Refreshes the objective label and HV* checklist whenever this tab becomes
+        visible, so a reload in the constructor tab shows up here without a cross-tab
+        signal."""
 
         def showEvent(self, event):
             _refresh_objective_label()
+            _refresh_hv_checklist()
             super().showEvent(event)
 
     page = _Tab()
@@ -245,5 +254,127 @@ def build(step_list, settings) -> QWidget:
         _run_build(state["map_path"], objective_path)
 
     build_btn.clicked.connect(_on_build)
+
+    hv_box = QGroupBox("Maximum HV (HV*)")
+    hv_layout = QVBoxLayout(hv_box)
+    hv_note = QLabel("The best hypervolume the loaded objective allows, by dense "
+                     "Sobol sampling and local refinement - the same HV* the campaign "
+                     "tab's “Plot norm. HV” and “Plot regret” need. Ticks and senses "
+                     "below default to the objective's own declared ones; unticking an "
+                     "objective drops it from the volume rather than changing its sense. "
+                     "Shown here only - nothing is written to disk; run campaign_optimum "
+                     "from a terminal instead if you want optimum.json saved beside the "
+                     "objective for the campaign tab to read back.")
+    hv_note.setWordWrap(True)
+    hv_layout.addWidget(hv_note)
+
+    nd_box, nd_collect, nd_set_keys = make_objective_checklist()
+    hv_layout.addWidget(nd_box)
+
+    hv_settings_row = QWidget()
+    hv_settings_layout = QHBoxLayout(hv_settings_row)
+    hv_settings_layout.setContentsMargins(0, 0, 0, 0)
+    samples_spin = QSpinBox()
+    samples_spin.setRange(1, 10_000_000)
+    samples_spin.setSingleStep(4096)
+    samples_spin.setValue(65536)
+    samples_spin.setPrefix("samples ")
+    samples_spin.setToolTip("Quasi-random samples of the parameter box. Raise it until "
+                            "the convergence table's trailing gain is a fraction of a "
+                            "percent.")
+    batch_spin = QSpinBox()
+    batch_spin.setRange(1, 1_000_000)
+    batch_spin.setSingleStep(1024)
+    batch_spin.setValue(4096)
+    batch_spin.setPrefix("batch ")
+    batch_spin.setToolTip("Samples per batch - sets how finely the convergence table "
+                          "is reported.")
+    refine_spin = QSpinBox()
+    refine_spin.setRange(0, 50)
+    refine_spin.setValue(6)
+    refine_spin.setPrefix("refine ")
+    refine_spin.setToolTip("Rounds of local refinement after sampling (0 = off). "
+                           "Sampling alone tends to leave HV* below what a campaign "
+                           "reaches; refinement pushes the estimate onto the front.")
+    for w in (samples_spin, batch_spin, refine_spin):
+        hv_settings_layout.addWidget(w)
+    hv_settings_layout.addStretch()
+    hv_layout.addWidget(hv_settings_row)
+
+    hv_btn = QPushButton("Compute HV*")
+    hv_layout.addWidget(hv_btn)
+    layout.addWidget(hv_box)
+
+    def _refresh_hv_checklist() -> None:
+        path = settings.objective_path
+        if not path:
+            nd_set_keys([])
+            state["obj_checklist_path"] = None
+            return
+        if path == state["obj_checklist_path"]:
+            return
+        try:
+            problem = problem_definition(load_objective(path))
+        except (Exception, SystemExit):  # noqa: BLE001 - a broken objective must not
+            # kill the tab; unlike tab_campaign's explicit Load button, this runs on
+            # every tab switch, so it stays quiet rather than posting on each one.
+            nd_set_keys([])
+            state["obj_checklist_path"] = None
+            return
+        labels = [o["label"] for o in problem["objectives"]]
+        senses = {o["label"]: o["to_minimize"] for o in problem["objectives"]}
+        nd_set_keys(labels, senses)
+        state["obj_checklist_path"] = path
+
+    def _run_compute_hv(objective_path: str, chosen: list) -> None:
+        args = ["--ground-truth", objective_path]
+        for key, _is_max in chosen:
+            args += ["--objective", key]
+        args += [flag for key, is_max in chosen if is_max
+                 for flag in ("--maximize", key)]
+        args += ["--samples", str(samples_spin.value()), "--batch", str(batch_spin.value()),
+                 "--refine", str(refine_spin.value()), "--no-save"]
+        proc = launch_analysis(
+            "pybo_gui.modules.bayesian_campaign_analysis.campaign_optimum", *args)
+        # Streamed to the log as it prints, unlike _run_build's output: the convergence
+        # and refinement tables are the whole point of watching this one run, per
+        # campaign_optimum's own docstring. Also collected, so the result window can
+        # show the full report rather than just the final number.
+        output = []
+
+        def _capture(line: str) -> None:
+            output.append(line)
+            post(line)
+
+        def _done() -> None:
+            text = "\n".join(output) if output else "Nothing produced — see the log."
+            _show_result(page, text, title="Maximum HV (HV*)")
+            post("HV* computed.")
+
+        def _failed(codes) -> None:
+            post(f"campaign_optimum exited with {codes[0]}.")
+            if not output:
+                post("    (it printed nothing - see its console.)")
+
+        watch([proc],
+              on_start=lambda: post("Computing HV* - this can take a while; watch the "
+                                    "log for the convergence table..."),
+              on_done=_done,
+              on_fail=_failed,
+              on_output=_capture)
+
+    def _on_compute_hv() -> None:
+        objective_path = settings.objective_path
+        if not objective_path:
+            post("Load an objective in the constructor tab first.")
+            return
+        chosen = nd_collect()
+        if len(chosen) < 2:
+            post("Tick at least two objectives - a single one has no hypervolume to "
+                 "maximise.")
+            return
+        _run_compute_hv(objective_path, chosen)
+
+    hv_btn.clicked.connect(_on_compute_hv)
 
     return page

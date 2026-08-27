@@ -127,6 +127,11 @@ parser.add_argument("--out-dir", default=None,
                          "problem - and that is the one path every reader of it already "
                          "has, which is what lets a plot find an estimate computed from a "
                          "terminal without being told where it went.")
+parser.add_argument("--no-save", action="store_true",
+                    help="Print HV* but do not write optimum.json. For a one-off check "
+                         "against a problem whose directory should not gain a file as a "
+                         "side effect - a callback plotting the number needs the estimate, "
+                         "not a persisted one for the next reader to find.")
 args = parser.parse_args()
 
 objective_keys = args.objective or [k for k in (args.x, args.y, args.z) if k]
@@ -433,10 +438,13 @@ payload = {"hv_star": hv_star,
                            "gain_percent": g} for r, sc, h, g in refined],
            "context": context}
 
-out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.ground_truth))
-os.makedirs(out_dir, exist_ok=True)
-out_path = os.path.join(out_dir, "optimum.json")
-with open(out_path, "w", encoding="utf-8") as file:
-    json.dump(payload, file, indent=2, allow_nan=False)
 print(f"\nHV* = {hv_star:.6g}")
-print("Saved", out_path)
+if args.no_save:
+    print("(--no-save: optimum.json not written)")
+else:
+    out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.ground_truth))
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "optimum.json")
+    with open(out_path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2, allow_nan=False)
+    print("Saved", out_path)
