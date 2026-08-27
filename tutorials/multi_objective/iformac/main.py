@@ -12,14 +12,15 @@ from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.random import RandomOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
 from pybo.samplers.sobol import SobolSampler
-from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
+from pybo.utils.cli import parse_trial_args, resolve_output_dir
 from pybo.utils.init_dataset import load_initial_dataset, slice_initial_batch
+from pybo.utils.resume import resume_run
 from tutorials.multi_objective.iformac.objective import IFormAC
 
 
 def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, verbose: bool,
          device: torch.device, dtype: torch.dtype, strategy: str, repeats: int, noise: bool,
-         init_data: Path, shuffle_init: bool):
+         init_data: Path, shuffle_init: bool, resume: bool = False):
     """ Make directory """""
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -98,6 +99,17 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
     # batch is then just smaller rather than dropping a recorded point.
     n_initial_steps = math.ceil(n_initial / q)
     n_steps = n_initial_steps + int(n_evals / q)
+
+    """ Resume: replay whatever this run_dir already has recorded, and start the loop
+    past it. A no-op (start_i=0, nothing to replay) on a fresh run - see
+    pybo.utils.resume.resume_run. """
+    start_i, prior_records = resume_run(
+        run_dir, objective, resume=resume, q=q, n_initial=n_initial,
+        n_initial_steps=n_initial_steps, loaded_initial=init_data is not None,
+        repeats=repeats, X_initial=X_initial, strategy=strategy, noise=noise, seed=seed)
+    for record in prior_records:
+        bo.update_XY(**record)
+
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
@@ -106,8 +118,10 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
     n_measurements = n_initial + n_evals * repeats if init_data is not None \
         else (n_initial + n_evals) * repeats
     pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
+    if pbar is not None and prior_records:
+        pbar.update(sum(record["new_X"].shape[0] for record in prior_records))
 
-    for i in range(n_steps):
+    for i in range(start_i, n_steps):
         modelling = i >= n_initial_steps
         source = "proposed" if modelling else "initial"
         description = "Optimizing" if modelling else "Initial design"
@@ -175,7 +189,7 @@ if __name__ == "__main__":
     args = parse_trial_args(description="Run a trial.")
     if args.verbose:
         print(f"Running on {args.device} in {args.dtype}.")
-    output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
+    output_dir = resolve_output_dir(args, __file__)
 
     main(
         n_evals=args.n_evals,
@@ -191,4 +205,5 @@ if __name__ == "__main__":
         noise=args.noise,
         init_data=args.init_data,
         shuffle_init=args.shuffle_init,
+        resume=args.resume,
     )
