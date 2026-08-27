@@ -40,6 +40,7 @@ class IFormAC(MCMultiObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
+            max_hv=254.077,
             par_cfg=[
                 ParCfg(label="Maximum Current", unit="A", bounds=(7.5, 15.0), resolution=0.1),
                 ParCfg(label="Pedestal Current", unit="A", bounds=(3.0, 7.5), resolution=0.1),
@@ -64,18 +65,16 @@ class IFormAC(MCMultiObjectiveBase):
         x0 = (X[..., 0] - 11.1495) / 2.17443
         x1 = (X[..., 1] - 5.19382) / 1.30011
         x2 = (X[..., 2] - 43346) / 19462.2
-        mrr = (1.15944
-               + 0.176444 * x0
-               + 0.320083 * x1
-               - 0.254163 * x2
-               - 0.00953798 * x0 ** 2
-               + 0.0736954 * x0 * x1
-               - 0.149383 * x0 * x2
-               + 0.0453968 * x1 ** 2
-               - 0.0300493 * x1 * x2
-               + 0.108147 * x2 ** 2)
-        if noisy:
-            mrr = mrr + 0.07806 * torch.randn_like(mrr)
+        mrr = torch.exp(0.150462
+                        + 0.133599 * x0
+                        + 0.267167 * x1
+                        - 0.197648 * x2
+                        - 0.0190281 * x0 ** 2
+                        + 0.014463 * x0 * x1
+                        - 0.077942 * x0 * x2
+                        - 0.00619736 * x1 ** 2
+                        + 0.0497969 * x1 * x2
+                        + 0.0514928 * x2 ** 2)
         return torch.clamp(mrr, min=0)
 
     @staticmethod
@@ -83,18 +82,16 @@ class IFormAC(MCMultiObjectiveBase):
         x0 = (X[..., 0] - 11.1495) / 2.17443
         x1 = (X[..., 1] - 5.19382) / 1.30011
         x2 = (X[..., 2] - 43346) / 19462.2
-        tw = (27.7916
-              + 10.7775 * x0
-              + 14.6707 * x1
-              - 16.2631 * x2
-              + 5.13712 * x0 ** 2
-              + 3.54097 * x0 * x1
-              - 8.7222 * x0 * x2
-              + 4.10217 * x1 ** 2
-              - 11.4902 * x1 * x2
-              + 15.6148 * x2 ** 2)
-        if noisy:
-            tw = tw + 7.311 * torch.randn_like(tw)
+        tw = torch.exp(3.31709
+                       + 0.243389 * x0
+                       + 0.349045 * x1
+                       - 0.300005 * x2
+                       + 0.0820595 * x0 ** 2
+                       - 0.0984172 * x0 * x1
+                       + 0.00709686 * x0 * x2
+                       + 0.0984 * x1 ** 2
+                       - 0.0936838 * x1 * x2
+                       + 0.255557 * x2 ** 2)
         return torch.clamp(tw, min=0)
 
     @staticmethod
@@ -112,8 +109,6 @@ class IFormAC(MCMultiObjectiveBase):
                          + 0.185425 * x1 ** 2
                          - 0.425676 * x1 * x2
                          - 0.113519 * x2 ** 2)
-        if noisy:
-            orbiting_time = orbiting_time + 0.8952 * torch.randn_like(orbiting_time)
         return torch.clamp(orbiting_time, min=0)
 
     def evaluate_true_objective(self, X: torch.Tensor, noisy=False) -> torch.Tensor:
