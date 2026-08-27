@@ -665,18 +665,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     tau_edit.setToolTip("Fractions of the achievable gain that n_tau reports the "
                         "evaluation count for. Comma-separated.")
 
-    # Both ask the problem about the records rather than taking them at face value, and
-    # both only mean anything with an objective loaded.
+    # Asks the problem about the records rather than taking them at face value, and only
+    # means anything with an objective loaded.
     cb_true_obj = QCheckBox("True objective")
     cb_true_obj.setToolTip("Score each observation by the noiseless objective at the "
                            "parameters it used, rather than the value recorded. Only "
                            "meaningful on a simulated campaign, where it puts HV(n) and "
                            "HV* on the same surface.")
-    cb_input_feasible = QCheckBox("Input-feasible only")
-    cb_input_feasible.setToolTip("Drop from the front every observation whose parameters "
-                                 "break the problem's input constraints. HV* never sees "
-                                 "such a point, so a handful can double a campaign's "
-                                 "hypervolume and push it above the optimum.")
     # One checkbox per grouping key. Ticked keys are what tells records apart, so every
     # box ticked draws each observation on its own and unticking one pools over it. The two
     # switches this replaced were fixed points in that space - Grouped was "untick repeat",
@@ -889,7 +884,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                                QLabel("tau:"), tau_edit))
     # Read by the score and the HV plot both, so a table and a curve of the same campaign
     # are scoring the same thing.
-    plot_layout.addWidget(_row(cb_true_obj, cb_input_feasible))
+    plot_layout.addWidget(_row(cb_true_obj))
     plot_page_layout.addWidget(plot_box)
 
     # ---- Diagnostics ---------------------------------------------------------
@@ -913,10 +908,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         be drawn against a guess.
         """
         ready = state["problem"] is not None
-        # The two problem-view options and HV* need the objective just as much: all three
-        # ask the problem something the records cannot answer.
+        # The problem-view option and HV* need the objective just as much: both ask
+        # the problem something the records cannot answer.
         buttons = (btn_pareto, btn_hv, btn_hvi, btn_rho, btn_regret, btn_gain,
-                   btn_gain_ninit, cb_true_obj, cb_input_feasible)
+                   btn_gain_ninit, cb_true_obj)
         for button in buttons:
             button.setEnabled(ready)
         hint = "" if ready else "Load an objective first: it defines how many objectives "                                "the campaign has, and every plot needs that."
@@ -1626,14 +1621,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         return extra
 
     def _problem_view_args() -> list:
-        """The two flags that ask the problem about the records rather than taking them at
+        """The flag that asks the problem about the records rather than taking them at
         face value. Shared by the score and the hypervolume plot, so a table and a curve of
         the same campaign are never scoring different things."""
         args = []
         if cb_true_obj.isChecked():
             args.append("--true-objective")
-        if cb_input_feasible.isChecked():
-            args.append("--input-feasible")
         return args
 
     def _convergence_args() -> list:
