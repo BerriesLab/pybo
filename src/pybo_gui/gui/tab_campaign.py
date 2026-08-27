@@ -21,10 +21,10 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator, QFontDatabase
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog,
-    QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView,
-    QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
-    QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
+    QFileDialog, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QListView, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
+    QRadioButton, QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -89,6 +89,25 @@ def _view_json_dialog(parent: QWidget, payload, title: str) -> None:
     txt.setPlainText(json.dumps(payload, indent=2) if payload else
                      "Nothing built yet — click “Rebuild map now” first.")
     v.addWidget(txt)
+    dlg.show()
+
+
+def _show_text_dialog(parent: QWidget, text: str, title: str) -> None:
+    """A non-modal, read-only text window with a Copy to clipboard button - for a
+    script's own printed output, which is its whole result and belongs somewhere it can
+    be read and copied from rather than scrolled past in the log."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.resize(700, 600)
+    v = QVBoxLayout(dlg)
+    txt = QPlainTextEdit()
+    txt.setReadOnly(True)
+    txt.setPlainText(text or "Nothing produced — see the log.")
+    v.addWidget(txt)
+    copy = QPushButton("Copy to clipboard")
+    copy.clicked.connect(lambda: (QApplication.clipboard().setText(txt.toPlainText()),
+                                  post("Copied to clipboard.")))
+    v.addWidget(copy)
     dlg.show()
 
 
@@ -1284,7 +1303,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             args += ["--constraint", spec]
         return args
 
-    def _launch(script: str, *extra, verbose: bool = False) -> None:
+    def _launch(script: str, *extra, verbose: bool = False, after=None) -> None:
         """Make sure a map exists, then run one of the analysis modules against it.
 
         The map may take a worker thread and a minute to build, so the launch is what
@@ -1292,7 +1311,10 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         window in which Stop plots has nothing to terminate, hence the token: pressed
         while the map builds, it has to reach the plot that has not started yet.
 
-        `verbose` is for the scripts whose output *is* the result - see _run_script.
+        `verbose` is for the scripts whose output *is* the result but have nowhere else
+        to put it - see _run_script. `after`, when given, is called with the script's
+        full collected output (a list of lines) once it exits 0 - for a script whose
+        result belongs in a window instead, e.g. campaign_gain's own score table.
         """
         post(f"Preparing {script}...")
         token = stop_token()
@@ -1303,7 +1325,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             if stopped_since(token):
                 post(f"{script} was dropped — Stop plots was pressed while its map built.")
                 return
-            _run_script(script, *extra, verbose=verbose)
+            _run_script(script, *extra, verbose=verbose, after=after)
 
         _with_map(_ready)
 
@@ -1341,7 +1363,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         def _done() -> None:
             post(f"{script} finished.")
             if after is not None:
-                after()
+                after(output)
 
         watch([proc],
               on_start=lambda: post(f"Running {script}..."),
@@ -1623,8 +1645,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     def _score_campaign() -> None:
         """Reduce every run to gamma / n_tau / n_c, scoring the same metric the
-        hypervolume plot draws. Prints its table into the log and writes gain.json
-        beside the runs, which is what the sensitivity plot below reads."""
+        hypervolume plot draws, and show its table in its own window - the table is the
+        whole result, so it gets somewhere it can be read and copied from rather than
+        scrolled past in the log. Also caches each run's own score (see
+        build_experiment_map.run_gain_path), which is what the sensitivity plot below
+        reads."""
         objectives = _metric_objective_args()
         if objectives is None:
             return
@@ -1635,9 +1660,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         if state["problem"] is not None:
             extra += ["--ground-truth", obj_edit.text()]
         extra += _convergence_args() + _problem_view_args()
-        # verbose: the table this prints is the whole result. There is no window to look
-        # at, so collected-and-discarded output means pressing the button produces nothing.
-        _launch("campaign_gain", *extra, verbose=True)
+        _launch("campaign_gain", *extra,
+                after=lambda output: _show_text_dialog(
+                    page, "\n".join(output), "Score campaign"))
 
     def _plot_gain_vs_ninitial() -> None:
         """Gain and cost against the initial design's size.
