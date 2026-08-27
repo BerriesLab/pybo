@@ -10,7 +10,8 @@ from gpytorch.kernels import *
 from pybo.optimizer.sobol import SobolOptimizer
 from pybo.optimizer.random import RandomOptimizer
 from pybo.optimizer.bayesian import BayesianOptimizer
-from pybo.utils.cli import parse_trial_args, default_output_dir, unique_dir
+from pybo.utils.cli import parse_trial_args, resolve_output_dir
+from pybo.utils.resume import resume_run
 from tutorials.single_objective.polynomial.objective import Polynomial
 from pybo.samplers.sobol import *
 
@@ -18,7 +19,8 @@ DTYPE = torch.float64
 
 
 def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, verbose: bool,
-         device: torch.device, strategy: str, repeats: int, noise: bool):
+         device: torch.device, strategy: str, repeats: int, noise: bool,
+         resume: bool = False):
     run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
@@ -73,14 +75,26 @@ def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, v
     """ Main optimization loop """
     n_initial_steps = n_initial // q
     n_steps = n_initial_steps + int(n_evals / q)
+
+    """ Resume: replay whatever this run_dir already has recorded, and start the loop
+    past it. A no-op (start_i=0, nothing to replay) on a fresh run - see
+    pybo.utils.resume.resume_run. """
+    start_i, prior_records = resume_run(
+        run_dir, objective, resume=resume, q=q, n_initial=n_initial,
+        n_initial_steps=n_initial_steps, loaded_initial=False,
+        repeats=repeats, X_initial=X_initial, strategy=strategy, noise=noise, seed=seed)
+    for record in prior_records:
+        bo.update_XY(**record)
     if not verbose:
         # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
         warnings.filterwarnings("ignore")
     # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
     n_measurements = (n_initial + n_evals) * repeats
     pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
+    if pbar is not None and prior_records:
+        pbar.update(sum(record["new_X"].shape[0] for record in prior_records))
 
-    for i in range(n_steps):
+    for i in range(start_i, n_steps):
         modelling = i >= n_initial_steps
         source = "proposed" if modelling else "initial"
         description = "Optimizing" if modelling else "Initial design"
@@ -131,7 +145,7 @@ if __name__ == "__main__":
     args = parse_trial_args(description="Run a single Polynomial BO trial.")
     if args.verbose:
         print(f"Running on {args.device}.")
-    output_dir = unique_dir(args.output_dir or default_output_dir(__file__))
+    output_dir = resolve_output_dir(args, __file__)
 
     main(
         n_evals=args.n_evals,
@@ -144,4 +158,5 @@ if __name__ == "__main__":
         strategy=args.strategy,
         repeats=args.repeats,
         noise=args.noise,
+        resume=args.resume,
     )
