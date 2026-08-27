@@ -19,11 +19,11 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtGui import QDoubleValidator, QFontDatabase
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog,
     QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListView,
-    QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QRadioButton,
+    QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
     QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -89,6 +89,89 @@ def _view_json_dialog(parent: QWidget, payload, title: str) -> None:
     txt.setPlainText(json.dumps(payload, indent=2) if payload else
                      "Nothing built yet — click “Rebuild map now” first.")
     v.addWidget(txt)
+    dlg.show()
+
+
+def _edit_objective_dialog(parent: QWidget, path: str, on_saved) -> None:
+    """A non-modal editor for the objective.py at `path`: edit its source and save it
+    back in place. `on_saved` runs after every successful save, so the caller can reload
+    the objective and pick up whatever changed - the same edit-then-Reload loop
+    load_btn's own tooltip describes, minus the trip out to a separate text editor.
+
+    Left open after a save rather than closing, since tuning an objective is usually
+    several rounds of edit-save-check rather than one.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        post(f"Could not open {path}: {exc}")
+        return
+
+    dlg = QDialog(parent)
+    dlg.resize(900, 700)
+    v = QVBoxLayout(dlg)
+
+    editor = QPlainTextEdit()
+    editor.setPlainText(text)
+    editor.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+    # No line-wrap for source code: a wrapped long line reads like two, and moves under
+    # you as you type on the ones before it.
+    editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+    v.addWidget(editor)
+
+    status = QLabel()
+    status.setStyleSheet("color: grey;")
+    v.addWidget(status)
+
+    save_btn = QPushButton("Save")
+    close_btn = QPushButton("Close")
+    v.addWidget(_row(save_btn, close_btn))
+
+    # A dict rather than a bare bool so the nested closures below can write it - same
+    # reason build()'s own `state` dicts exist.
+    dirty = {"value": False}
+
+    def _mark_dirty() -> None:
+        dirty["value"] = True
+        dlg.setWindowTitle(f"Edit objective — {path} *")
+
+    def _mark_clean(message: str) -> None:
+        dirty["value"] = False
+        dlg.setWindowTitle(f"Edit objective — {path}")
+        status.setStyleSheet("color: grey;")
+        status.setText(message)
+
+    editor.textChanged.connect(_mark_dirty)
+    _mark_clean(f"Editing {path}")
+
+    def _save() -> None:
+        try:
+            Path(path).write_text(editor.toPlainText(), encoding="utf-8")
+        except OSError as exc:
+            status.setStyleSheet("color: red;")
+            status.setText(f"Could not save: {exc}")
+            return
+        _mark_clean(f"Saved {path}.")
+        post(f"Objective saved: {path}")
+        on_saved()
+
+    save_btn.clicked.connect(_save)
+    close_btn.clicked.connect(dlg.close)
+
+    def _close_event(event) -> None:
+        if not dirty["value"]:
+            event.accept()
+            return
+        choice = QMessageBox.question(
+            dlg, "Unsaved changes", "Discard unsaved changes to the objective?",
+            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if choice == QMessageBox.StandardButton.Discard:
+            event.accept()
+        else:
+            event.ignore()
+
+    dlg.closeEvent = _close_event
     dlg.show()
 
 
@@ -263,9 +346,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     load_btn = QPushButton("Reload objective")
     load_btn.setToolTip("Read the file again — after editing the objective, or for a "
                         "path typed in by hand")
+    edit_btn = QPushButton("Edit objective")
+    edit_btn.setToolTip("Open the file in a built-in editor and save changes back to "
+                        "it - the objective reloads automatically on every save.")
     # No Unload: with the objective required, dropping it would only leave a tab that
     # can do nothing. Loading another one over it is how a campaign changes objective.
-    obj_layout.addWidget(_row(obj_edit, browse, load_btn))
+    obj_layout.addWidget(_row(obj_edit, browse, load_btn, edit_btn))
     layout.addWidget(obj_box)
 
     # What the objective just loaded above actually declares, so the campaign says what it
@@ -849,8 +935,16 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             obj_edit.setText(chosen)
             _load_objective(chosen)
 
+    def _edit_objective() -> None:
+        path = obj_edit.text().strip()
+        if not path:
+            post("Type or browse to an objective.py first.")
+            return
+        _edit_objective_dialog(page, path, on_saved=lambda: _load_objective(path))
+
     browse.clicked.connect(_browse_objective)
     load_btn.clicked.connect(lambda: _load_objective(obj_edit.text()))
+    edit_btn.clicked.connect(_edit_objective)
 
     # ---- Objective-count wiring -----------------------------------------------
 
