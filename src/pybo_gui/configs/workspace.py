@@ -107,6 +107,30 @@ def gt_map_cache_dir() -> Path | None:
     return cache
 
 
+def gain_cache_dir() -> Path | None:
+    """Where a run's campaign_gain score is kept, or None with no workspace.
+
+    A sibling of cache_dir()/gt_map_cache_dir(), not the same directory: a run's score is
+    fingerprinted from that run alone (see build_experiment_map.map_stamp, called with a
+    single-run root list), while the other two are fingerprinted from a whole selection -
+    sharing a directory would risk a one-run selection's map landing under the exact
+    digest its own gain score does.
+
+    Keeping the score out of the run's own directory (where it used to be written,
+    beside step_*/summary.bin) is the point: nothing here is something the run itself
+    produced, so nothing belongs in its tree. Caching it per-run rather than per-selection
+    (the aggregate report in cache_dir()'s own selection-keyed entries) is what lets a run
+    scored once stay readable from any later selection that includes it, without having
+    to score it again.
+    """
+    workspace = get_workspace()
+    if workspace is None:
+        return None
+    cache = workspace / "gain_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
 def new_instance_dir() -> Path:
     """A fresh directory for this session to write its maps into.
 
@@ -153,7 +177,7 @@ def usage() -> dict | None:
     root = get_workspace()
     if root is None:
         return None
-    caches = [root / "map_cache", root / "gt_map_cache"]
+    caches = [root / "map_cache", root / "gt_map_cache", root / "gain_cache"]
     cached = sum(_dir_size(c) for c in caches if c.is_dir())
     total = _dir_size(root)
     entries = sum(len(list(c.iterdir())) for c in caches if c.is_dir())
@@ -172,7 +196,7 @@ def clear_cache() -> int:
     if root is None:
         return 0
     freed = 0
-    for cache in (root / "map_cache", root / "gt_map_cache"):
+    for cache in (root / "map_cache", root / "gt_map_cache", root / "gain_cache"):
         if not cache.is_dir():
             continue
         freed += _dir_size(cache)

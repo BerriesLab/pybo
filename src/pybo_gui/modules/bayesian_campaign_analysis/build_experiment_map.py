@@ -35,8 +35,20 @@ import argparse
 import hashlib
 import json
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
+
+from pybo_gui.configs import workspace
+
+# Where a run's gain score is cached when there is no workspace to keep it in - a fixed
+# path under the OS temp dir, the same fallback tab_ground_truth.py's own map cache uses
+# for the same reason: a randomly-named tempfile.mkdtemp() would scatter one run's score
+# across a new, unfindable directory on every call, defeating the point of caching it at
+# all. Not a substitute for a real workspace - it does not survive a reboot, and nothing
+# guarantees the OS never clears it - but it is at least reused call to call, and it is
+# never the run's own directory.
+_FALLBACK_GAIN_CACHE = Path(tempfile.gettempdir()) / "pybo_gain_cache"
 
 
 # What an observation is labelled by, and so what gets its own series and Pareto front.
@@ -168,9 +180,10 @@ def map_stamp(roots, references=(), label_by: str = DEFAULT_LABEL_BY,
     under a second where the build it can skip costs a minute.
 
     Per record rather than per directory: a directory's mtime does not move when a file
-    inside a subdirectory is rewritten, and scoring a campaign writes gain.json into a run
-    without touching any step record. The (mtime, size) pair of each record is what
-    actually tracks the inputs.
+    elsewhere in its tree is rewritten without touching any step record, so relying on it
+    would need every writer under a run to remember to also touch the right directory - a
+    single record left stale would go undetected. The (mtime, size) pair of each record is
+    what actually tracks the inputs.
     """
     records = []
     for path in find_steps(roots):
@@ -198,6 +211,35 @@ def stamp_digest(stamp: dict) -> str:
     """A short name for a stamp, for the directory a map is cached under."""
     return hashlib.sha256(
         json.dumps(stamp, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def run_gain_path(run_dir, create: bool = False) -> Path:
+    """Where campaign_gain's own score for `run_dir` belongs.
+
+    Both campaign_gain (writing, create=True) and plot_gain_vs_ninitial (reading,
+    create=False) call this, so the two can never compute the digest differently and
+    miss each other. With a workspace configured, that is a per-run entry in
+    workspace.gain_cache_dir() - a separate cache tree from the selection-keyed one
+    cache_dir() uses, so a one-run selection's own map never lands under the exact digest
+    its run's gain score does - fingerprinted from that one run alone
+    (map_stamp([run_dir])) rather than from any selection, so a run scored once stays
+    readable from any later selection that includes it.
+
+    Without a workspace, the same digest is kept under _FALLBACK_GAIN_CACHE instead - the
+    fixed OS-temp-dir location tab_ground_truth's own map cache falls back to for the same
+    reason, so this never has to choose between caching nothing and writing into a run's
+    own directory (which is not where a file the run did not produce belongs, workspace or
+    not).
+
+    `create` makes the cache entry's directory (not the file) so a writer has somewhere
+    to put it; a reader leaves the cache untouched rather than littering it with an empty
+    entry for every run a plot merely glanced at without a score to find.
+    """
+    cache = workspace.gain_cache_dir() or _FALLBACK_GAIN_CACHE
+    entry = cache / stamp_digest(map_stamp([run_dir]))
+    if create:
+        entry.mkdir(parents=True, exist_ok=True)
+    return entry / "gain.json"
 
 
 def build_map(roots, label_by: str = DEFAULT_LABEL_BY, reference_roots=None) -> dict:

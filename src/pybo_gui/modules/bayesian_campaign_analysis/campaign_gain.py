@@ -4,6 +4,13 @@ Reads the experiment map and reduces every run to a few numbers. Prints one row 
 and one summary row per arm, and writes the same figures to gain.json. Undefined values
 are null there, not NaN.
 
+Two gain.json are written, in two different places, and neither lands inside a run's own
+directory - see the SELF_CONTAINED block below for why a run's own score belongs in the
+workspace's per-run cache (workspace.gain_cache_dir, keyed by that run alone, fingerprinted
+the same way build_experiment_map.map_stamp fingerprints a whole selection) rather than
+beside its records, and the report assembled after it for why the aggregate, selection-wide
+figures belong in --out-dir instead.
+
 The metric is the hypervolume, or the best value when one objective is given.
 
 COLUMNS
@@ -124,10 +131,12 @@ import sys
 import numpy as np
 import pandas as pd
 
+from pybo_gui.configs import workspace
 from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import (
     ConstraintError, is_feasible, parse_constraints,
 )
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import run_gain_path
 from pybo_gui.modules.bayesian_campaign_analysis._convergence import (
     terminal_plateau,
 )
@@ -228,8 +237,9 @@ MAP_PATH = os.path.join(data_path, "experiment_map.json")
 
 # ---- LOAD, ONE SEQUENCE PER RUN ----
 runs = {}
-# Where each run lives, so its score can be written back beside it. Absent on a map
-# built before build_experiment_map recorded it, and then that run simply gets no file.
+# Where each run lives, so its score can be fingerprinted and cached under run_gain_path.
+# Absent on a map built before build_experiment_map recorded it, and then that run simply
+# gets no cached score.
 run_dirs = {}
 for exp in load_experiments_from_map(MAP_PATH):
     results = exp.get("results", {})
@@ -675,17 +685,22 @@ context = {"objectives": objective_keys,
            "patience": args.patience, "tol": args.tol, "tol_rel": args.tol_rel,
            "taus": taus}
 
-# The self-contained half of a run's score, written beside the run itself. gamma_norm and
-# it_tau are deliberately not here: both normalise by the best the whole campaign reached,
-# so they mean nothing on their own and would go stale the moment a different set of runs
-# was scored. They stay in the campaign-level report below.
+# The self-contained half of a run's score, cached per-run (see run_gain_path) rather
+# than written into the run itself. gamma_norm and it_tau are deliberately not here: both
+# normalise by the best the whole campaign reached, so they mean nothing on their own and
+# would go stale the moment a different set of runs was scored. They stay in the
+# campaign-level report below.
 SELF_CONTAINED = ("run", "arm", "n_initial", "m_initial", "m_final", "m_c",
                   "gamma", "gamma_budget", "n_c", "converged", "eta", "eps")
 written = 0
+skipped_no_dir = 0
+cached = workspace.gain_cache_dir() is not None
 for row in rows:
     run_dir = run_dirs.get(row["run"])
     if not run_dir or not os.path.isdir(run_dir):
+        skipped_no_dir += 1
         continue
+    gain_path = run_gain_path(run_dir, create=True)
     payload = {key: row[key] for key in SELF_CONTAINED if key in row}
     for tau in taus:
         # Both counts of the same instant: the whole budget, and the optimizer's
@@ -693,13 +708,13 @@ for row in rows:
         payload[f"n{tau:g}"] = row.get(f"n{tau:g}")
         payload[f"prop{tau:g}"] = row.get(f"prop{tau:g}")
     payload["context"] = context
-    with open(os.path.join(run_dir, "gain.json"), "w", encoding="utf-8") as file:
+    with open(gain_path, "w", encoding="utf-8") as file:
         json.dump(jsonable(payload), file, indent=2, allow_nan=False)
     written += 1
-print(f"\nWrote {written} per-run score{'' if written == 1 else 's'} "
-      f"(gain.json beside each run).")
-if written < len(rows):
-    print(f"! {len(rows) - written} run(s) had no directory recorded in the map - "
+where = "the workspace cache" if cached else "a temporary cache (no workspace configured)"
+print(f"\nWrote {written} per-run score{'' if written == 1 else 's'} to {where}.")
+if skipped_no_dir:
+    print(f"! {skipped_no_dir} run(s) had no directory recorded in the map - "
           f"rebuild it so build_experiment_map writes run_dir.")
 if not args.ground_truth:
     print("! The reference point was derived from the runs loaded now, so these scores "

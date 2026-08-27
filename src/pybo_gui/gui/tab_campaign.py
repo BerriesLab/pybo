@@ -1600,11 +1600,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         either - that is rebuilt from the selection every time and does not outlive the
         session, so a score written there is lost when the GUI closes.
 
-        The per-run scores are a separate matter and do not come here. campaign_gain writes
-        those beside each run, where they belong: they describe that run, plot_gain_vs_ninitial
-        reads them back across selections the cache digest would keep apart, and
-        clear_cache deletes cache contents as things rebuilt on demand, which a score is
-        not.
+        The per-run scores are a separate matter and do not come here either. campaign_gain
+        caches those under workspace.gain_cache_dir() instead (see
+        build_experiment_map.run_gain_path), fingerprinted from each run alone rather than
+        from this selection - so plot_gain_vs_ninitial can read a run's score back under
+        any later selection that includes it, not only the one it was scored in. Clearing
+        the cache loses it the same way it loses this selection's report: both are
+        rebuildable, just at the cost of a re-score rather than a re-read.
 
         Falls back to the campaign root, then the scratch, when there is no workspace or no
         map has been built - both are cases with nowhere better to put it.

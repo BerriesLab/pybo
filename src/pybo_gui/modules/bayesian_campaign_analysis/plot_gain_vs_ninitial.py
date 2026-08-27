@@ -1,10 +1,13 @@
 """How the initial design's size pays off: the gain it buys and what it costs.
 
-Reads the score campaign_gain leaves inside each run directory - one gain.json per run -
-for the runs the campaign's map currently holds, which is the selection ticked in the
-browser. That is what keeps the plot honest: the numbers follow the selection instead of
-whichever set happened to be scored last. A run with no score yet is named and skipped,
-and a set of runs scored under different settings is refused rather than mixed.
+Reads the score campaign_gain leaves for each run in its own workspace cache entry (see
+build_experiment_map.run_gain_path) - one gain.json per run, fingerprinted from that run
+alone rather than from any selection - for the runs the campaign's map currently holds,
+which is the selection ticked in the browser. That is what keeps the plot honest: the
+numbers follow the selection instead of whichever set happened to be scored last, while a
+run scored once stays readable from any later selection that includes it. A run with no
+score yet is named and skipped, and a set of runs scored under different settings is
+refused rather than mixed.
 
 Plots, against the initial design size n0, the two halves of the trade-off a sweep over
 --n-initial exists to measure:
@@ -70,6 +73,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
 from pybo_gui.configs.settings import data_path
 from pybo_gui.modules.bayesian_campaign_analysis._labels import styler
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import run_gain_path
 
 parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 parser.add_argument("--hours-per-eval", type=float, default=0.0,
@@ -116,14 +120,14 @@ def _selected_run_dirs() -> list:
     return seen
 
 
-# One row per run, read from the score campaign_gain left beside it. The arm label
+# One row per run, read from the score campaign_gain cached for it. The arm label
 # already carries the design size (see _labels.arm_label), so the strategy is what is
 # left once it is taken out - that, not the arm, is what makes a series here, since n0
 # is the x axis.
 runs, contexts, missing, stale, unconverged = [], [], [], [], []
 for run_dir in _selected_run_dirs():
-    score_path = os.path.join(run_dir, "gain.json")
-    if not os.path.exists(score_path):
+    score_path = run_gain_path(run_dir)
+    if not score_path.exists():
         missing.append(run_dir)
         continue
     score = json.load(open(score_path, encoding="utf-8"))
