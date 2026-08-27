@@ -78,9 +78,7 @@ class BayesianOptimizer(OptimizerBase):
         self._acqf = acqf  # The acquisition function instance
         self._sampler = None  # A Sobol QMC sampler used to numerically compute the acquisition function
         self._kernel = kernel  # The kernel instance
-        self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function
-        # optimization. Keep number high to avoid infeasible proposition when linear inequalities constraints on X
-        # are declared in the objective function.
+        self._n_acqf_opt_max_iter = n_acqf_opt_max_iter  # Number of iterations for acquisition function optimization.
         self._n_acqf_opt_restarts = n_acqf_opt_restarts  # The number of initial guesses used to optimize the acquisition function
         self._n_model_fit_restarts = n_model_fit_restarts  # Fit attempts per output model (BoTorch resamples hyperparameters after the first)
         self._num_mc_samples = mc_samples  # Number of samples drawn from the predictive posterior distribution to estimate the acquisition function
