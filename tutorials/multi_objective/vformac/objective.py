@@ -37,6 +37,7 @@ class VFormAC(MCMultiObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
+            max_hv=323.936,
             par_cfg=[
                 ParCfg(label="V0", unit="V", bounds=(60, 120), resolution=1),
                 ParCfg(label="dV", unit="V", bounds=(60, 85), resolution=1),
