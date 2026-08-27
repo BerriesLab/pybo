@@ -254,7 +254,7 @@ class BayesianOptimizer(OptimizerBase):
             print("Initializing model... ", end="")
 
         # Prepare dataset by concatenating the objectives and initialize models - one model
-        # for each objective (or observable). Note that a base noise of 1e-4 is the default value
+        # for each objective (or observable). Note that a base noise of 1e-2 is the default value
         train_x, train_y, train_y_var = self._prepare_training_dataset()
         models = []
         for i in range(0, train_y.shape[-1]):
@@ -271,7 +271,7 @@ class BayesianOptimizer(OptimizerBase):
                     # FixedNoiseGaussianLikelihood itself. The noise floor only bites when the
                     # noise is learned, so nothing is lost by dropping it there.
                     likelihood=(None if train_y_var is not None else
-                                gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-4))),
+                                gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-2))),
                 )
             )
 
