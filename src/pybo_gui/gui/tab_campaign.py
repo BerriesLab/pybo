@@ -1094,7 +1094,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             series = len({e["experiment_type"] for e in exp_map["experiments"]})
             # Said out loud on purpose: a reused map that is somehow wrong has to be
             # visible, not silent. Rebuild map now is the way to force one either way.
-            how = "reused, unchanged since it was built" if reused else "held in memory"
+            how = "reused, unchanged since it was built" if reused else "freshly built from the records"
             message = (f"{len(exp_map['experiments'])} observations from "
                        f"{len(roots)} selected director"
                        f"{'y' if len(roots) == 1 else 'ies'}, {series} series, {how}")
