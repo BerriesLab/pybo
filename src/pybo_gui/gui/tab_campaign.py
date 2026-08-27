@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
     QFileDialog, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListView, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
-    QRadioButton, QDoubleSpinBox, QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QRadioButton, QDoubleSpinBox, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from pybo_gui.configs import settings as configs_settings
@@ -107,6 +107,133 @@ def _show_text_dialog(parent: QWidget, text: str, title: str) -> None:
     copy = QPushButton("Copy to clipboard")
     copy.clicked.connect(lambda: (QApplication.clipboard().setText(txt.toPlainText()),
                                   post("Copied to clipboard.")))
+    v.addWidget(copy)
+    dlg.show()
+
+
+class _SortableItem(QTableWidgetItem):
+    """A cell that sorts as a number when its text is one, alphabetically otherwise -
+    the same trick _GroupItem plays for the group map's tree, so "9" does not sort
+    after "10" the way plain string comparison would."""
+
+    def __lt__(self, other):
+        try:
+            return float(self.text()) < float(other.text())
+        except ValueError:
+            return self.text() < other.text()
+
+
+def _score_fmt(value) -> str:
+    """One cell's text: None/NaN as "-", a bool as yes/no, a float to 4 significant
+    figures - the same precision campaign_gain's own printed tables use - everything
+    else as-is."""
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        return "-" if value != value else f"{value:.4g}"  # NaN != NaN
+    return str(value)
+
+
+def _score_table_widget(cols: list, rows: list) -> QTableWidget:
+    table = QTableWidget(len(rows), len(cols))
+    table.setHorizontalHeaderLabels(cols)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setAlternatingRowColors(True)
+    for r, row in enumerate(rows):
+        for c, col in enumerate(cols):
+            table.setItem(r, c, _SortableItem(_score_fmt(row.get(col))))
+    table.setSortingEnabled(True)
+    table.resizeColumnsToContents()
+    return table
+
+
+def _score_rows_tsv(cols: list, rows: list) -> str:
+    lines = ["\t".join(cols)]
+    lines += ["\t".join(_score_fmt(row.get(col)) for col in cols) for row in rows]
+    return "\n".join(lines)
+
+
+def _arm_summary_row(entry: dict, taus: list) -> dict:
+    """One row of the per-arm table, reduced from campaign_gain's own per-arm JSON
+    entry - the same numbers its printed "agg" table shows, formatted here instead of
+    scraped back out of that text."""
+    row = {"arm": entry.get("arm"), "runs": entry.get("runs"),
+          "converged": f"{entry.get('converged', 0)}/{entry.get('runs', 0)}"}
+    for name in ("gamma", "gamma_budget", "gamma_norm", "rho_c", "regret_c", "eta", "n_c"):
+        stat = entry.get(name) or {}
+        mean, n = stat.get("mean"), stat.get("n")
+        row[name] = (f"{_score_fmt(mean)} ± {_score_fmt(stat.get('std'))} (n={n})"
+                     if n else "-")
+    for tau in taus:
+        target = (entry.get("targets") or {}).get(f"{tau:g}") or {}
+        reached, total = target.get("reached") or 0, target.get("total")
+        row[f"it{tau:g}"] = (f"{_score_fmt(target.get('median'))} ({reached}/{total})"
+                             if reached else f"- (0/{total})")
+        row[f"n{tau:g}"] = _score_fmt(target.get("n_tau_median"))
+        row[f"prop{tau:g}"] = _score_fmt(target.get("prop_tau_median"))
+    return row
+
+
+def _show_score_tables(parent: QWidget, output: list, report_path: str) -> None:
+    """campaign_gain's own result, as two real tables - per run and per arm - instead
+    of the printed block they came from.
+
+    Read back from the gain.json campaign_gain just wrote to `report_path`, not
+    reparsed out of `output`: the JSON already holds the same numbers structured, and
+    scraping whitespace-aligned columns back out of text breaks the moment a column's
+    own formatting changes width. `output` is only for the "!" warnings campaign_gain
+    prints alongside the tables (a missing optimum, a reference derived from the
+    selection, ...), which exist nowhere in the JSON and would otherwise be lost.
+    """
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        post(f"Could not read {report_path}: {exc} - showing the printed output instead.")
+        _show_text_dialog(parent, "\n".join(output), "Score campaign")
+        return
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Score campaign")
+    dlg.resize(1000, 700)
+    v = QVBoxLayout(dlg)
+
+    taus = report.get("taus") or []
+    tau_cols = [f"{p}{tau:g}" for tau in taus for p in ("it", "n", "prop")]
+
+    conv = report.get("convergence") or {}
+    note_lines = [f"Metric: {report.get('metric')}",
+                 f"Optimum m* = {_score_fmt(report.get('optimum'))}, "
+                 f"from {report.get('optimum_source')}",
+                 f"Convergence: patience={conv.get('patience')}, tol={conv.get('tol')}, "
+                 f"tol_rel={conv.get('tol_rel')}"]
+    note_lines += [line for line in output if line.strip().startswith("!")]
+    note = QLabel("\n".join(note_lines))
+    note.setWordWrap(True)
+    v.addWidget(note)
+
+    run_cols = (["run", "arm", "n_initial", "m_initial", "m_final", "m_c", "gamma",
+                "gamma_budget", "gamma_norm", "rho_c", "regret_c", "n_c", "converged",
+                "eps", "eta"] + tau_cols)
+    run_rows = [row for arm in report.get("arms", []) for row in arm.get("runs_detail", [])]
+    v.addWidget(QLabel("Per run"))
+    v.addWidget(_score_table_widget(run_cols, run_rows), stretch=2)
+
+    arm_cols = (["arm", "runs", "converged", "gamma", "gamma_budget", "gamma_norm",
+                "rho_c", "regret_c", "eta", "n_c"] + tau_cols)
+    arm_rows = [_arm_summary_row(entry, taus) for entry in report.get("arms", [])]
+    v.addWidget(QLabel("Per arm"))
+    v.addWidget(_score_table_widget(arm_cols, arm_rows), stretch=1)
+
+    def _copy() -> None:
+        text = ("Per run\n" + _score_rows_tsv(run_cols, run_rows) +
+               "\n\nPer arm\n" + _score_rows_tsv(arm_cols, arm_rows))
+        QApplication.clipboard().setText(text)
+        post("Copied to clipboard (tab-separated).")
+
+    copy = QPushButton("Copy to clipboard")
+    copy.clicked.connect(_copy)
     v.addWidget(copy)
     dlg.show()
 
@@ -1645,24 +1772,25 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
 
     def _score_campaign() -> None:
         """Reduce every run to gamma / n_tau / n_c, scoring the same metric the
-        hypervolume plot draws, and show its table in its own window - the table is the
-        whole result, so it gets somewhere it can be read and copied from rather than
-        scrolled past in the log. Also caches each run's own score (see
-        build_experiment_map.run_gain_path), which is what the sensitivity plot below
-        reads."""
+        hypervolume plot draws, and show the result as two tables in their own window -
+        the score is the whole result, so it gets somewhere it can be read, sorted and
+        copied from rather than scrolled past in the log. Also caches each run's own
+        score (see build_experiment_map.run_gain_path), which is what the sensitivity
+        plot below reads."""
         objectives = _metric_objective_args()
         if objectives is None:
             return
-        extra = _constraint_args() + objectives + ["--out-dir", _gain_dir()]
+        gain_dir = _gain_dir()
+        extra = _constraint_args() + objectives + ["--out-dir", gain_dir]
         # The same fixed reference the hypervolume plot uses, and for the same reason:
         # gamma is a ratio of hypervolumes, so a reference that moves with the selection
         # would change a run's score depending on what was plotted beside it.
         if state["problem"] is not None:
             extra += ["--ground-truth", obj_edit.text()]
         extra += _convergence_args() + _problem_view_args()
+        report_path = os.path.join(gain_dir, "gain.json")
         _launch("campaign_gain", *extra,
-                after=lambda output: _show_text_dialog(
-                    page, "\n".join(output), "Score campaign"))
+                after=lambda output: _show_score_tables(page, output, report_path))
 
     def _plot_gain_vs_ninitial() -> None:
         """Gain and cost against the initial design's size.
