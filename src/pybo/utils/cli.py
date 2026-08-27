@@ -75,6 +75,22 @@ def unique_dir(path: str | Path) -> Path:
         i += 1
 
 
+def resolve_output_dir(args, script_file: str | Path) -> Path:
+    """Where a trial should write, honouring --resume.
+
+    With --resume, `args.output_dir` must be given (a resume with nowhere to resume
+    from would otherwise silently start a fresh timestamped run) and is returned
+    as-is, bypassing unique_dir's anti-clobber redirect - resuming means writing back
+    into the exact directory an earlier attempt used, not a fresh sibling next to it.
+    Without --resume, today's unchanged behaviour: unique_dir(args.output_dir or
+    default_output_dir(script_file))."""
+    if getattr(args, "resume", False):
+        if args.output_dir is None:
+            raise SystemExit("--resume requires --output-dir pointing at the run to continue.")
+        return Path(args.output_dir).resolve()
+    return unique_dir(args.output_dir or default_output_dir(script_file))
+
+
 def parse_trial_args(description: str = ""):
     """Parse the trial flags."""
     parser = argparse.ArgumentParser(description=description)
@@ -117,6 +133,13 @@ def parse_trial_args(description: str = ""):
     parser.add_argument("--seed", type=int, default=2063, help="Seeds the global torch RNG.")
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Directory results are written to (defaults to <tutorial_dir>/data/<timestamp>).")
+    parser.add_argument("--resume", type=str2bool, default=False,
+                        help="Continue a previous attempt at --output-dir instead of starting "
+                             "over - skip whatever step_*/experiment.json is already recorded "
+                             "there. Acted on by the tutorial's own loop when it implements step "
+                             "replay (currently vformac, the reference implementation); a "
+                             "tutorial that doesn't still writes into the same directory instead "
+                             "of redirecting to a new one, but redoes every step.")
     parser.add_argument("--device", default="cpu", type=resolve_device, metavar="DEVICE",
                         help="Torch device: cpu (default - always available, never runs out "
                              "of memory the way a GPU can mid-sweep), cuda, or cuda:N. mps "

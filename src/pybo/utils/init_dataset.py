@@ -1,11 +1,14 @@
-"""Load a fixed initial design from a previously recorded run.
+"""Read back step_*/experiment.json records a pybo run writes (real or simulated; see
+tutorials/multi_objective/branin_currin/main.py for the format), for two different
+purposes that share the same private parsing helpers:
 
-Lets two arms (e.g. bo vs sobol), or every replicate of a study, start from the exact
-same initial dataset - so what a comparison measures is the search strategy that
-follows, not which points the initial design happened to draw. Reads the same
-step_*/experiment.json records a completed pybo run writes (real or simulated; see
-tutorials/multi_objective/branin_currin/main.py for the format written), and keeps only
-the observations recorded with source == "initial".
+- load_initial_dataset: warm-start a *fresh* run's initial design from a previously
+  recorded one, so two arms (e.g. bo vs sobol), or every replicate of a study, start
+  from the exact same dataset - what a comparison measures is then the search
+  strategy that follows, not which points the initial design happened to draw.
+- load_experiment_record: replay one step already recorded by an earlier, interrupted
+  attempt at *this same* run, for pybo.utils.resume - a different feature (continuing
+  an interrupted run) built on the same file format, not a warm start.
 """
 import json
 import random
@@ -121,6 +124,50 @@ def load_initial_dataset(root: str | Path, objective, n_initial: int | None = No
         "Y_con_var": _stack_var(entries, "constraints", con_labels),
         "Y_trk":     _stack(entries, paths, "trackers", trk_labels),
         "Y_trk_var": _stack_var(entries, "trackers", trk_labels),
+    }
+
+
+def load_experiment_record(path: str | Path, objective) -> dict:
+    """One step's already-recorded observations, read back the same file
+    OptimizerBase.to_json wrote, as update_XY's own keyword arguments - the inverse of
+    that write, for replaying a step already completed in an earlier attempt at a run
+    (see pybo.utils.resume) instead of proposing and simulating it again.
+
+    Raises ValueError on an empty or mixed-source file and json.JSONDecodeError on
+    unparseable JSON - both propagated rather than caught here, since only the caller
+    knows the recovery policy (pybo.utils.resume treats either as "redo this step").
+
+    Returns {"new_X", "new_Y_obj", "new_Y_obj_var", "new_Y_con", "new_Y_con_var",
+    "new_Y_trk", "new_Y_trk_var", "source"} - source is a single string, not a
+    per-row list: to_json only ever writes the rows from one update_XY call, and
+    update_X stamps every row it appends with the same source, so the field is
+    invariant within one file by construction, not just by convention.
+    """
+    path = Path(path)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    entries = record.get("data") or []
+    if not entries:
+        raise ValueError(f"{path}: no observations recorded.")
+    paths = [path] * len(entries)
+    sources = {entry.get("source") for entry in entries}
+    if len(sources) != 1:
+        raise ValueError(f"{path}: mixed source labels {sources} in one file - expected "
+                         f"one update_XY call's worth of rows.")
+
+    par_labels = [cfg.label for cfg in objective.par_cfg]
+    obj_labels = [cfg.label for cfg in objective.obj_cfg]
+    con_labels = [cfg.label for cfg in (objective.ineq_Y_con_cfg or [])]
+    trk_labels = [cfg.label for cfg in (objective.trk_cfg or [])]
+
+    return {
+        "new_X":         _stack(entries, paths, "parameters", par_labels),
+        "new_Y_obj":     _stack(entries, paths, "objectives", obj_labels),
+        "new_Y_obj_var": _stack_var(entries, "objectives", obj_labels),
+        "new_Y_con":     _stack(entries, paths, "constraints", con_labels),
+        "new_Y_con_var": _stack_var(entries, "constraints", con_labels),
+        "new_Y_trk":     _stack(entries, paths, "trackers", trk_labels),
+        "new_Y_trk_var": _stack_var(entries, "trackers", trk_labels),
+        "source":        sources.pop(),
     }
 
 
