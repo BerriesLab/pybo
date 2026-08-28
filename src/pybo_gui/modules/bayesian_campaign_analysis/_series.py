@@ -144,14 +144,3 @@ def series_label(exp: dict, keys, fallback: str = "") -> str:
             continue
         parts.append(f"n{value}" if key == "n_initial" else str(value).strip().lower())
     return " ".join(parts) or fallback
-
-
-def pooled(keys) -> tuple:
-    """The dimensions the ticked keys collapse, for the band's legend.
-
-    A band means different things depending on what went into it - pooling `run` is how
-    differently the optimizer behaves from seed to seed, pooling `n_initial` as well folds
-    in the design size. None of that is recoverable from the picture, so the legend carries
-    it.
-    """
-    return tuple(k for k in GROUP_KEYS if k not in set(keys))

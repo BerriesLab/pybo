@@ -15,7 +15,7 @@ from pybo_gui.modules.bayesian_campaign_analysis._hypervolume import (
 )
 from pybo_gui.modules.bayesian_campaign_analysis._labels import is_initial, styler
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, merge_key, parse_keys, pooled, series_key, series_label)
+    GROUP_KEYS, GroupKeyError, merge_key, parse_keys, series_key, series_label)
 from pybo_gui.modules.bayesian_campaign_analysis._aggregate import (
     BAND_MODES, mean_band, arm_legend_label)
 from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
@@ -521,7 +521,7 @@ def y_label():
     """
     quantity = f"best {objective_keys[0]}" if single else "hypervolume"
     if args.metric == "normalized":
-        return f"Normalized {quantity} " + r"$\rho$"
+        return r"$\rho$"
     if args.metric == "regret":
         return f"{quantity.capitalize()} regret " + r"$R(n)$"
     return quantity.capitalize()
@@ -632,8 +632,7 @@ elif aggregating:
         legend_handles.append(mlines.Line2D(
             [], [], color=_color(arm), linewidth=1.6, linestyle=_line_style(arm),
             marker=_marker(arm), markersize=5,
-            label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]),
-                                   pooled_over=pooled(keys))))
+            label=arm_legend_label(arm.capitalize(), args.band, len(arm_curves[arm]))))
     # Where each arm's initial design ends. Arms that differ only by strategy share one
     # design window, and then this is the single neutral span it always was. A sweep over
     # --n-initial makes the design size the very thing being compared, and there a span

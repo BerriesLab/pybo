@@ -94,22 +94,15 @@ def band_label(mode: str, n: int) -> str:
             "minmax": f"mean, min-max (n={n})"}[mode]
 
 
-def arm_legend_label(name: str, mode: str, n: int, pooled_over=()) -> str:
+def arm_legend_label(name: str, mode: str, n: int) -> str:
     """An aggregated series' legend entry: `name` alone when there is only one run to
     plot - "mean" and a confidence interval are not meaningful statements about a
     single curve, and mean_band already draws it with a zero-width band rather than
     inventing one - else `name` with the band descriptor attached.
-
-    `pooled_over` names the dimensions the grouping keys collapsed, and it is not
-    decoration: the same band means measurement noise when only repeats were pooled, how
-    differently the optimizer behaves from seed to seed when only runs were, and a mixture
-    of the two when both. None of that can be read off the picture, so the legend carries
-    it. Empty when nothing was pooled, and then the label is unchanged.
     """
     if n <= 1:
         return name
-    over = f", pooled over {', '.join(pooled_over)}" if pooled_over else ""
-    return f"{name} - {band_label(mode, n)}{over}"
+    return f"{name} - {band_label(mode, n)}"
 
 
 def attainment_grid(fronts, n_points: int = 200):
