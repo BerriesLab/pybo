@@ -621,7 +621,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     btn_hv = QPushButton("Plot HV")
     btn_hvi = QPushButton("Plot HV improvement")
     btn_gain = QPushButton("Score campaign")
-    btn_gain_ninit = QPushButton("Plot gain vs n_initial")
+    btn_gain_ninit = QPushButton("Plot gain by group")
 
     # One button per quantity rather than a mode the plot buttons read: each draws a
     # different figure, and a selector meant the same button produced a hypervolume or a
@@ -1799,7 +1799,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 after=lambda output: _show_score_tables(page, output, report_path))
 
     def _plot_gain_vs_ninitial() -> None:
-        """Gain and cost against the initial design's size.
+        """Gain and cost, one box per arm - strategy, design size and provenance
+        together (see _labels.arm_label) - so this compares design-size sweeps and
+        real-vs-simulated benchmarks alike, whichever the ticked selection holds.
 
         Takes no run list: the plot reads the per-run scores for whatever the map holds,
         and the map has just been rebuilt from the ticked selection by _launch. So the

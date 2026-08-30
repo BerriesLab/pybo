@@ -1,4 +1,4 @@
-"""How the initial design's size pays off: the gain it buys and what it costs.
+"""How each group's gain compares, and what it cost.
 
 Reads the score campaign_gain leaves for each run in its own workspace cache entry (see
 build_experiment_map.run_gain_path) - one gain.json per run, fingerprinted from that run
@@ -9,20 +9,28 @@ run scored once stays readable from any later selection that includes it. A run 
 score yet is named and skipped, and a set of runs scored under different settings is
 refused rather than mixed.
 
-Plots, against the initial design size n0, the two halves of the trade-off a sweep over
---n-initial exists to measure:
+Plots, one box per group, the two halves of the trade-off a comparison across groups
+exists to measure:
 
   gamma    the gain over the initial design at convergence, in %
   n_c      the evaluations spent reaching it, the design included
+
+A group is a run's arm - strategy, initial design size and provenance together (see
+_labels.arm_label), the same identity plot_hypervolume's --aggregate-runs pools a curve
+by. That is deliberately broader than a sweep over --n-initial alone: two runs of the
+same strategy at different design sizes are two different groups here just as they would
+be under a sweep ("bayesian n10" and "bayesian n20"), but so are a real campaign and a
+simulated benchmark run under the same strategy ("bayesian n20 (experimental)" against
+"bayesian n20 (synthetic)") - a comparison a sweep over n_initial alone has no way to draw,
+because nothing there is being varied.
 
 Two panels sharing one x axis rather than one panel with two y scales: the measures
 have unrelated units, and a second y axis invites reading a crossing point that means
 nothing.
 
-Both panels are needed together. gamma alone says a bigger design converges higher
-without saying what it cost; the cost alone rewards a run that stopped early having
-gained little. Read as a pair they are the exploration-cost/convergence-quality
-trade-off.
+Both panels are needed together. gamma alone says a group converges higher without
+saying what it cost; the cost alone rewards a run that stopped early having gained
+little. Read as a pair they are the exploration-cost/convergence-quality trade-off.
 
 WHICH COST - and a floor to know about
 
@@ -32,9 +40,8 @@ WHICH COST - and a floor to know about
 
       n_c >= n0 + patience
 
-  so a sweep over n0 makes the total-cost panel slope upward whatever the optimizer did -
-  part of that rise is arithmetic, not behaviour, and it is steepest exactly where the
-  sweep is widest.
+  so two groups at different design sizes are not on equal footing in the total-cost
+  panel for arithmetic reasons alone, before behaviour enters into it.
 
   --cost total (the default) keeps n_c, and is the honest number for machine time: an
   initial point costs a measurement like any other. --cost proposals plots n_c - n0
@@ -50,8 +57,10 @@ stands in on the gain panel, drawn as an open marker to say it is a lower bound 
 than a measurement. The cost panels leave it out entirely, since there the missing
 quantity is the x value itself. The console says how many there were.
 
-Each strategy gets its own marker as well as its own colour, so the comparison the figure
-exists to make survives greyscale printing and colour vision deficiency.
+Each group gets its own colour and marker, so the comparison the figure exists to make
+survives greyscale printing and colour vision deficiency - and so its boxes still read
+apart from their neighbours' even where the x-axis labels below them run long enough to
+overlap.
 
 EXAMPLE
 
@@ -61,13 +70,10 @@ EXAMPLE
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from pybo_gui.configs.figure_settings.config import fig_cfg
@@ -91,7 +97,6 @@ parser.add_argument("--run", action="append", default=[], metavar="DIR",
 args = parser.parse_args()
 
 FONT_LABEL = fig_cfg["font"]["label"]
-FONT_LEGEND = fig_cfg["font"]["legend"]
 
 def _selected_run_dirs() -> list:
     """The run directories to score, in the order the map lists them.
@@ -120,10 +125,11 @@ def _selected_run_dirs() -> list:
     return seen
 
 
-# One row per run, read from the score campaign_gain cached for it. The arm label
-# already carries the design size (see _labels.arm_label), so the strategy is what is
-# left once it is taken out - that, not the arm, is what makes a series here, since n0
-# is the x axis.
+# One row per run, read from the score campaign_gain cached for it. The arm label is the
+# group itself - strategy, design size and provenance together (see _labels.arm_label) -
+# so unlike the old sweep-only reading, it is kept whole rather than having its design
+# size stripped back out: two groups that only differ by n_initial still belong on
+# different x positions, the same way two that only differ by provenance do.
 runs, contexts, missing, stale, unconverged = [], [], [], [], []
 for run_dir in _selected_run_dirs():
     score_path = run_gain_path(run_dir)
@@ -141,7 +147,8 @@ for run_dir in _selected_run_dirs():
     if gamma_c is None and "gamma_c" in score:
         stale.append(run_dir)
         continue
-    if n_initial is None:
+    arm = score.get("arm")
+    if arm is None:
         missing.append(run_dir)
         continue
     # A run still improving when its budget ran out has no n_c, and campaign_gain leaves
@@ -156,18 +163,16 @@ for run_dir in _selected_run_dirs():
         unconverged.append(run_dir)
         continue
     contexts.append(json.dumps(score.get("context"), sort_keys=True))
-    # By pattern, not by this run's own number: the size in the arm label is written by
-    # _labels.arm_label from the map's count, and the two can differ (a run measured with
-    # --repeats records the design more than once). Matching " n<digits>" strips it either
-    # way, so the arms stay whole instead of splitting one series per design size.
-    label = re.sub(r" n\d+", "", str(score.get("arm") or ""), count=1)
-    runs.append({"n0": int(n_initial),
-                 "series": label or "run",
+    runs.append({"arm": str(arm),
+                 # For ordering the x axis only - two groups that share a design size
+                 # still sort together rather than by name alone. None sorts last.
+                 "n0": n_initial,
                  "gamma": float(gain),
                  # Both readings of the same stopping point, drawn one above the other:
                  # what the optimizer spent, and what the experiment cost in total. NaN
                  # without an n_c, which the converged-only cost panels then leave out.
-                 "cost_prop": float(n_c) - n_initial if converged else float("nan"),
+                 "cost_prop": float(n_c) - n_initial if converged and n_initial is not None
+                             else float("nan"),
                  "cost_total": float(n_c) if converged else float("nan"),
                  "converged": converged})
 
@@ -192,9 +197,8 @@ if stale:
           f"{' ...' if len(stale) > 4 else ''}")
 
 if not runs:
-    print("None of the selected runs carries a current score with both n_initial and "
-          "gamma. Score the campaign first; a run recording no initial design cannot be "
-          "plotted against its size.")
+    print("None of the selected runs carries a current score with a gain. Score the "
+          "campaign first.")
     sys.exit(1)
 
 # Scores are only comparable when they were measured the same way. The context each file
@@ -211,41 +215,36 @@ if context.get("reference_source") == "selection":
           "loaded when they were computed, so they hold only for that selection. "
           "Re-score with --ground-truth for numbers that travel.")
 
-sizes = sorted({r["n0"] for r in runs})
-series = sorted({r["series"] for r in runs})
-if len(sizes) < 2:
-    print(f"! only one initial design size ({sizes[0]}) in this campaign - there is no "
-          f"trend to draw. Select runs from a sweep over --n-initial.")
+# Ordered by design size where a group carries one, not alphabetically - a sweep over
+# --n-initial should read n5, n10, n20, not the "n10" < "n20" < "n5" a string sort gives.
+# A group missing n_initial sorts after those that have it, then by name.
+arm_n0 = {}
+for r in runs:
+    arm_n0.setdefault(r["arm"], r["n0"])
+categories = sorted(arm_n0, key=lambda a: (arm_n0[a] is None, arm_n0[a], a))
+if len(categories) < 2:
+    print(f"! only one group ({categories[0]}) in this selection - there is no "
+          f"comparison to draw. Select runs from more than one arm.")
 
-# Marker as well as colour: the strategies are the thing being compared here, and a
-# figure that separates them by hue alone stops separating them at all in greyscale, in
-# print, or for a reader with a colour vision deficiency.
-color, marker, _line, _front = styler(fig_cfg, series)
-
-# Series are dodged around each size so their boxes never overlap. One series sits on the
-# size itself; several share the spacing between adjacent sizes.
-step = min(np.diff(sizes)) if len(sizes) > 1 else 1.0
-width = 0.5 * step / max(len(series), 1)
+# Colour and marker together: the groups are the thing being compared here, and a figure
+# that separates them by hue alone stops separating them at all in greyscale, in print, or
+# for a reader with a colour vision deficiency - useful even though the x-axis labels
+# already name each group, since it is what lets a reader match a stray point back to its
+# box without reading sideways.
+color, marker, _line, _front = styler(fig_cfg, categories)
 
 
-def _cell(name, size, key, converged_only=False):
+def _cell(name, key, converged_only=False):
     return [r[key] for r in runs
-            if r["series"] == name and r["n0"] == size
-            and (r["converged"] or not converged_only)]
+            if r["arm"] == name and (r["converged"] or not converged_only)]
 
 
 def _panel(ax, key, converged_only):
-    """One measure across every size and series, as a box per cell plus its points."""
-    for i, name in enumerate(series):
-        offset = (i - (len(series) - 1) / 2) * width
-        positions, cells = [], []
-        for size in sizes:
-            values = _cell(name, size, key, converged_only)
-            if values:
-                positions.append(size + offset)
-                cells.append(values)
-        if cells:
-            box = ax.boxplot(cells, positions=positions, widths=width * 0.8,
+    """One measure across every group, as a box per category plus its points."""
+    for i, name in enumerate(categories):
+        values = _cell(name, key, converged_only)
+        if values:
+            box = ax.boxplot([values], positions=[i], widths=0.6,
                              patch_artist=True, manage_ticks=False, showfliers=False)
             for patch in box["boxes"]:
                 patch.set(facecolor=color(name), alpha=0.25, linewidth=0.8,
@@ -255,21 +254,20 @@ def _panel(ax, key, converged_only):
                     line.set(color=color(name), linewidth=1.0)
         if not args.points:
             continue
-        for size in sizes:
-            for run in (r for r in runs if r["series"] == name and r["n0"] == size):
-                if converged_only and not run["converged"]:
-                    continue
-                # A deterministic jitter, so the same campaign redraws identically.
-                jitter = (hash((run["series"], size, run[key])) % 100 / 100 - 0.5)
-                ax.plot(size + offset + jitter * width * 0.5, run[key],
-                        marker=marker(name), markersize=4.5, linestyle="none",
-                        color=color(name),
-                        # Open for a run that never converged: what is plotted for it is
-                        # gamma_budget, a lower bound, rather than a gain at a convergence
-                        # point it never reached.
-                        markerfacecolor=color(name) if run["converged"] else "none",
-                        markeredgecolor=color(name), markeredgewidth=0.8,
-                        alpha=0.75, zorder=3)
+        for run in (r for r in runs if r["arm"] == name):
+            if converged_only and not run["converged"]:
+                continue
+            # A deterministic jitter, so the same campaign redraws identically.
+            jitter = (hash((run["arm"], run[key])) % 100 / 100 - 0.5)
+            ax.plot(i + jitter * 0.3, run[key],
+                    marker=marker(name), markersize=4.5, linestyle="none",
+                    color=color(name),
+                    # Open for a run that never converged: what is plotted for it is
+                    # gamma_budget, a lower bound, rather than a gain at a convergence
+                    # point it never reached.
+                    markerfacecolor=color(name) if run["converged"] else "none",
+                    markeredgecolor=color(name), markeredgewidth=0.8,
+                    alpha=0.75, zorder=3)
 
 
 figsize = fig_cfg["figsize"].get("gain_vs_ninitial",
@@ -288,11 +286,15 @@ _panel(ax_cost, "cost_total", converged_only=True)
 ax_gain.set_ylabel(r"$\gamma$", fontsize=FONT_LABEL)
 ax_prop.set_ylabel(r"$n_\mathrm{c} - n_0$", fontsize=FONT_LABEL)
 ax_cost.set_ylabel(r"$n_\mathrm{c}$", fontsize=FONT_LABEL)
-ax_cost.set_xlabel(r"$n_0$", fontsize=FONT_LABEL)
-ax_cost.set_xticks(sizes)
-ax_cost.set_xticklabels([str(s) for s in sizes])
+ax_cost.set_xticks(range(len(categories)))
+# Rotated: a group's name carries its strategy, design size and provenance together
+# (see _labels.arm_label), which routinely runs longer than a bare "n20" ever did -
+# horizontal labels would overlap their neighbours long before the figure got crowded.
+ax_cost.set_xticklabels([name.capitalize() for name in categories],
+                        rotation=30, ha="right", fontsize=FONT_LABEL)
 for ax in (ax_gain, ax_prop, ax_cost):
     ax.grid(True, **fig_cfg["grid"])
+    ax.set_xlim(-0.5, len(categories) - 0.5)
 
 # The same axis read in machining hours - a unit conversion of the one measure, not a
 # second scale competing with it.
@@ -303,15 +305,6 @@ if args.hours_per_eval > 0:
                                 lambda v: v / args.hours_per_eval))
         hours.set_ylabel("Machining time (h)", fontsize=FONT_LABEL)
 
-# One series names itself in the axis labels; several need telling apart.
-if len(series) > 1:
-    handles = [mlines.Line2D([], [], color=color(name), marker=marker(name),
-                             linestyle="none", markersize=6, label=name.capitalize())
-               for name in series]
-    leg_cfg = fig_cfg["legend"]
-    ax_gain.legend(handles=handles, fontsize=FONT_LEGEND, loc=leg_cfg["loc"],
-                   frameon=leg_cfg["frameon"], framealpha=leg_cfg["framealpha"])
-
 censored = [r for r in runs if not r["converged"]]
 if censored:
     print(f"! {len(censored)} of {len(runs)} runs were still improving when the budget "
@@ -320,11 +313,9 @@ if censored:
           f"they never reached, and left out of the cost panels entirely since they have "
           f"no n_c. Both are lower bounds: give them a longer budget to measure rather "
           f"than bound them.")
-for size in sizes:
-    kept = [r for r in runs if r["n0"] == size and r["converged"]]
-    if not kept:
-        print(f"! n0 = {size}: no run converged, so the cost panel has nothing to show "
-              f"for it.")
+for name in categories:
+    if not any(r["arm"] == name and r["converged"] for r in runs):
+        print(f"! {name}: no run converged, so the cost panel has nothing to show for it.")
 
 fig.tight_layout(pad=fig_cfg["layout_pad"])
 plt.show(block=__name__ == "__main__")
