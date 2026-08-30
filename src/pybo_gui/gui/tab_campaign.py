@@ -22,20 +22,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator, QFontDatabase
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
-    QFileDialog, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QFileDialog, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListView, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton,
-    QRadioButton, QDoubleSpinBox, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QRadioButton, QDoubleSpinBox, QSpinBox, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
-from pybo_gui.configs import settings as configs_settings
 from pybo_gui.configs import workspace
-from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import (
-    build_map, map_stamp, stamp_digest)
-from pybo_gui.modules.bayesian_campaign_analysis.build_group_map import build_groups
+from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import stamp_digest
 from pybo_gui.modules.bayesian_campaign_analysis.objective_loader import load_objective, problem_definition
 from pybo_gui.gui.launchers import (
-    launch_analysis, run_off_thread, stop_token, stopped_since, watch,
+    launch_analysis, stop_token, stopped_since, watch,
 )
 from pybo_gui.gui.message_log import post
 from pybo_gui.gui.widgets import (
@@ -77,19 +74,6 @@ def _parameter_keys(exp_map: dict) -> list:
             if key not in keys:
                 keys.append(key)
     return sorted(keys)
-
-
-def _view_json_dialog(parent: QWidget, payload, title: str) -> None:
-    dlg = QDialog(parent)
-    dlg.setWindowTitle(title)
-    dlg.resize(700, 600)
-    v = QVBoxLayout(dlg)
-    txt = QPlainTextEdit()
-    txt.setReadOnly(True)
-    txt.setPlainText(json.dumps(payload, indent=2) if payload else
-                     "Nothing built yet — click “Rebuild map now” first.")
-    v.addWidget(txt)
-    dlg.show()
 
 
 def _show_text_dialog(parent: QWidget, text: str, title: str) -> None:
@@ -326,89 +310,6 @@ def _edit_objective_dialog(parent: QWidget, path: str, on_saved) -> None:
     dlg.show()
 
 
-class _GroupItem(QTreeWidgetItem):
-    """A group map row that sorts a column by number when it holds numbers.
-
-    Qt compares the cell text, which reads wrong down a parameter column: 10 lands before
-    9, and a group with no value there ("None") sorts wherever the alphabet puts it.
-    Numbers are compared as numbers, and anything else falls back to the text - so the
-    cells with no number gather at one end instead of interleaving.
-    """
-
-    def __lt__(self, other):
-        tree = self.treeWidget()
-        column = tree.sortColumn() if tree is not None else 0
-        mine, theirs = self.text(column), other.text(column)
-        try:
-            return float(mine) < float(theirs)
-        except ValueError:
-            return mine < theirs
-
-
-def _view_group_map_dialog(parent: QWidget, groups, exp_map) -> None:
-    dlg = QDialog(parent)
-    dlg.setWindowTitle("Group map")
-    dlg.resize(700, 600)
-    v = QVBoxLayout(dlg)
-
-    if not groups:
-        v.addWidget(QLabel("Nothing built yet — click “Rebuild map now” first."))
-        dlg.show()
-        return
-
-    gid_to_exps = {}
-    for e in (exp_map or {}).get("experiments", []):
-        gid = e.get("group_id")
-        # experiment_id, where the rig listed a folder: a pybo observation has no
-        # directory of its own, it is one row of a step record.
-        gid_to_exps.setdefault(gid, []).append(e["experiment_id"])
-
-    cols = list(groups[0].keys())
-    splitter = QSplitter(Qt.Orientation.Vertical)
-
-    tree = QTreeWidget()
-    tree.setColumnCount(len(cols))
-    tree.setHeaderLabels(cols)
-    tree.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-    for g in groups:
-        item = _GroupItem([str(g.get(c, "")) for c in cols])
-        # The group_id travels with the row rather than being read back out of a cell, so
-        # the detail pane keeps working however the rows are ordered.
-        item.setData(0, Qt.ItemDataRole.UserRole, g.get("group_id"))
-        tree.addTopLevelItem(item)
-    # After the rows are in: sorting while inserting re-sorts on every append.
-    tree.header().setSortIndicatorShown(True)
-    tree.setSortingEnabled(True)
-    tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-    splitter.addWidget(tree)
-
-    detail_box = QWidget()
-    detail_layout = QVBoxLayout(detail_box)
-    detail_layout.setContentsMargins(0, 0, 0, 0)
-    detail_lbl = QLabel("Select a group to see its experiments.")
-    detail_lbl.setStyleSheet("color: grey;")
-    detail_layout.addWidget(detail_lbl)
-    detail_txt = QPlainTextEdit()
-    detail_txt.setReadOnly(True)
-    detail_layout.addWidget(detail_txt)
-    splitter.addWidget(detail_box)
-
-    def _on_select():
-        sel = tree.selectedItems()
-        if not sel:
-            return
-        gid = sel[0].data(0, Qt.ItemDataRole.UserRole)
-        exps = gid_to_exps.get(gid, [])
-        detail_lbl.setText(f"Group {gid} — {len(exps)} experiment(s):")
-        detail_lbl.setStyleSheet("")
-        detail_txt.setPlainText("\n".join(exps))
-
-    tree.itemSelectionChanged.connect(_on_select)
-
-    v.addWidget(splitter)
-    dlg.show()
-
-
 def _row(*widgets) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -452,37 +353,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     layout = QVBoxLayout(page)
     plot_page = QWidget()
     plot_page_layout = QVBoxLayout(plot_page)
-    # "source" records where the map came from: a selection rebuild, or a file the
-    # user loaded. A loaded map must survive the next plot click rather than being
-    # silently rebuilt from a selection it has nothing to do with.
-    state: dict = {"problem": None, "map": None, "groups": None, "source": None}
-    # One directory per session, so a rebuild never writes into the user's data tree.
-    # Save map is the only thing that puts a map where they chose.
-    #
-    # Read once, here: the Workspace setting can change while this session runs, but the
-    # directory it already writes to must not, or configs.settings.data_path and the map
-    # on disk would drift apart. Unset means a temporary directory, as it always was.
-    _scratch = workspace.new_instance_dir()
-
-    # ---- Experiment map ------------------------------------------------------
-    # First: it is what every other action on this page ends up calling, and the one
-    # thing that carries a change made below - an objective, a resolution - through to
-    # the plots. Further down it reads as an afterthought rather than the step nothing
-    # takes effect without.
-    map_box = QGroupBox("Experiment map")
-    map_layout = QVBoxLayout(map_box)
-    btn_rebuild = QPushButton("Rebuild map now")
-    btn_regroup = QPushButton("Regroup")
-    btn_view_exp = QPushButton("View experiment map")
-    btn_view_grp = QPushButton("View group map")
-    btn_save_map = QPushButton("Save map")
-    btn_load_map = QPushButton("Load map")
-    # What counts as the same setting is the resolution in the Parameters box, and only
-    # that: a second knob here would be a second answer to one question, free to disagree
-    # with the objective's own. A parameter with no resolution is compared as measured.
-    map_layout.addWidget(_row(btn_rebuild, btn_regroup, btn_view_exp, btn_view_grp, btn_save_map,
-                              btn_load_map))
-    layout.addWidget(map_box)
+    # Just the objective now - the experiment map itself (build/regroup/save/load, and
+    # the map held in memory) moved onto step_list, which owns the tree its buttons act
+    # on (checked_paths/reference_paths). See step_list.configure, wired near the bottom
+    # of this function once par_collect, cb_ground and _refresh_keys all exist.
+    state: dict = {"problem": None}
 
     # ---- Objective -----------------------------------------------------------
     # First: nothing else on either page is usable until this is loaded.
@@ -964,7 +839,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         problem = state["problem"]
         if problem is not None:
             return [p["label"] for p in problem["parameters"]]
-        return _parameter_keys(state["map"])
+        return _parameter_keys(step_list.current_map)
 
     def _sync_landscape() -> None:
         """Offer the single-objective landscape only where there is a plane to draw it on.
@@ -1011,7 +886,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         else:
             # No objective loaded: fall back to whatever the last built map recorded,
             # the way the original tab discovered its result keys.
-            everything = _result_keys(state["map"])
+            everything = _result_keys(step_list.current_map)
             objectives = everything
             senses = {}
 
@@ -1146,182 +1021,9 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         _refresh_keys()
 
     # ---- Launching -----------------------------------------------------------
-
-    def _rebuild_map(on_done=None, force: bool = False) -> None:
-        """Rebuild experiment_map.json + group_map.json from the current selection.
-
-        Asynchronous: the reading happens on a worker thread and `on_done(ok)` is called
-        here afterwards, so callers continue from there rather than from a return value.
-        Reading a campaign's step records is seconds to minutes - 80 s for a 40-run study,
-        nearly all of it file opens - and on the GUI thread that is a window Windows greys
-        out as "not responding".
-
-        A second rebuild while one is in flight is refused rather than queued: the two
-        would race to write the same scratch map, and the loser's would be what the plots
-        then read. The scripts read the map through configs.settings.data_path, which is
-        repointed once the build lands.
-        """
-        finish = on_done or (lambda ok: None)
-        if state.get("building"):
-            post("Still building the previous map — wait for it to finish.")
-            finish(False)
-            return
-        # Everything the build needs is read from the widgets here, on the GUI thread,
-        # and closed over: the worker must not touch a Qt object.
-        steps = step_list.checked_paths
-        # A reference not otherwise selected still has to be in the map, or its own
-        # points would never reach the plot for _reference to draw - so its
-        # directories are folded into the roots build_map reads, independently of
-        # whether the user also ticked Include on them.
-        references = step_list.reference_paths
-        roots = sorted(set(steps) | set(references))
-        # No roots is a request for the ground truth on its own, as long as there is a
-        # ground truth to draw: build_map([]) is an empty map, and a plot over one draws
-        # the backdrop and no series. Without one it is just an empty plot, so that still
-        # asks for a selection rather than opening a blank figure.
-        if not roots and not cb_ground.isChecked():
-            post("Select at least one step in the Steps window.")
-            finish(False)
-            return
-        resolutions = par_collect()
-        state["building"] = True
-        post(f"Building the campaign map from {len(roots)} director"
-             f"{'y' if len(roots) == 1 else 'ies'}...")
-
-        def _work():
-            """The slow half: reading every selected step record. No Qt in here.
-
-            Unless it can be skipped. The stamp says what the map depends on - the
-            records' own mtimes and sizes, the selection, the resolutions, the schema the
-            code writes - and a cached map taken under an identical stamp is the same map.
-            Two large reads instead of thousands of small ones.
-            """
-            stamp = map_stamp(roots, references=references, resolutions=resolutions)
-            cache = workspace.cache_dir()
-            cached = None if cache is None else cache / stamp_digest(stamp)
-            if cached is not None and not force and (cached / "stamp.json").exists():
-                try:
-                    if json.loads((cached / "stamp.json").read_text(encoding="utf-8")) == stamp:
-                        return (json.loads((cached / "experiment_map.json").read_text(encoding="utf-8")),
-                                json.loads((cached / "group_map.json").read_text(encoding="utf-8")),
-                                True, stamp)
-                except (OSError, ValueError):
-                    # An unreadable or half-written cache entry is not worth failing over:
-                    # rebuilding is always correct, only slower.
-                    pass
-            exp_map = build_map(roots, reference_roots=references)
-            groups = build_groups(exp_map, resolutions)
-            if cached is not None:
-                cached.mkdir(parents=True, exist_ok=True)
-                (cached / "experiment_map.json").write_text(json.dumps(exp_map, indent=2),
-                                                            encoding="utf-8")
-                (cached / "group_map.json").write_text(json.dumps(groups, indent=2),
-                                                       encoding="utf-8")
-                # Written last, so a stamp on disk always has a complete map beside it.
-                (cached / "stamp.json").write_text(json.dumps(stamp, indent=2),
-                                                   encoding="utf-8")
-            return exp_map, groups, False, stamp
-
-        def _apply(result) -> None:
-            """Back on the GUI thread with whatever the worker produced."""
-            state["building"] = False
-            if isinstance(result, BaseException):
-                post(f"Map build failed: {result}")
-                finish(False)
-                return
-            exp_map, groups, reused, stamp = result
-            state["map"], state["groups"] = exp_map, groups
-            state["source"] = "selection"
-            # What this map was built from. Regroup reuses it rather than taking a fresh
-            # one, so a regrouped map is cached as coming from the records it really came
-            # from - see _regroup.
-            state["stamp"] = stamp
-            # A plot is a separate process reading configs.settings.data_path, so the map
-            # has to exist somewhere on disk for it. That somewhere is a scratch directory
-            # for the session, not the user's data tree - Save map is how a copy gets kept.
-            _write_map(_scratch)
-            configs_settings.set_data_path(_scratch)
-            if not roots:
-                post("No steps selected — the ground truth will be drawn on its own")
-                finish(True)
-                return
-            series = len({e["experiment_type"] for e in exp_map["experiments"]})
-            # Said out loud on purpose: a reused map that is somehow wrong has to be
-            # visible, not silent. Rebuild map now is the way to force one either way.
-            how = "reused, unchanged since it was built" if reused else "freshly built from the records"
-            message = (f"{len(exp_map['experiments'])} observations from "
-                       f"{len(roots)} selected director"
-                       f"{'y' if len(roots) == 1 else 'ies'}, {series} series, {how}")
-            if references:
-                message += f", {len(references)} reference director" \
-                           f"{'y' if len(references) == 1 else 'ies'}"
-            post(message)
-            finish(True)
-
-        run_off_thread(_work, _apply)
-
-    def _write_map(out_dir) -> Path:
-        """Write the map held in memory into `out_dir`."""
-        out_dir = Path(out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "experiment_map.json").write_text(
-            json.dumps(state["map"], indent=2), encoding="utf-8")
-        (out_dir / "group_map.json").write_text(
-            json.dumps(state["groups"], indent=2), encoding="utf-8")
-        return out_dir
-
-    def _cache_regrouped(resolutions: dict) -> None:
-        """Store the regrouped map under the records it was built from.
-
-        Nothing to store when the map came from a file rather than a build, since then no
-        fingerprint of the records stands behind it.
-        """
-        cache = workspace.cache_dir()
-        if cache is None or not state.get("stamp"):
-            return
-        stamp = {**state["stamp"],
-                 "resolutions": {str(k): v for k, v in sorted(resolutions.items())}}
-        entry = cache / stamp_digest(stamp)
-        try:
-            entry.mkdir(parents=True, exist_ok=True)
-            (entry / "experiment_map.json").write_text(json.dumps(state["map"], indent=2),
-                                                       encoding="utf-8")
-            (entry / "group_map.json").write_text(json.dumps(state["groups"], indent=2),
-                                                  encoding="utf-8")
-            (entry / "stamp.json").write_text(json.dumps(stamp, indent=2), encoding="utf-8")
-        except OSError as exc:  # noqa: BLE001 - a cache that cannot be written is not fatal
-            post(f"Could not cache the regrouped map: {exc}")
-
-    def _regroup() -> None:
-        """Re-group the map held in memory at the current resolutions.
-
-        The cheap half of a rebuild: which observations count as one setting depends on
-        the resolutions, the observations themselves do not - so this needs no step
-        record read again. Seconds against minutes, which is why it is a button of its
-        own rather than something Rebuild map now is the only way to reach.
-
-        Applied to whatever is in memory, loaded map included: a saved grouping was made
-        at whatever resolutions were set then, and leaving it would mean the Parameters
-        box reads one thing while the plots group by another.
-
-        Cached under the fingerprint the map was *built* with, not a fresh one. Pressing
-        Regroup asserts that the map in memory still stands - but only now. Taking a new
-        fingerprint would extend that assertion into the future: a record rewritten since
-        the build would be recorded as though the map already reflected it, and the next
-        rebuild would reuse a map that does not. Keeping the original fingerprint says
-        what is true - these records, in that state, grouped this way - so a rebuild after
-        a record changes still misses and rebuilds.
-        """
-        if not state["map"]:
-            post("Nothing to regroup — build a map first.")
-            return
-        resolutions = par_collect()
-        state["groups"] = build_groups(state["map"], resolutions)
-        _write_map(_scratch)
-        configs_settings.set_data_path(_scratch)
-        _cache_regrouped(resolutions)
-        post(f"Regrouped into {len(state['groups'])} groups, "
-             f"{len(resolutions)} parameters by resolution")
+    # Building, regrouping, saving and loading the experiment map itself now live on
+    # step_list (rebuild_map/regroup/save_map/load_map/with_map/with_shown_map) - see
+    # step_list.configure below, and the module's own docstring for why.
 
     def _note_resolutions_changed() -> None:
         """Say that the Parameters box and the map now disagree, when they do.
@@ -1333,92 +1035,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         Only with a map already built: with none there is nothing to be out of step with,
         and the next build will use whatever the boxes hold by then.
         """
-        if not state["map"]:
+        if not step_list.current_map:
             return
         post("Resolutions changed — the map is still grouped at the previous ones. "
              "Press Regroup to group by these, or Rebuild map now to re-read the "
              "records as well.")
-
-    def _with_shown_map(on_ready) -> None:
-        """Call `on_ready(True)` with whatever map is already held, building one only if
-        there is none.
-
-        For the viewers, which exist to show the current state rather than to produce a
-        fresh one. Reading a large campaign's records is the expensive thing the GUI
-        does, and doing it to redraw a JSON the tab is already holding is work for
-        nothing - Rebuild map now is what asks for a new one.
-        """
-        if state["map"]:
-            on_ready(True)
-            return
-        _rebuild_map(on_ready)
-
-    def _with_map(on_ready) -> None:
-        """Call `on_ready(ok)` with a map to work from: a loaded one as it is, else one
-        rebuilt from the selection.
-
-        A loaded map is left alone so that plotting it does not quietly replace it with
-        whatever happens to be ticked in the tree; Rebuild map now is how you go back to
-        the selection. That case answers immediately; a rebuild answers when its worker
-        finishes, which is why this hands the caller a callback instead of a bool.
-        """
-        if state["source"] == "loaded" and state["map"]:
-            on_ready(True)
-            return
-        _rebuild_map(on_ready)
-
-    def _load_map() -> None:
-        """Read a saved map back in, and work from it until the next rebuild."""
-        chosen = QFileDialog.getExistingDirectory(page, "Load a map from",
-                                                  step_list.root or "")
-        if not chosen:
-            return
-        source = Path(chosen)
-        try:
-            exp_map = json.loads(
-                (source / "experiment_map.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            post(f"Could not read experiment_map.json there: {exc}")
-            return
-        if not isinstance(exp_map, dict) or "experiments" not in exp_map:
-            post(f"{source / 'experiment_map.json'} is not an experiment map.")
-            return
-        try:
-            groups = json.loads((source / "group_map.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            groups = None
-        # A map saved without its groups, or saved before grouping wrote a group_id into
-        # each entry, is still usable: the grouping is derivable from the map itself.
-        if groups is None or any("group_id" not in e
-                                 for e in exp_map.get("experiments", [])):
-            groups = build_groups(exp_map, par_collect())
-
-        state["map"], state["groups"] = exp_map, groups
-        state["source"] = "loaded"
-        # Loaded from a file, so there is no record fingerprint behind it and a regroup
-        # of it has nothing honest to cache under.
-        state["stamp"] = None
-        _write_map(_scratch)
-        configs_settings.set_data_path(_scratch)
-        _refresh_keys()
-        post(f"Loaded {len(exp_map['experiments'])} observations from "
-                           f"{source} — plots use this until you rebuild")
-
-    def _save_map() -> None:
-        """Ask where to keep a copy of the map, and write it there."""
-        if not state["map"]:
-            post("Nothing to save — click “Rebuild map now” first.")
-            return
-        chosen = QFileDialog.getExistingDirectory(page, "Save the map to",
-                                                  step_list.root or "")
-        if not chosen:
-            return
-        try:
-            _write_map(chosen)
-        except OSError as exc:
-            post(f"Could not save: {exc}")
-            return
-        post(f"Saved experiment_map.json and group_map.json to {chosen}")
 
     def _sense_args(*pairs) -> list:
         """--maximize for each axis whose toggle is on.
@@ -1462,7 +1083,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                 return
             _run_script(script, *extra, verbose=verbose, after=after)
 
-        _with_map(_ready)
+        step_list.with_map(_ready)
 
     def _run_script(script: str, *extra, verbose: bool = False, after=None) -> None:
         module = f"{MODULES}.{script}"
@@ -1769,14 +1390,14 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         map has been built - both are cases with nowhere better to put it.
         """
         cache = workspace.cache_dir()
-        if cache is not None and state.get("stamp"):
-            entry = cache / stamp_digest(state["stamp"])
+        if cache is not None and step_list.map_fingerprint:
+            entry = cache / stamp_digest(step_list.map_fingerprint)
             try:
                 entry.mkdir(parents=True, exist_ok=True)
                 return str(entry)
             except OSError:  # noqa: BLE001 - fall through to somewhere writable
                 pass
-        return step_list.root or str(_scratch)
+        return step_list.root or str(step_list.scratch_dir)
 
     def _score_campaign() -> None:
         """Reduce every run to gamma / n_tau / n_c, scoring the same metric the
@@ -1812,22 +1433,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         """
         _launch("plot_gain_vs_ninitial")
 
-    # The viewers rebuild first, so what they show is the current selection rather than
-    # whatever was last written.
-    # Rebuild map now always rebuilds: it is the way out when a cached map is
-    # somehow wrong, so it must not itself consult the cache.
-    btn_regroup.clicked.connect(lambda: _regroup())
-    btn_rebuild.clicked.connect(
-        lambda: _rebuild_map(lambda ok: ok and _refresh_keys(), force=True))
-    # The viewers show what is held rather than rebuilding to show it; only an empty tab
-    # has to build first, and then the dialog opens when the map lands rather than when
-    # the click returns.
-    btn_view_exp.clicked.connect(lambda: _with_shown_map(
-        lambda ok: ok and _view_json_dialog(page, state["map"], "Experiment map")))
-    btn_view_grp.clicked.connect(lambda: _with_shown_map(
-        lambda ok: ok and _view_group_map_dialog(page, state["groups"], state["map"])))
-    btn_save_map.clicked.connect(_save_map)
-    btn_load_map.clicked.connect(_load_map)
+    # What step_list's own "Experiment map" box could not know when it was built (see
+    # its module docstring and configure()): the resolutions live in this tab's
+    # Parameters box, the ground-truth flag in its Objective box, and refreshing the
+    # axis key combos once the map changes is this tab's business, not the browser's.
+    step_list.configure(resolutions=par_collect, has_ground_truth=cb_ground.isChecked,
+                        on_map_changed=_refresh_keys)
 
     btn_pareto.clicked.connect(_plot_pareto)
     btn_hv.clicked.connect(lambda: _plot_hypervolume(False))
