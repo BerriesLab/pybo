@@ -1,6 +1,5 @@
 import torch
 from torch import Tensor
-
 from pybo.constraints.output_constraints import Identity
 from pybo.objectives.base_class import MCMultiObjectiveBase
 from pybo.objectives.variable_registry import ParCfg, ObjCfg, IneqYConCfg, TrkCfg
@@ -40,7 +39,7 @@ class IFormAC(MCMultiObjectiveBase):
         super().__init__(
             device=device,
             dtype=dtype,
-            max_hv=254.077,
+            max_hv=241.592,
             par_cfg=[
                 ParCfg(label="Maximum Current", unit="A", bounds=(7.5, 15.0), resolution=0.1),
                 ParCfg(label="Pedestal Current", unit="A", bounds=(3.0, 7.5), resolution=0.1),

@@ -285,10 +285,10 @@ _panel(ax_cost, "cost_total", converged_only=True)
 
 # Short labels on purpose: the panels are stacked in a single-column figure, where a
 # sentence-long ylabel on each runs into its neighbour. The symbols carry the meaning.
-ax_gain.set_ylabel(r"Gain $\gamma$ (%)", fontsize=FONT_LABEL)
-ax_prop.set_ylabel(r"$n_\mathrm{c} - n_0$ (proposals)", fontsize=FONT_LABEL)
-ax_cost.set_ylabel(r"$n_\mathrm{c}$ (evaluations)", fontsize=FONT_LABEL)
-ax_cost.set_xlabel(r"Initial design size $n_0$", fontsize=FONT_LABEL)
+ax_gain.set_ylabel(r"$\gamma$", fontsize=FONT_LABEL)
+ax_prop.set_ylabel(r"$n_\mathrm{c} - n_0$", fontsize=FONT_LABEL)
+ax_cost.set_ylabel(r"$n_\mathrm{c}$", fontsize=FONT_LABEL)
+ax_cost.set_xlabel(r"$n_0$", fontsize=FONT_LABEL)
 ax_cost.set_xticks(sizes)
 ax_cost.set_xticklabels([str(s) for s in sizes])
 for ax in (ax_gain, ax_prop, ax_cost):
@@ -306,7 +306,7 @@ if args.hours_per_eval > 0:
 # One series names itself in the axis labels; several need telling apart.
 if len(series) > 1:
     handles = [mlines.Line2D([], [], color=color(name), marker=marker(name),
-                             linestyle="none", markersize=6, label=name)
+                             linestyle="none", markersize=6, label=name.capitalize())
                for name in series]
     leg_cfg = fig_cfg["legend"]
     ax_gain.legend(handles=handles, fontsize=FONT_LEGEND, loc=leg_cfg["loc"],

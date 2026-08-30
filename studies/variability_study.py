@@ -15,14 +15,22 @@ from studies._common import run_trial, build_sweep_parser
 def main():
     args = build_sweep_parser(description=__doc__).parse_args()
 
-    output_dir = args.output_dir
-    if output_dir is None:
-        date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        tutorial_name = args.target.split(".")[-2]
-        output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
-    # Uniquify the study root, not the individual trials. Pointing a second study at an
-    # --output-dir that already holds one must yield a fresh root (mystudy_001).
-    output_dir = unique_dir(output_dir)
+    if args.resume:
+        if args.output_dir is None:
+            raise SystemExit("--resume requires --output-dir pointing at the study root to continue.")
+        # Reuse the exact root a previous (partial) attempt wrote into - the per-trial
+        # --resume forwarded below is what actually skips completed steps, and it only
+        # works if every trial gets the same run_name directory it had before.
+        output_dir = Path(args.output_dir).resolve()
+    else:
+        output_dir = args.output_dir
+        if output_dir is None:
+            date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            tutorial_name = args.target.split(".")[-2]
+            output_dir = Path(__file__).parent / "data" / tutorial_name / "variability_study" / date_time
+        # Uniquify the study root, not the individual trials. Pointing a second study at an
+        # --output-dir that already holds one must yield a fresh root (mystudy_001).
+        output_dir = unique_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # The arm the trials run, named as the records name it rather than as the flag spells
@@ -52,6 +60,7 @@ def main():
                     "--repeats": args.repeats,
                     "--device": args.device,
                     "--verbose": args.verbose,
+                    "--resume": args.resume,
                 },
                 run_name=run_name,
                 output_dir=output_dir / run_name,

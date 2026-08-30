@@ -647,22 +647,31 @@ for arm, g in per_run.groupby("arm", sort=False):
         col = g[f"it{tau:g}"]
         hit = int(col.notna().sum())
         row[f"it{tau:g}"] = f"{col.median():.4g} ({hit}/{len(g)})" if hit else f"- (0/{len(g)})"
-        # n_tau is defined for every run that gained anything, so it is a plain median
-        # over the arm - no reached count to qualify it the way it_tau needs one.
+        # n_tau is defined for every run that gained anything, so it needs no reached
+        # count the way it_tau does - but it still gets a mean +- std beside the median,
+        # since the median alone hides how spread out the arm's runs are.
         own = g[f"n{tau:g}"]
-        row[f"n{tau:g}"] = f"{own.median():.4g}" if own.notna().any() else "-"
+        own_valid = own.dropna()
+        if own_valid.empty:
+            row[f"n{tau:g}"] = "-"
+        else:
+            spread = "" if len(own_valid) < 2 else f" +- {own_valid.std(ddof=1):.3g}"
+            row[f"n{tau:g}"] = f"{own_valid.median():.4g} (mean {own_valid.mean():.4g}{spread})"
         prop = g[f"prop{tau:g}"]
         row[f"prop{tau:g}"] = f"{prop.median():.4g}" if prop.notna().any() else "-"
         # reached is what makes the median readable: a median over 1 of 5 runs is not the
         # same claim as a median over 5.
-        entry["targets"][f"{tau:g}"] = {"median": col.median(), "reached": hit,
-                                        "total": len(g), "n_tau_median": own.median(),
-                                        "prop_tau_median": prop.median()}
+        entry["targets"][f"{tau:g}"] = {
+            "median": col.median(), "reached": hit, "total": len(g),
+            "n_tau_median": own.median(), "n_tau_mean": own_valid.mean() if not own_valid.empty else np.nan,
+            "n_tau_std": own_valid.std(ddof=1) if len(own_valid) >= 2 else np.nan,
+            "prop_tau_median": prop.median()}
     entry["runs_detail"] = g.to_dict("records")
     agg.append(row)
     arms.append(entry)
 
-print("\nPer arm - mean +- std, it_tau as median (reached/total), n_tau as median:\n")
+print("\nPer arm - mean +- std, it_tau as median (reached/total), "
+      "n_tau as median (mean +- std):\n")
 print(pd.DataFrame(agg).to_string(index=False))
 
 report = {"metric": metric_name, "objectives": objective_keys,

@@ -97,19 +97,24 @@ def _is_constrained(objective) -> bool:
 def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_METHOD,
                  samples: int = DEFAULT_SAMPLES, spacing: float = DEFAULT_SPACING,
                  noisy: bool = False):
-    """(points, front, constrained) for the two named objectives.
+    """(points, violated, front, constrained) for the two named objectives.
 
-    `points` is every feasible sample of the true objective and `front` its non-dominated
-    subset sorted on x, both as (x, y) lists, so a line through `front` reads as a front.
+    `points` is every feasible sample of the true objective and `violated` every sample
+    that fails a constraint, both as (x, y) lists in objective space - so the caller can
+    colour the allowed region apart from the forbidden one instead of drawing the whole
+    cloud in one neutral colour. `front` is `points`'s non-dominated subset sorted on x,
+    so a line through it reads as a front - computed and returned whether or not the
+    problem is constrained; `constrained` is only a flag for a caller that wants to gate
+    the line on it (as plot_pareto_2d's --gt-front does by default for the observations'
+    own front - see --front-line there).
 
-    A problem with output constraints returns an empty `front`: its feasible front can be
-    disconnected - C2-DTLZ2's three exclusion disks are centred on its quarter circle and
-    leave two arcs - and a line through the sampled front would bridge the gaps, drawing
-    trade-offs the problem forbids. Telling a hole from ordinary spacing means measuring
-    gaps against a threshold, which holds only until the sampling density changes, so the
-    line is dropped outright instead. The cloud still shows where the front runs and where
-    it stops, and `constrained` lets the caller drop the observations' own front line on
-    the same terms. Input constraints do not trigger any of this - see _is_constrained.
+    A problem with output constraints can have a feasible front that is disconnected -
+    C2-DTLZ2's three exclusion disks are centred on its quarter circle and leave two arcs
+    - and a line drawn through the sampled front then bridges those gaps, suggesting
+    trade-offs the problem forbids. `front` does not try to tell a real gap from ordinary
+    sampling sparseness, so a caller drawing it on a constrained problem is choosing that
+    risk knowingly rather than being protected from it here. Input constraints do not
+    raise this concern - see _is_constrained.
 
     `noisy` draws every sample the way a run itself would have observed it, noise and
     all, rather than the noiseless value underneath - so `front` becomes the non-dominated
@@ -133,13 +138,14 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
 
     constrained = _is_constrained(objective)
 
-    Y = Y_obj[_feasible_mask(objective, X, Y_obj, Y_con)]
+    mask = _feasible_mask(objective, X, Y_obj, Y_con)
+    Y = Y_obj[mask]
+    Y_bad = Y_obj[~mask]
+    violated = [(float(a), float(b)) for a, b in zip(Y_bad[:, ix], Y_bad[:, iy])]
     if Y.numel() == 0:
-        return [], [], constrained
+        return [], violated, [], constrained
 
     points = [(float(a), float(b)) for a, b in zip(Y[:, ix], Y[:, iy])]
-    if constrained:
-        return points, [], True
 
     # Non-dominated in maximization space, as the optimizer scores it.
     from botorch.utils.multi_objective import is_non_dominated
@@ -148,7 +154,7 @@ def ground_truth(objective_path, x_key: str, y_key: str, method: str = DEFAULT_M
     front = Y[is_non_dominated(signed)]
 
     edge = sorted((float(a), float(b)) for a, b in zip(front[:, ix], front[:, iy]))
-    return points, edge, False
+    return points, violated, edge, constrained
 
 
 def objective_landscape(objective_path, obj_key: str, par_keys, method: str = DEFAULT_METHOD,

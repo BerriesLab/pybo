@@ -84,6 +84,12 @@ def build_sweep_parser(description: str = "") -> argparse.ArgumentParser:
                         help="Whether each trial prints per-step progress. Off by default (unlike the trial CLI, "
                              "which defaults to on) so a sweep shows one tqdm bar per trial instead of interleaving "
                              "every optimizer step.")
+    parser.add_argument("--resume", type=str2bool, default=False,
+                        help="Continue a previous sweep at --output-dir instead of starting a fresh "
+                             "study root: reuses --output-dir as-is (no unique_dir redirect) and forwards "
+                             "--resume to every trial, which skips whatever it already completed there. A "
+                             "trial the target CLI doesn't implement step replay for (see --resume on the "
+                             "trial CLI) just redoes every step in the same directory. Requires --output-dir.")
     return parser
 
 

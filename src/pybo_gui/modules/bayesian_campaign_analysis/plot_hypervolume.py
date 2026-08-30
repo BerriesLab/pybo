@@ -498,6 +498,11 @@ for name, (_s_steps, s_hvs, s_labels) in traces.items():
     arm_curves.setdefault(arm, []).append(s_hvs)
     arm_n_initial.setdefault(arm, []).append(sum(1 for lbl in s_labels if is_initial(lbl)))
 
+# Arms in design-size order rather than alphabetical, so a sweep over --n-initial reads
+# n5, n10, n20 - not the "n10" < "n20" < "n5" a plain string sort would give - and ties
+# (arms that don't differ by design size) fall back to the name for a stable order.
+arm_order = sorted(arm_curves, key=lambda a: (min(arm_n_initial[a]), a))
+
 if aggregating and args.improvement:
     # Both rewrite what a point on the curve means, and stacking them would average
     # per-step gains that were already floored onto a shared log decade.
@@ -510,7 +515,7 @@ if aggregating and args.improvement:
 # with any single run's. Left alone otherwise, since adding names here would shift the
 # colours assigned by position to every existing label.
 _color, _marker, _line_style, _front_style = styler(
-    fig_cfg, all_labels + sorted(arm_curves) if aggregating else all_labels)
+    fig_cfg, all_labels + arm_order if aggregating else all_labels)
 
 def y_label():
     """What the y axis is measuring, named once for all three drawing branches.
@@ -519,12 +524,11 @@ def y_label():
     throughout - the metric is the best value reached, and the normalized and regret forms
     of that are the same two questions asked of a value instead of a volume.
     """
-    quantity = f"best {objective_keys[0]}" if single else "hypervolume"
     if args.metric == "normalized":
         return r"$\rho$"
     if args.metric == "regret":
-        return f"{quantity.capitalize()} regret " + r"$R(n)$"
-    return quantity.capitalize()
+        return r"$R$"
+    return f"Best {objective_keys[0]}" if single else "HV"
 
 
 # ---- PLOT ----
@@ -607,7 +611,7 @@ elif aggregating:
     # The individual runs are not drawn underneath - the point of asking for this view
     # is that a dozen overlapping curves is what made the arms hard to compare.
     legend_handles = []
-    for arm in sorted(arm_curves):
+    for arm in arm_order:
         if args.metric == "regret":
             # Averaged in log space, because that is the space the axis draws in and the
             # space the quantity lives in: a regret runs over decades, and an arithmetic
@@ -666,7 +670,7 @@ elif aggregating:
     # truncated to, and saying so keeps a curve that ends early from reading as a run
     # that stalled. Reported per arm, since each is truncated to its own shortest and
     # arms are free to differ from each other.
-    for arm in sorted(arm_curves):
+    for arm in arm_order:
         lengths = {len(c) for c in arm_curves[arm]}
         if len(lengths) > 1:
             print(f"! {arm}: runs of unequal length ({min(lengths)}-{max(lengths)} "

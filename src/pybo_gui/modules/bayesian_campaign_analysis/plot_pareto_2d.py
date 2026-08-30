@@ -68,12 +68,20 @@ parser.add_argument("--gt-spacing", type=float, default=0.05, dest="gt_spacing",
 parser.add_argument("--gt-front", choices=["always", "never"], default="always",
                     dest="gt_front",
                     help="Whether the ground truth's own Pareto front is drawn along "
-                         "with its cloud (default: always). Only ever there on an "
-                         "unconstrained problem - a constrained one has no single front "
-                         "to draw, so this changes nothing.")
+                         "with its cloud (default: always). On a constrained problem the "
+                         "feasible front can be disconnected, so the line may bridge a "
+                         "gap the problem forbids - always draws it anyway, on the "
+                         "caller's judgement.")
 parser.add_argument("--gt-noisy", action="store_true", default=False, dest="gt_noisy",
                     help="Draw the ground truth the way a run would have observed it, "
                          "noise and all, instead of the noiseless value underneath.")
+parser.add_argument("--gt-violated", choices=["show", "hide"], default="show",
+                    dest="gt_violated",
+                    help="Whether the ground truth's constraint-violating samples are "
+                         "drawn, colour-coded apart from the allowed cloud (default: "
+                         "show). hide draws only the samples that satisfy every "
+                         "constraint. No effect on an unconstrained problem, which has "
+                         "no violating samples to begin with.")
 parser.add_argument("--constraint", action="append", default=[],
                     help="Feasibility constraint as key:op:value (repeatable). "
                          "Only feasible experiments contribute to the Pareto front; "
@@ -200,6 +208,9 @@ for exp in load_experiments_from_map(MAP_PATH):
         # Kept alongside the label so pooling still separates the runs when the map was
         # built by strategy, where the label no longer names them.
         "run":      exp.get("run"),
+        # Only read for arm ordering below - a sweep over --n-initial should list its
+        # arms n5, n10, n20, not the alphabetical "n10" < "n20" < "n5".
+        "n_initial": exp.get("n_initial"),
         # Which records are the same measurement and merge into one point.
         "gkey":     merge_key(exp, keys, resolutions),
         # The map's own numeric id, kept only because --show-numbers tags points with it.
@@ -264,6 +275,7 @@ for gid in order:
         # Its series name is what it actually stands for.
         "label":    items[0]["label"] if "run" in keys else items[0]["arm"],
         "arm":      items[0]["arm"],
+        "n_initial": items[0]["n_initial"],
         "run":      items[0]["run"],
         "gkey":     gid,
         "group_id": items[0]["group_id"],
@@ -333,7 +345,20 @@ FRONT_LABELS     = sorted({r["label"] for r in valid})
 # Arms take a colour of their own when aggregating, so a mean front is not confused
 # with any one run's. Left alone otherwise: adding names shifts the colours the styler
 # assigns by position.
-_arms = sorted({r["arm"] for r in valid}) if aggregating else []
+#
+# Ordered by design size where the arms carry one, not alphabetically - a sweep over
+# --n-initial should read n5, n10, n20, not the "n10" < "n20" < "n5" a string sort gives.
+# Arms missing n_initial (it isn't among --group-by, or the map predates the field) sort
+# after those that have it, then by name.
+if aggregating:
+    _arm_n_initial = {}
+    for r in valid:
+        _arm_n_initial.setdefault(r["arm"], r["n_initial"])
+    _arms = sorted(
+        _arm_n_initial,
+        key=lambda a: (_arm_n_initial[a] is None, _arm_n_initial[a], a))
+else:
+    _arms = []
 _label_color, _label_marker, _line_style, _front_style = styler(fig_cfg, list(FRONT_LABELS) + _arms)
 
 # ---- PLOT ----
@@ -342,9 +367,10 @@ fig, ax = plt.subplots(figsize=fig_cfg["figsize"]["pareto"])
 if args.ground_truth:
     # Under everything: it is the backdrop the campaign is read against, not a series.
     from pybo_gui.modules.bayesian_campaign_analysis._ground_truth import ground_truth
-    gt_points, gt_front, gt_constrained = ground_truth(
+    gt_points, gt_violated, gt_front, gt_constrained = ground_truth(
         args.ground_truth, args.x, args.y,
         args.gt_method, args.gt_samples, args.gt_spacing, args.gt_noisy)
+    legend_handles_gt = []
     if gt_points:
         gt_color = fig_cfg["colors"].get("ground_truth", "#8A8F98")
         ax.scatter([p[0] for p in gt_points], [p[1] for p in gt_points],
@@ -353,20 +379,29 @@ if args.ground_truth:
         if gt_front and args.gt_front == "always":
             ax.plot([p[0] for p in gt_front], [p[1] for p in gt_front],
                     color=gt_color, linewidth=1.2, zorder=1)
-            legend_handles_gt = mlines.Line2D([], [], color=gt_color, linewidth=1.2,
-                                              label="Ground truth")
+            legend_handles_gt.append(mlines.Line2D([], [], color=gt_color, linewidth=1.2,
+                                                    label="Ground truth"))
         else:
-            # No front line drawn - a constrained problem has none, or it was turned off -
-            # so the handle shows the cloud instead.
-            legend_handles_gt = mlines.Line2D([], [], linestyle="None", marker=".",
-                                              color=gt_color,
-                                              markersize=SCATTER["marker_size"] ** 0.5,
-                                              label="Ground truth")
-    else:
-        legend_handles_gt = None
+            # No front line drawn - --gt-front never, or no feasible sample at all - so
+            # the handle shows the cloud instead.
+            legend_handles_gt.append(mlines.Line2D([], [], linestyle="None", marker=".",
+                                                    color=gt_color,
+                                                    markersize=SCATTER["marker_size"] ** 0.5,
+                                                    label="Ground truth"))
+    if gt_violated and args.gt_violated == "show":
+        # Same backdrop, coloured for the region a constraint forbids - the "region
+        # permessa e violata" split: the allowed cloud above, the violated one here.
+        gt_bad_color = fig_cfg["colors"].get("ground_truth_infeasible", "#CC6677")
+        ax.scatter([p[0] for p in gt_violated], [p[1] for p in gt_violated],
+                   s=SCATTER["marker_size"] * 0.25, marker=".", facecolors=gt_bad_color,
+                   edgecolors="none", alpha=0.25, zorder=0)
+        legend_handles_gt.append(mlines.Line2D([], [], linestyle="None", marker=".",
+                                                color=gt_bad_color,
+                                                markersize=SCATTER["marker_size"] ** 0.5,
+                                                label="Ground truth (violated)"))
 else:
     gt_constrained = False
-    legend_handles_gt = None
+    legend_handles_gt = []
 
 # Whether this problem is known to be constrained, and so whether joining front points
 # by a line would claim trade-offs a constraint may forbid. Either the ground truth says
@@ -379,7 +414,7 @@ constrained = gt_constrained or bool(constraints)
 draw_front = {"auto": not constrained, "always": True, "never": False}[args.front_line]
 
 all_labels     = sorted({r["label"] for r in valid})
-legend_handles = [legend_handles_gt] if legend_handles_gt is not None else []
+legend_handles = list(legend_handles_gt)
 _last_sc       = None
 
 # Skipped entirely when aggregating: a dozen runs' observations are what made the
@@ -496,7 +531,9 @@ def _draw_arm_bands(by_arm, *, color_fn, linewidth, linestyle_fn, label_fn, alph
     of the others visited, so either way they are read onto a shared grid before being
     averaged, rather than point by point; only which points feed `by_arm` differs.
     """
-    for arm in sorted(by_arm):
+    for arm in _arms:
+        if arm not in by_arm:
+            continue
         fronts = []
         for pts in by_arm[arm].values():
             f = sorted(pareto_front(pts), key=lambda p: p[0])

@@ -87,11 +87,11 @@ def mean_band(curves, mode: str = "ci95"):
 
 
 def band_label(mode: str, n: int) -> str:
-    """How the band should be named in a legend, including how many runs it came from."""
-    return {"ci95": f"mean, 95% CI (n={n})",
-            "sem": f"mean $\\pm$ SEM (n={n})",
-            "std": f"mean $\\pm$ SD (n={n})",
-            "minmax": f"mean, min-max (n={n})"}[mode]
+    """How the band should be named in a legend."""
+    return {"ci95": "mean, 95% CI",
+            "sem": "mean $\\pm$ SEM",
+            "std": "mean $\\pm$ SD",
+            "minmax": "mean, min-max"}[mode]
 
 
 def arm_legend_label(name: str, mode: str, n: int) -> str:

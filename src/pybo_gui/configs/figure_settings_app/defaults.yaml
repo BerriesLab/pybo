@@ -38,6 +38,10 @@ colors:
   # The true objective drawn under a campaign. Neutral and light, so it reads as the
   # backdrop the observations sit on rather than as another series.
   ground_truth: "#8A8F98"
+  # The same backdrop, restricted to samples that violate a constraint. Dusty rose
+  # rather than the bright reference red, so the eye still reads it as background,
+  # just background that says "not allowed" instead of "allowed".
+  ground_truth_infeasible: "#CC6677"
   # A run (or several, pooled) the user has flagged as their benchmark. Red and
   # outside the cycle above, so "this is the reference" reads the same whichever
   # arm it happens to belong to and is never mistaken for an ordinary series.

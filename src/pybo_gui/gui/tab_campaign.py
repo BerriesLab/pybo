@@ -171,7 +171,10 @@ def _arm_summary_row(entry: dict, taus: list) -> dict:
         reached, total = target.get("reached") or 0, target.get("total")
         row[f"it{tau:g}"] = (f"{_score_fmt(target.get('median'))} ({reached}/{total})"
                              if reached else f"- (0/{total})")
-        row[f"n{tau:g}"] = _score_fmt(target.get("n_tau_median"))
+        n_mean, n_std = target.get("n_tau_mean"), target.get("n_tau_std")
+        row[f"n{tau:g}"] = (f"{_score_fmt(target.get('n_tau_median'))} "
+                            f"(mean {_score_fmt(n_mean)} ± {_score_fmt(n_std)})"
+                            if n_mean is not None else _score_fmt(target.get("n_tau_median")))
         row[f"prop{tau:g}"] = _score_fmt(target.get("prop_tau_median"))
     return row
 
@@ -779,11 +782,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # 2-D only. The second front is the union, design points included - a front over the
     # proposals alone would run through points the design had already beaten.
     cb_design_front = QCheckBox("Show initial Pareto front line")
-    cb_gt_front = QCheckBox("Show ground-truth Pareto front line")
+    cb_gt_front = QCheckBox("Show Pareto front")
     cb_gt_front.setChecked(True)
-    cb_gt_front.setToolTip("Draw the true front along with the ground truth's cloud. "
-                           "A constrained problem has no single front, so there it makes "
-                           "no difference.")
+    cb_gt_front.setToolTip("Draw the true front along with the ground truth's cloud. On "
+                           "a constrained problem the feasible front can be disconnected, "
+                           "so the line may bridge a gap the problem forbids - drawn "
+                           "anyway when ticked.")
     cb_design_front.setToolTip("Also draw the initial design's own front, in grey under "
                                "the campaign's. The pair says what proposing added to "
                                "the dataset the run started from.")
@@ -815,6 +819,12 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     cb_gt_noisy = QCheckBox("Noisy")
     cb_gt_noisy.setToolTip("Draw the ground truth the way a run would have observed it, "
                            "noise and all, instead of the noiseless value underneath")
+    cb_gt_violated = QCheckBox("Show violated")
+    cb_gt_violated.setChecked(True)
+    cb_gt_violated.setToolTip("Colour-code the ground truth's constraint-violating "
+                              "samples apart from the allowed cloud. Unticked draws only "
+                              "the samples that satisfy every constraint. No effect on an "
+                              "unconstrained problem, which has none to show either way.")
     # The explanations live on the controls themselves rather than in a line underneath.
     # They describe what a control means, not what an action did, so the log is the wrong
     # place for them - and a tooltip is always available instead of only after a click.
@@ -871,7 +881,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     axes_layout.addWidget(_row(cb_numbers, cb_front, cb_design_front))
     # Into the slot reserved under the axis rows, not appended here - see gt_holder.
     gt_row_slot.addWidget(_row(cb_ground, gt_method, gt_samples, gt_spacing, cb_gt_noisy,
-                               cb_gt_front))
+                               cb_gt_violated, cb_gt_front))
     plot_layout.addWidget(_row(btn_gain, btn_gain_ninit))
     # The optimum every absolute metric divides by, shown so it is visible whether there is
     # one at all - computing it is campaign_optimum's job, from a terminal. Read by the
@@ -931,6 +941,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         gt_samples.setEnabled(on and gt_method.currentText() == "random")
         gt_spacing.setEnabled(on and gt_method.currentText() == "grid")
         cb_gt_noisy.setEnabled(on)
+        cb_gt_violated.setEnabled(on)
         cb_gt_front.setEnabled(on)
 
     cb_ground.stateChanged.connect(lambda _s: _sync_ground_truth())
@@ -1573,9 +1584,11 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         extra += ["--front-line", "always" if cb_front.isChecked() else "never"]
         if cb_design_front.isChecked():
             extra += ["--front-scope", "initial-vs-all"]
-        # Only here: plot_pareto_3d draws no ground-truth front and would not take it.
+        # Only here: plot_pareto_3d draws no ground-truth front and would not take it,
+        # and plot_objective already colours its own violated samples unconditionally.
         if cb_ground.isChecked():
             extra += ["--gt-front", "always" if cb_gt_front.isChecked() else "never"]
+            extra += ["--gt-violated", "show" if cb_gt_violated.isChecked() else "hide"]
         _launch("plot_pareto_2d", *extra)
 
     def _metric_objective_args() -> list | None:

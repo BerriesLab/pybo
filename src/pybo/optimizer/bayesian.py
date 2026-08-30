@@ -269,7 +269,7 @@ class BayesianOptimizer(OptimizerBase):
                     # FixedNoiseGaussianLikelihood itself. The noise floor only bites when the
                     # noise is learned, so nothing is lost by dropping it there.
                     likelihood=(None if train_y_var is not None else
-                                gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-2))),
+                                gpytorch.likelihoods.GaussianLikelihood(noise_constraint=GreaterThan(1e-3))),
                 )
             )
 
@@ -430,7 +430,7 @@ class BayesianOptimizer(OptimizerBase):
                 q=self._batch_size,
                 num_restarts=self._n_acqf_opt_restarts,
                 raw_samples=self._num_raw_samples,
-                options={"maxiter": self._n_acqf_opt_max_iter, "disp": False},
+                options={"maxiter": self._n_acqf_opt_max_iter},
                 inequality_constraints=self.objective.lin_ineq_X_con,
                 equality_constraints=self.objective.lin_eq_X_con,
                 nonlinear_inequality_constraints=self.objective.nonlin_ineq_X_con,
