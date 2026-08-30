@@ -158,24 +158,24 @@ def _score_rows_tsv(cols: list, rows: list) -> str:
 def _arm_summary_row(entry: dict, taus: list) -> dict:
     """One row of the per-arm table, reduced from campaign_gain's own per-arm JSON
     entry - the same numbers its printed "agg" table shows, formatted here instead of
-    scraped back out of that text."""
-    row = {"arm": entry.get("arm"), "runs": entry.get("runs"),
-          "converged": f"{entry.get('converged', 0)}/{entry.get('runs', 0)}"}
-    for name in ("gamma", "gamma_budget", "gamma_norm", "rho_c", "regret_c", "eta", "n_c"):
+    scraped back out of that text.
+
+    Only gamma, rho_c, regret_c and n_tau: the four numbers a reader actually compares
+    arms by (see campaign_gain.SUMMARY_COLUMNS). The wider per-run detail - gamma_budget,
+    gamma_norm, eta, n_c, it_tau, prop_tau - stays in the per-run table below instead of
+    cluttering the summary.
+    """
+    row = {"arm": entry.get("arm")}
+    for name in ("gamma", "rho_c", "regret_c"):
         stat = entry.get(name) or {}
         mean, n = stat.get("mean"), stat.get("n")
         row[name] = (f"{_score_fmt(mean)} ± {_score_fmt(stat.get('std'))} (n={n})"
                      if n else "-")
     for tau in taus:
-        target = (entry.get("targets") or {}).get(f"{tau:g}") or {}
-        reached, total = target.get("reached") or 0, target.get("total")
-        row[f"it{tau:g}"] = (f"{_score_fmt(target.get('median'))} ({reached}/{total})"
-                             if reached else f"- (0/{total})")
-        n_mean, n_std = target.get("n_tau_mean"), target.get("n_tau_std")
-        row[f"n{tau:g}"] = (f"{_score_fmt(target.get('n_tau_median'))} "
-                            f"(mean {_score_fmt(n_mean)} ± {_score_fmt(n_std)})"
-                            if n_mean is not None else _score_fmt(target.get("n_tau_median")))
-        row[f"prop{tau:g}"] = _score_fmt(target.get("prop_tau_median"))
+        stat = entry.get(f"n{tau:g}") or {}
+        mean, n = stat.get("mean"), stat.get("n")
+        row[f"n{tau:g}"] = (f"{_score_fmt(mean)} ± {_score_fmt(stat.get('std'))} (n={n})"
+                            if n else "-")
     return row
 
 
@@ -203,7 +203,10 @@ def _show_score_tables(parent: QWidget, output: list, report_path: str) -> None:
     v = QVBoxLayout(dlg)
 
     taus = report.get("taus") or []
-    tau_cols = [f"{p}{tau:g}" for tau in taus for p in ("it", "n", "prop")]
+    # The per-run table keeps every tau reading campaign_gain computes; the per-arm
+    # summary keeps only n_tau (see _arm_summary_row).
+    run_tau_cols = [f"{p}{tau:g}" for tau in taus for p in ("it", "n", "prop")]
+    arm_tau_cols = [f"n{tau:g}" for tau in taus]
 
     conv = report.get("convergence") or {}
     note_lines = [f"Metric: {report.get('metric')}",
@@ -218,13 +221,12 @@ def _show_score_tables(parent: QWidget, output: list, report_path: str) -> None:
 
     run_cols = (["run", "arm", "n_initial", "m_initial", "m_final", "m_c", "gamma",
                 "gamma_budget", "gamma_norm", "rho_c", "regret_c", "n_c", "converged",
-                "eps", "eta"] + tau_cols)
+                "eps", "eta"] + run_tau_cols)
     run_rows = [row for arm in report.get("arms", []) for row in arm.get("runs_detail", [])]
     v.addWidget(QLabel("Per run"))
     v.addWidget(_score_table_widget(run_cols, run_rows), stretch=2)
 
-    arm_cols = (["arm", "runs", "converged", "gamma", "gamma_budget", "gamma_norm",
-                "rho_c", "regret_c", "eta", "n_c"] + tau_cols)
+    arm_cols = ["arm", "gamma", "rho_c", "regret_c"] + arm_tau_cols
     arm_rows = [_arm_summary_row(entry, taus) for entry in report.get("arms", [])]
     v.addWidget(QLabel("Per arm"))
     v.addWidget(_score_table_widget(arm_cols, arm_rows), stretch=1)

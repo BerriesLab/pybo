@@ -1,8 +1,10 @@
 """Score a campaign: how much each run improved on its initial design, and how fast.
 
 Reads the experiment map and reduces every run to a few numbers. Prints one row per run
-and one summary row per arm, and writes the same figures to gain.json. Undefined values
-are null there, not NaN.
+and one summary row per arm, and writes the same figures to gain.json (the per-run table
+in full, the per-arm summary trimmed to gamma/rho_c/regret_c/n_tau - see SUMMARY_COLUMNS)
+and, as one row per arm, to gain_summary.csv beside it. Undefined values are null in the
+JSON, blank in the CSV, not NaN.
 
 Two gain.json are written, in two different places, and neither lands inside a run's own
 directory - see the SELF_CONTAINED block below for why a run's own score belongs in the
@@ -75,9 +77,11 @@ CONVERGENCE, AND RUNS THAT NEVER GET THERE
   gamma_budget: how much it had gained when the budget ended, which is a real measurement
   and a lower bound on what it would have reached.
 
-  The per-arm summary therefore averages gamma, eta and m_c over the converged runs only,
-  and prints "converged: 7/10" beside them. gamma_budget is averaged over all of them,
-  since every run has one.
+  gamma, rho_c and regret_c are therefore averaged over the converged runs only, in both
+  the per-run table and the per-arm summary; a run missing one is silently short of the
+  count summarise() prints in parentheses, e.g. "4.8 +- 1.1 (5/10)" for five converged of
+  ten. gamma_budget is averaged over every run instead, since every run has one - but see
+  SUMMARY_COLUMNS below for why it no longer appears in the per-arm summary at all.
 
 TWO FINISH LINES
 
@@ -95,11 +99,12 @@ TWO FINISH LINES
   same instant minus n_initial, and is not a third finish line - the target is identical,
   only the origin of the count differs.
 
-  In the per-arm summary, each it column is a median plus how many runs got there at
-  all: "15 (1/3)" means one run of three reached that target, after 15 evaluations. The
-  others are not averaged in; discarding them would make an optimizer that usually fails
-  look fast. The gain columns carry the same qualification whenever a run is missing one
-  - see the convergence section above.
+  In the per-run table, each it column is a value or nothing - a run that never reached
+  the target has no it_tau, full stop, and pandas leaves the cell empty. it_tau is left
+  out of the per-arm summary entirely for the same reason gamma_budget and gamma_norm are
+  (see SUMMARY_COLUMNS): a run that usually fails would otherwise only ever contribute the
+  runs where it happened to succeed, which reads as faster than it is. n_tau carries no
+  such risk - see above - which is why it is the one of the two kept in the summary.
 
 READING THEM
 
@@ -613,65 +618,42 @@ def summarise(column, total):
     return f"{values.mean():.4g}{spread}{count}"
 
 
+# The four numbers a reader actually compares arms by: gamma (the headline gain), rho_c
+# and regret_c (absolute, against a known optimum), and n_tau (how fast, against each run's
+# own gain to convergence - see the module docstring). Everything else campaign_gain can
+# compute (gamma_budget, gamma_norm, eta, n_c, it_tau, prop_tau) stays in the per-run table
+# below for anyone who needs it, but is left out of the aggregate: a summary that reports
+# every column it can compute reads as noise the moment a real comparison needs made.
+SUMMARY_COLUMNS = ["gamma", "rho_c", "regret_c"] + [f"n{tau:g}" for tau in taus]
+
 agg, arms = [], []
 for arm, g in per_run.groupby("arm", sort=False):
     total = len(g)
-    row = {"arm": arm, "runs": total,
-           "converged": f"{int(g['converged'].sum())}/{total}",
-           # Over the converged runs alone - a run with no n_c has no gain-at-convergence
-           # and no rate to reach it, and averaging the budget's end in as though it were
-           # one is what this reporting exists to prevent.
-           "gamma": summarise(g["gamma"], total),
-           "n_c": summarise(g["n_c"], total),
-           "eta": summarise(g["eta"], total),
-           # Over every run, converged or not: each one reached the end of its budget, so
-           # each one has a gain measured there.
-           "gamma_budget": summarise(g["gamma_budget"], total),
-           "gamma_norm": summarise(g["gamma_norm"], total)}
+    row = {"arm": arm, "gamma": summarise(g["gamma"], total)}
     # Only where m* came from outside the selection. Without that they are all-NaN
     # columns, and a column of "nan +- nan" in every row reads as a broken report rather
     # than as a metric that was not available.
     if known_optimum:
         row["rho_c"] = summarise(g["rho_c"], total)
         row["regret_c"] = summarise(g["regret_c"], total)
-    entry = {"arm": arm, "runs": total, "converged": int(g["converged"].sum()),
-             "targets": {}}
-    for name in ("gamma", "gamma_budget", "gamma_norm", "rho_c", "regret_c", "eta", "n_c"):
-        # `n` alongside the mean: for the convergence-dependent columns it is the number of
-        # runs that converged, not the number in the arm, and a reader of the JSON has no
-        # other way to tell the two apart.
+    entry = {"arm": arm}
+    for name in ("gamma", "rho_c", "regret_c"):
+        # `n` alongside the mean: it is the number of runs that converged, not the number
+        # in the arm, and a reader of the JSON has no other way to tell the two apart.
         values = g[name].dropna()
         entry[name] = {"mean": g[name].mean(), "std": g[name].std(ddof=1),
                        "n": int(values.size)}
     for tau in taus:
-        col = g[f"it{tau:g}"]
-        hit = int(col.notna().sum())
-        row[f"it{tau:g}"] = f"{col.median():.4g} ({hit}/{len(g)})" if hit else f"- (0/{len(g)})"
-        # n_tau is defined for every run that gained anything, so it needs no reached
-        # count the way it_tau does - but it still gets a mean +- std beside the median,
-        # since the median alone hides how spread out the arm's runs are.
-        own = g[f"n{tau:g}"]
-        own_valid = own.dropna()
-        if own_valid.empty:
-            row[f"n{tau:g}"] = "-"
-        else:
-            spread = "" if len(own_valid) < 2 else f" +- {own_valid.std(ddof=1):.3g}"
-            row[f"n{tau:g}"] = f"{own_valid.median():.4g} (mean {own_valid.mean():.4g}{spread})"
-        prop = g[f"prop{tau:g}"]
-        row[f"prop{tau:g}"] = f"{prop.median():.4g}" if prop.notna().any() else "-"
-        # reached is what makes the median readable: a median over 1 of 5 runs is not the
-        # same claim as a median over 5.
-        entry["targets"][f"{tau:g}"] = {
-            "median": col.median(), "reached": hit, "total": len(g),
-            "n_tau_median": own.median(), "n_tau_mean": own_valid.mean() if not own_valid.empty else np.nan,
-            "n_tau_std": own_valid.std(ddof=1) if len(own_valid) >= 2 else np.nan,
-            "prop_tau_median": prop.median()}
+        col = f"n{tau:g}"
+        row[col] = summarise(g[col], total)
+        values = g[col].dropna()
+        entry[col] = {"mean": g[col].mean(), "std": g[col].std(ddof=1),
+                      "n": int(values.size)}
     entry["runs_detail"] = g.to_dict("records")
     agg.append(row)
     arms.append(entry)
 
-print("\nPer arm - mean +- std, it_tau as median (reached/total), "
-      "n_tau as median (mean +- std):\n")
+print("\nPer arm - mean +- std (n = runs the value is defined for):\n")
 print(pd.DataFrame(agg).to_string(index=False))
 
 report = {"metric": metric_name, "objectives": objective_keys,
@@ -735,3 +717,20 @@ out_path = os.path.join(out_dir, "gain.json")
 with open(out_path, "w", encoding="utf-8") as file:
     json.dump(jsonable(report), file, indent=2, allow_nan=False)
 print("\nSaved", out_path)
+
+# The same per-arm summary the console and gain.json's "arms" list carry, flattened to
+# one row per arm for whatever reads a CSV instead of JSON - a spreadsheet, another
+# script. Only SUMMARY_COLUMNS: the wider per-run detail already lives in gain.json's
+# runs_detail for anyone who needs it, and a CSV meant to be skimmed should not carry it.
+csv_rows = []
+for entry in arms:
+    csv_row = {"arm": entry["arm"]}
+    for col in SUMMARY_COLUMNS:
+        stat = entry.get(col) or {}
+        csv_row[f"{col}_mean"] = stat.get("mean")
+        csv_row[f"{col}_std"] = stat.get("std")
+        csv_row[f"{col}_n"] = stat.get("n")
+    csv_rows.append(csv_row)
+csv_path = os.path.join(out_dir, "gain_summary.csv")
+pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
+print("Saved", csv_path)
