@@ -419,10 +419,14 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # or band around it means, is decided once and applies to whichever plot is drawn
     # next - not to the plot whose button happens to sit nearest.
     #
-    # Not every plot takes them yet - the boxplot, the correlation matrix and the two
-    # time views ignore both - so each note says which do. That is a gap to close in
-    # those scripts, not a property of the setting, and the wording says "yet" so the
-    # note does not have to be rewritten as they catch up.
+    # Not every plot takes all three yet - the two time views ignore them - so each note
+    # says which do. That is a gap to close in those scripts, not a property of the
+    # setting, and the wording says "yet" so the note does not have to be rewritten as
+    # they catch up. The boxplot and the correlation matrix take the keys and neither
+    # spread control on purpose rather than for want of catching up: a box is already the
+    # group's spread, and a correlation is a number over the rows the keys leave, so an
+    # error bar or a band beside either would say the same thing twice, in a narrower
+    # way.
     group_box = QGroupBox("Grouping")
     group_layout = QVBoxLayout(group_box)
 
@@ -1455,8 +1459,8 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
     # step k in every run.
     for text, script, grouped, aggregates in (
             ("Evolution", "plot_evolution", True, False),
-            ("Correlation matrix", "plot_correlation_matrix", False, False),
-            ("Results boxplot", "plot_results_boxplot", False, False),
+            ("Correlation matrix", "plot_correlation_matrix", True, False),
+            ("Results boxplot", "plot_results_boxplot", True, False),
             ("Results vs datetime", "plot_results_vs_datetime", False, False),
     ):
         label = QLabel(f"{text}:")
