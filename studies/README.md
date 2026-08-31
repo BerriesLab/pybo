@@ -3,7 +3,7 @@
 Sweep harness for benchmarking the Bayesian optimizer. Each study repeatedly
 launches a tutorial's single-trial CLI as an isolated subprocess, varying one
 thing (seed, initial-dataset size, ...), each trial writing its own `summary.bin`
-and a `step_NNN/experiment.json` per step. Point the campaign GUI
+and a `step_NNN_repMM/experiment.json` per step. Point the campaign GUI
 (`python -m pybo_gui.main`) at the output to turn those into figures.
 
 Each study is generic over its target: pass the tutorial CLI to launch via
@@ -103,10 +103,10 @@ resulting arms' hypervolume traces the same way as any other sweep -
 ## Target contract
 
 A valid `--target` is a tutorial CLI `main.py` that accepts the
-`pybo.utils.cli.build_trial_args_parser` flags (`--n-evals --q-batch
---n-initial --seed --output-dir --plot --device --strategy`) and writes into the
+`pybo.utils.cli.parse_trial_args` flags (`--n-evals --q-batch
+--n-initial --seed --output-dir --device --strategy`) and writes into the
 `--output-dir` it is given: `summary.bin` at the root each iteration
-(`OptimizerBase.to_file`), and one `step_NNN/experiment.json` per step
+(`OptimizerBase.to_file`), and one `step_NNN_repMM/experiment.json` per step
 (`OptimizerBase.to_json`). See `tutorials/multi_objective/branin_currin/main.py`
 for the reference implementation. Every tutorial under `tutorials/` is a valid
 target.
@@ -120,7 +120,7 @@ runnable study.
 
 ## Building a ground-truth surrogate from a run
 
-`src/ground_truth/` fits a fast polynomial surrogate to
+`src/pybo/ground_truth/` fits a fast polynomial surrogate to
 the `parameters -> objectives` observed in a collected run's
 `experiment.json` files — e.g. to replace an expensive real experiment with
 a synthetic stand-in that a study can then sweep against cheaply. It reads
@@ -128,7 +128,7 @@ the same `experiment.json` schema these studies write, recursively, so it
 works unmodified on any study's or tutorial's output:
 
 ```
-python -m ground_truth.build_polynomial_gt --root-dir data/branin_currin --degree 2
+python -m pybo.ground_truth.build_polynomial_gt --root-dir data/branin_currin --degree 2
 ```
 
-See `src/ground_truth/README.md` for the full flag reference.
+See `src/pybo/ground_truth/README.md` for the full flag reference.

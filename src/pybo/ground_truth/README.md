@@ -13,13 +13,13 @@ it works unmodified on any tutorial's output.
 ## Running
 
 ```
-python -m ground_truth.build_polynomial_gt [flags]
+python -m pybo.ground_truth.build_polynomial_gt [flags]
 ```
 
 ## Examples
 
 ```
-python -m ground_truth.build_polynomial_gt --root-dir data/vformac --degree 2
+python -m pybo.ground_truth.build_polynomial_gt --root-dir data/vformac --degree 2
 ```
 
 ## Flags
