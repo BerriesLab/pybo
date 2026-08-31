@@ -259,7 +259,7 @@ def test_patience_must_be_positive():
 # ---- what the selected runs get grouped by ----
 
 from pybo_gui.modules.bayesian_campaign_analysis._series import (
-    GROUP_KEYS, GroupKeyError, group_key, merge_key, parse_keys, pooled, series_key,
+    GROUP_KEYS, GroupKeyError, group_key, merge_key, parse_keys, series_key,
     series_label,
 )
 
@@ -355,8 +355,3 @@ def test_parse_keys_preserves_order_dedupes_and_rejects_nonsense():
     # The key that used to exist and no longer does, so a stale command says so.
     with pytest.raises(GroupKeyError):
         parse_keys(["repeat"])
-
-
-def test_pooled_names_what_the_band_swept_up():
-    assert pooled(GROUP_KEYS) == ()
-    assert pooled([k for k in GROUP_KEYS if k != "run"]) == ("run",)
