@@ -145,9 +145,9 @@ def _arm_summary_row(entry: dict, taus: list) -> dict:
     scraped back out of that text.
 
     Only gamma, rho_c, regret_c and n_tau: the four numbers a reader actually compares
-    arms by (see campaign_gain.SUMMARY_COLUMNS). The wider per-run detail - gamma_budget,
-    gamma_norm, eta, n_c, it_tau, prop_tau - stays in the per-run table below instead of
-    cluttering the summary.
+    arms by (see campaign_gain.SUMMARY_COLUMNS). The per-run table shows the same four,
+    so the two read against each other column by column; the wider detail - gamma_budget,
+    gamma_norm, eta, n_c, it_tau, prop_tau - is left to gain.json.
     """
     row = {"arm": entry.get("arm")}
     for name in ("gamma", "rho_c", "regret_c"):
@@ -187,9 +187,11 @@ def _show_score_tables(parent: QWidget, output: list, report_path: str) -> None:
     v = QVBoxLayout(dlg)
 
     taus = report.get("taus") or []
-    # The per-run table keeps every tau reading campaign_gain computes; the per-arm
-    # summary keeps only n_tau (see _arm_summary_row).
-    run_tau_cols = [f"{p}{tau:g}" for tau in taus for p in ("it", "n", "prop")]
+    # One set of columns for both tables: the per-run rows are the same four numbers the
+    # per-arm summary averages, so showing more of them here only made the two tables
+    # harder to read against each other. The wider per-run detail campaign_gain computes -
+    # n_initial, m_final, gamma_budget, gamma_norm, eta, it_tau, prop_tau and the rest -
+    # is still in gain.json for anyone who wants it.
     arm_tau_cols = [f"n{tau:g}" for tau in taus]
 
     conv = report.get("convergence") or {}
@@ -203,14 +205,14 @@ def _show_score_tables(parent: QWidget, output: list, report_path: str) -> None:
     note.setWordWrap(True)
     v.addWidget(note)
 
-    run_cols = (["run", "arm", "n_initial", "m_initial", "m_final", "m_c", "gamma",
-                "gamma_budget", "gamma_norm", "rho_c", "regret_c", "n_c", "converged",
-                "eps", "eta"] + run_tau_cols)
+    arm_cols = ["arm", "gamma", "rho_c", "regret_c"] + arm_tau_cols
+
+    # The arm's own columns, plus the run's name to tell the rows apart.
+    run_cols = ["run"] + arm_cols
     run_rows = [row for arm in report.get("arms", []) for row in arm.get("runs_detail", [])]
     v.addWidget(QLabel("Per run"))
     v.addWidget(_score_table_widget(run_cols, run_rows), stretch=2)
 
-    arm_cols = ["arm", "gamma", "rho_c", "regret_c"] + arm_tau_cols
     arm_rows = [_arm_summary_row(entry, taus) for entry in report.get("arms", [])]
     v.addWidget(QLabel("Per arm"))
     v.addWidget(_score_table_widget(arm_cols, arm_rows), stretch=1)
@@ -517,6 +519,13 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
                           "ended up. Needs HV*, which campaign_optimum computes from a "
                           "terminal.")
 
+    # The two tooltips above, kept where they can be restored: _sync_plot_buttons
+    # overwrites every plot button's tooltip with its "load an objective first" hint, and
+    # without somewhere to read the original back from it would leave these two blank for
+    # the whole rest of the session - which is exactly once an objective is loaded and the
+    # buttons become usable. Rewritten per objective count by _on_objective_count_change.
+    metric_tips = {btn_rho: btn_rho.toolTip(), btn_regret: btn_regret.toolTip()}
+
     # HV*, shown but not computed here. Estimating it is minutes of sampling and refinement
     # against knobs worth watching converge, which is a terminal's job rather than a button
     # that blocks a window - and it is a property of the problem, so it is measured once and
@@ -807,7 +816,7 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
             button.setEnabled(ready)
         hint = "" if ready else "Load an objective first: it defines how many objectives "                                "the campaign has, and every plot needs that."
         for button in buttons:
-            button.setToolTip(hint)
+            button.setToolTip(hint or metric_tips.get(button, ""))
         if ready:
             _show_optimum()
 
@@ -1016,6 +1025,26 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         btn_pareto.setText("Plot objective" if is_single else "Plot Pareto")
         btn_hv.setText("Plot best value" if is_single else "Plot HV")
         btn_hvi.setText("Plot improvement" if is_single else "Plot HV improvement")
+        # Same two quantities, but of a value rather than a volume: the script already
+        # plots best-so-far / best* for one objective, so the buttons say what they draw.
+        # And the reference they need is not the same one - campaign_optimum maximises a
+        # hypervolume and refuses a single objective, whose best* is declared on the
+        # objective as `best_value` instead - so the tooltips point at different work.
+        btn_rho.setText("Plot norm. best value" if is_single else "Plot norm. HV")
+        metric_tips[btn_rho] = (
+            "best(n)/best*, reaching 1 at the optimum. Needs best*, which the objective "
+            "declares as `best_value`." if is_single else
+            "HV(n)/HV*, reaching 1 at the optimum. Needs HV*, which campaign_optimum "
+            "computes from a terminal.")
+        metric_tips[btn_regret] = (
+            ("best* − best(n), reaching 0 at the optimum, on a log axis so the rate a run "
+             "converges at is readable rather than only where it ended up. Needs best*, "
+             "which the objective declares as `best_value`.") if is_single else
+            ("HV* − HV(n), reaching 0 at the optimum, on a log axis so the rate a run "
+             "converges at is readable rather than only where it ended up. Needs HV*, "
+             "which campaign_optimum computes from a terminal."))
+        for _button in (btn_rho, btn_regret):
+            _button.setToolTip(metric_tips[_button])
         btn_pareto.setEnabled(not is_many)
         # Point labels belong to the scatter, which 4+ objectives has none of. The
         # grouping keys stay live either way: the hypervolume still pools by them.
@@ -1297,19 +1326,27 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         return args
 
     def _show_optimum() -> None:
-        """Report whether an HV* exists for the loaded objective, and what it is.
+        """Report whether a reference optimum exists for the loaded objective, and what it is.
 
-        Read off optimum.json every time rather than remembered: that file is what the
-        plot scripts themselves consult, so showing anything else could say an optimum is
-        available when the scripts would not find one.
+        Read off the same place the plot scripts read it from, every time rather than
+        remembered: showing anything else could say an optimum is available when the
+        scripts would not find one.
 
-        Looked for beside the objective, which is where campaign_optimum puts it and the
-        first place the scripts look. HV* describes the problem, not a selection of runs
-        against it, so one estimate serves every campaign on that objective.
+        Which place that is depends on the objective count, because the two are different
+        quantities computed different ways. Several objectives have an HV*, sampled by
+        campaign_optimum into an optimum.json beside the objective - the first place the
+        scripts look, and the one path every reader already has. One objective has no
+        volume to sample: campaign_optimum refuses it outright, and its best* is a number
+        the problem declares as `best_value`, which is what plot_hypervolume falls back to.
+        Either way it describes the problem, not a selection of runs against it, so one
+        reference serves every campaign on that objective.
         """
         objective_path = obj_edit.text().strip()
         if not objective_path:
             optimum_label.setText("HV*: —")
+            return
+        if _n_objectives() == "1":
+            _show_best_value()
             return
         path = os.path.join(os.path.dirname(os.path.abspath(objective_path)),
                             "optimum.json")
@@ -1332,6 +1369,34 @@ def build(step_list, settings) -> tuple[QWidget, QWidget]:
         optimum_label.setText(f"HV* = {value:.6g}  ({keys})")
         optimum_label.setToolTip(f"Read from {path}. Computed by campaign_optimum; this "
                                  f"only reads it back.")
+
+    def _show_best_value() -> None:
+        """The single-objective half of _show_optimum: best*, off the loaded problem.
+
+        No file to read. optimum.json is campaign_optimum's output and campaign_optimum
+        will not run on one objective, so an optimum.json beside a single-objective
+        problem is either absent or left over from a different objective set - which
+        plot_hypervolume ignores by context anyway. The number it will actually divide by
+        is the objective's own `best_value`, so that is what gets reported.
+        """
+        problem = state["problem"] or {}
+        value = problem.get("best_value")
+        label = (problem.get("objectives") or [{}])[0].get("label", "")
+        if value is None:
+            optimum_label.setText("best*: — (declare best_value)")
+            optimum_label.setToolTip(
+                "This objective declares no `best_value`, so Plot norm. best value and "
+                "Plot regret have nothing to measure against. Declare it where the "
+                "objective calls super().__init__(), the way a multi-objective problem "
+                "declares max_hv:\n\n"
+                "      best_value=<the best value the problem allows>,\n\n"
+                "campaign_optimum does not help here: it maximises a hypervolume by "
+                "sampling, and refuses a single objective.")
+            return
+        optimum_label.setText(f"best* = {float(value):.6g}  ({label})")
+        optimum_label.setToolTip(
+            "The objective's own `best_value`, which is what the two metrics measure "
+            "against; this only reads it back.")
 
     def _plot_hypervolume(improvement: bool, metric: str = "hv") -> None:
         """The hypervolume trace, on one of three y axes.
