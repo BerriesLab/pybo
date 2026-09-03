@@ -13,7 +13,7 @@ class PolynomialConstrained(MCSingleObjectiveBase):
                 ParCfg(bounds=(-2.0, 2.0))
             ],
             obj_cfg=[
-                ObjCfg(bounds=(-2.0, 8.0), to_minimize=False, ref_point=10)
+                ObjCfg(bounds=(-2.0, 8.0), to_minimize=True, ref_point=10)
             ],
             ineq_Y_con_cfg=[
                 IneqYConCfg(f=Identity(index=-1))

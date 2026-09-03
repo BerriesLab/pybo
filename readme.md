@@ -35,11 +35,11 @@ Version 0.3.0 currently supports:
 - Nonlinear inequality input constraints.
 - Linear and non-linear inequality output constraints.
 - GPyTorch kernels (e.g. scale, RBF, Matern, Periodic...).
-- Any BoTorch acquisition function, single or multi objective, analytic
+- All BoTorch acquisition function, single or multi objective, analytic
   (e.g. EI, LogEI) or Monte Carlo based (e.g. qEHVI, qLogEHVI, qNEHVI,
-  qLogNEHVI, qNParEGO): the optimizer takes the acquisition function class and
+  qLogNEHVI) except qNParEGO: the optimizer takes the acquisition function class and
   instantiates it against the current model.
-- Two custom acquisition functions on top of those: qDWNEHVI and qEWNEHVI.
+- Two custom acquisition functions: qDWNEHVI and qEWNEHVI.
 - The following samplers: UniformGrid, Sobol, LatinHypercube, Random.
 - Two non-Bayesian baseline arms, Sobol and Random, sharing the Bayesian
   optimizer's interface and output format, so a run can be compared against
@@ -47,8 +47,8 @@ Version 0.3.0 currently supports:
 - Resuming an interrupted run from its own step records, and replaying a
   previous run's initial design instead of drawing a fresh one.
 - Easy-to-write custom objectives, including trackers and penalization.
-- A plotter library for objectives, optimization results and metrics.
 - CUDA, Apple Metal Framework, and CPU.
+- A GUI for plotting objectives, optimization results and metrics.
 
 ## Installation
 
@@ -116,7 +116,7 @@ packages (in alphabetical order):
 - [objectives](src/pybo/objectives): Includes single and multi objective classes.
 - [optimizer](src/pybo/optimizer): Includes a stateful class that manages the
   Bayesian optimization loop, plus the Sobol and Random baseline arms.
-- [plotters](src/pybo/plotters): Includes classes for visualizing optimization
+- [plotters](src/pybo/plotters) (deprecated): Includes classes for visualizing optimization
   results, trackers, metrics, and parameters evolution.
 - [samplers](src/pybo/samplers): Includes Uniform Grid, Sobol, Latin Hypercube
   and Random Samplers. Provides functionality for constrained sampling.
@@ -256,12 +256,3 @@ over seeds and settings is the job of [`studies/`](studies/README.md).
   sibling of VFormAC — the same script shape against an I-form electrical
   discharge machining process, plus one measured output constraint. See
   [its README](tutorials/multi_objective/iformac/README.md).
-
-## Notes
-
-- Sporadically, the following error has been observed: `RuntimeError: main thread is not in main loop Tcl_AsyncDelete:
-  async handler deleted by the wrong thread`. This traceback appears to
-  originate from the TkAgg backend, which depends on Tkinter. To suppress this
-  error, `matplotlib` is imported with the appropriate backend configuration.
-  Unfortunately, this approach prevents figures from being displayed on screen,
-  meaning that `show()` will no longer function.
