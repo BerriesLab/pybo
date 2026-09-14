@@ -24,7 +24,7 @@ def split_roots(value: str) -> list[str]:
     """One CLI argument, comma-separated, as the list find_experiments wants.
 
     A bare path with no comma is a one-element list, so a single root needs no
-    special-casing at the call site - "data/iformac" and "data/iformac,data/vformac"
+    special-casing at the call site - "data/my_campaign" and "data/campaign_a,data/campaign_b"
     are the same code path.
     """
     return [part.strip() for part in value.split(",") if part.strip()]

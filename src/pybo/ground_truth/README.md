@@ -19,13 +19,14 @@ python -m pybo.ground_truth.build_polynomial_gt [flags]
 ## Examples
 
 ```
-python -m pybo.ground_truth.build_polynomial_gt --root-dir data/vformac --degree 2
+python -m pybo.ground_truth.build_polynomial_gt --root-dir data/my_campaign --degree 2
 ```
 
 ## Flags
 
 - `--root-dir` — root folder to search recursively for `experiment.json`
-  files (default: `data/vformac`).
+  files. No default: give it, or point the fit at individual files with
+  `--experiments`, or at a map with `--map`.
 - `--positive` — off by default. Turn on only when every observed objective
   value is physically guaranteed to be non-negative. Fits `log(y)` and predicts `exp(...)`, so predictions are
   strictly positive objectives everywhere — including outside the observed parameter
@@ -48,18 +49,19 @@ python -m pybo.ground_truth.build_polynomial_gt --root-dir data/vformac --degree
   What makes two runs the same setting is the rig's resolution: the smallest
   step it can actually take. The records do not show it, because a record holds
   the parameters the optimizer *asked for*, not the ones the rig *executed* —
-  so one setting run three times can appear as three different rows. vformac's
-  `step_000`/`step_001` sit at exactly `(60, 83, 23898, 32030)` while their
-  third run `step_036` reads `(60.0, 82.853, 23898.36, 32029.97)`: the same
-  experiment, recorded once as executed and once as requested. Rounding to the
+  so one setting run three times can appear as three different rows. One
+  campaign's `step_000`/`step_001` sit at exactly `(60, 83, 23898, 32030)`
+  while their third run `step_036` reads `(60.0, 82.853, 23898.36,
+  32029.97)`: the same experiment, recorded once as executed and once as
+  requested. Rounding to the
   rig's own grid puts the three back together, and rounding finer than the rig
   leaves the triple as a pair plus an orphan — 8 degrees of freedom instead of
   14, on a campaign that measured 14.
 
-  The default matches vformac and iformac, whose rigs take whole-unit
-  setpoints. The authority on this is the objective, whose `ParCfg` carries a
-  `resolution` per parameter; this flag is one number for all of them, which
-  agrees with both campaigns today but cannot express a rig that resolves
+  The default matches a rig that takes whole-unit setpoints. The authority on
+  this is the objective, whose `ParCfg` carries a `resolution` per parameter;
+  this flag is one number for all of them, which agrees with a rig whose
+  parameters share a resolution but cannot express one that resolves
   differently on different parameters. Check the group count against the
   repeats you know you ran: once it exceeds them, distinct settings are being
   pooled and their spread is counted as noise, which is exactly what pure error
@@ -165,8 +167,8 @@ to put in that method's `noisy` branch travels with the coefficients.
 
 Paste the block whose **quantity** the method computes, which is not always the
 block the constraint column is named after: an objective that derives its
-constraint from a measurement fits the measurement, so iformac's
-`_orbiting_time` comes from `trackers / Orbiting Time`, while
+constraint from a measurement fits the measurement: a method computing an
+orbiting time comes from `trackers / Orbiting Time`, while
 `constraints / Orbiting Time Deviation` is a fit of the already-banded distance
 and nothing consumes it.
 

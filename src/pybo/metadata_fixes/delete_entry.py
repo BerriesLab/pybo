@@ -10,12 +10,12 @@ inside "data" are reached:
 
 Usage:
     python -m pybo.metadata_fixes.delete_entry <root> <path> [<path> ...] --apply
-    python -m pybo.metadata_fixes.delete_entry data/iformac data.*.source --apply
-    python -m pybo.metadata_fixes.delete_entry data/iformac "data.*.trackers.Orbiting Time (min)" \\
+    python -m pybo.metadata_fixes.delete_entry data/my_campaign data.*.source --apply
+    python -m pybo.metadata_fixes.delete_entry data/my_campaign "data.*.trackers.Orbiting Time (min)" \\
         "data.*.trackers.Orbiting Time (min)_var" --apply
 
     <root> takes several folders too, comma-separated in the one argument:
-    python -m pybo.metadata_fixes.delete_entry data/iformac,data/vformac data.*.source --apply
+    python -m pybo.metadata_fixes.delete_entry data/campaign_a,data/campaign_b data.*.source --apply
 
 A label and its _var companion are two separate entries: pass both to drop a channel
 whole, or pybo reads a column that is half there.

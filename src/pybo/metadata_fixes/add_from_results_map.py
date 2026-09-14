@@ -11,7 +11,7 @@ leaf is the label the value is written under:
 
     python -m pybo.metadata_fixes.add_from_results_map <root> <map> <result> <path> [--apply]
 
-    python -m pybo.metadata_fixes.add_from_results_map data/vformac_converted \\
+    python -m pybo.metadata_fixes.add_from_results_map data/my_campaign_converted \\
         data/results_map.json cavity_depth_mm "data.*.trackers.Cavity Depth" --apply
 
 An experiment the map does not name, or names without that result, is reported and left

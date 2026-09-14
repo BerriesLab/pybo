@@ -10,15 +10,15 @@ inside "data" are reached:
 
 Usage — literal value:
     python -m pybo.metadata_fixes.add_entry <root> <path> <value> --apply
-    python -m pybo.metadata_fixes.add_entry data/iformac data.*.source manual --apply
+    python -m pybo.metadata_fixes.add_entry data/my_campaign data.*.source manual --apply
 
     <root> takes several folders too, comma-separated in the one argument - not a
     second positional, which a trailing <value> would make ambiguous to parse:
-    python -m pybo.metadata_fixes.add_entry data/iformac,data/vformac data.*.source manual --apply
+    python -m pybo.metadata_fixes.add_entry data/campaign_a,data/campaign_b data.*.source manual --apply
 
 Usage — derived expression:
     python -m pybo.metadata_fixes.add_entry <root> <path> --expr EXPR --apply
-    python -m pybo.metadata_fixes.add_entry data/iformac "data.*.trackers.Orbiting Time Deviation (min)" \\
+    python -m pybo.metadata_fixes.add_entry data/my_campaign "data.*.trackers.Orbiting Time Deviation (min)" \\
         --expr "objectives['Machining Time (min)'] - 42" --apply
 
     The expression sees the observation the path landed on — parameters, objectives,
