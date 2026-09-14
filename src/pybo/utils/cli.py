@@ -137,9 +137,10 @@ def parse_trial_args(description: str = ""):
                         help="Continue a previous attempt at --output-dir instead of starting "
                              "over - skip whatever step_*/experiment.json is already recorded "
                              "there. Acted on by the tutorial's own loop when it implements step "
-                             "replay (currently vformac, the reference implementation); a "
-                             "tutorial that doesn't still writes into the same directory instead "
-                             "of redirecting to a new one, but redoes every step.")
+                             "replay, as every tutorial in this repository does - see "
+                             "branin_currin, the reference implementation; a custom tutorial that "
+                             "doesn't still writes into the same directory instead of redirecting "
+                             "to a new one, but redoes every step.")
     parser.add_argument("--device", default="cpu", type=resolve_device, metavar="DEVICE",
                         help="Torch device: cpu (default - always available, never runs out "
                              "of memory the way a GPU can mid-sweep), cuda, or cuda:N. mps "

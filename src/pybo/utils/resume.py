@@ -2,7 +2,7 @@
 
 Replays whatever a run_dir already has recorded, so a step already measured before a
 crash is read back rather than re-proposed and re-simulated - the loop that follows
-stays untouched, it just starts later. See tutorials/multi_objective/vformac/main.py
+stays untouched, it just starts later. See tutorials/multi_objective/branin_currin/main.py
 for the reference loop integration: one call to resume_run before the loop, and the
 loop's own range changing from range(n_steps) to range(start_i, n_steps).
 

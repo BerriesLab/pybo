@@ -70,9 +70,8 @@ EXAMPLES
       --x Branin --y Currin
 
   python -m pybo_gui.modules.bayesian_campaign_analysis.campaign_optimum \
-      --ground-truth tutorials/multi_objective/vformac/objective.py \
-      --x "Material Removal Rate" --maximize "Material Removal Rate" \
-      --y "Tool Wear" --samples 262144
+      --ground-truth tutorials/multi_objective/osyczka_kundu/objective.py \
+      --x Osyczka --y Kundu --samples 262144
 """
 import argparse
 import json
