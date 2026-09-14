@@ -23,6 +23,8 @@ env/
 # disagree.
 /tutorials/**/gt_bodies.txt
 /tutorials/**/gnd_truth.txt
+/tutorials/multi_objective/iformac
+/tutorials/multi_objective/vformac
 /dist/
 /tutorials/multi_objective/avagama/
 
