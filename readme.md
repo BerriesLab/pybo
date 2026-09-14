@@ -215,3 +215,7 @@ recorded as steps too, so a run holds
 - [Yield-Rate-Cost](tutorials/multi_objective/yield_rate_cost/main.py): An unconstrained three-objective problem over
   four parameters, mixing senses — Yield and Rate are maximized, Cost is minimized — solved using a scaled RBF
   kernel. It is the repository's check that more than two objectives, and `to_minimize=False`, work end to end.
+- [Motor-Design](tutorials/multi_objective/motor_design/main.py): An unconstrained four-objective problem over
+  six parameters, with two objectives per sense — Torque and Efficiency are maximized, Mass and Cost are
+  minimized — solved using a scaled RBF kernel. The widest front the repository fits: four objectives make the
+  qNEHVI partitioning expensive, so expect minutes per proposal rather than seconds.
