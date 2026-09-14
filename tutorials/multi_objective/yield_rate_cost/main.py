@@ -1,0 +1,175 @@
+import os
+import math
+import time
+import warnings
+import torch
+from pathlib import Path
+from tqdm import tqdm
+from botorch.acquisition.multi_objective import qLogNoisyExpectedHypervolumeImprovement
+from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.constraints import Interval
+from pybo.optimizer.sobol import SobolOptimizer
+from pybo.optimizer.random import RandomOptimizer
+from pybo.optimizer.bayesian import BayesianOptimizer
+from pybo.samplers.sobol import SobolSampler
+from pybo.utils.cli import parse_trial_args, resolve_output_dir
+from pybo.utils.resume import resume_run
+from tutorials.multi_objective.yield_rate_cost.objective import YieldRateCost
+
+DTYPE = torch.float64
+
+
+def main(*, output_dir: Path, n_evals: int, q: int, n_initial: int, seed: int, verbose: bool,
+         device: torch.device, strategy: str, repeats: int, noise: bool,
+         resume: bool = False):
+    """ Make directory """""
+    run_dir = output_dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Starting optimization ({n_evals} evals, q={q}, seed={seed})")
+
+    """ Seed the global torch RNG to ensure reproducibility. """
+    torch.manual_seed(seed)
+
+    """ Instantiate true objective """
+    objective = YieldRateCost(
+        device=device,
+        dtype=DTYPE
+    )
+
+    """ Instantiate kernel """
+    kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=objective.num_par,
+            lengthscale_constraint=Interval(
+                lower_bound=1e-3,
+                upper_bound=1.0
+            ),
+        ),
+        outputscale_constraint=Interval(
+            lower_bound=1e-3,
+            upper_bound=1e2
+        ),
+    )
+
+    """ Draw the initial parameter set """
+    n_initial = n_initial or 5 * (objective.dim + 1)
+    n_initial = math.ceil(n_initial / q) * q
+    sampler = SobolSampler(device=device, dtype=DTYPE, objective=objective)
+    X_initial = sampler.draw_samples(n=n_initial)
+
+    """ Instantiate Bayesian optimizer """
+    optimizer_class = {"sobol": SobolOptimizer,
+                       "random": RandomOptimizer}.get(strategy, BayesianOptimizer)
+    bo = optimizer_class(
+        device=device,
+        dtype=DTYPE,
+        objective=objective,
+        acqf=qLogNoisyExpectedHypervolumeImprovement,
+        kernel=kernel,
+        X=None,
+        Y_obj=None,
+        Y_obj_var=None,
+        Y_con=None,
+        Y_con_var=None,
+        batch_size=q,
+        # Reuse the initial design's sampler, so the sobol arm continues that
+        # sequence instead of starting a second one.
+        **({"sampler": sampler} if strategy == "sobol" else {}),
+    )
+
+    """ Choose between deterministic and noisy objective """
+    noisy = noise
+    if repeats > 1 and not noisy:
+        print(f"! --repeats {repeats} on a deterministic objective: every repetition "
+              f"returns the same values, so the extra rows carry no information.")
+
+    """ Main optimization loop """
+    n_initial_steps = n_initial // q
+    n_steps = n_initial_steps + int(n_evals / q)
+
+    """ Resume: replay whatever this run_dir already has recorded, and start the loop
+    past it. A no-op (start_i=0, nothing to replay) on a fresh run - see
+    pybo.utils.resume.resume_run. """
+    start_i, prior_records = resume_run(
+        run_dir, objective, resume=resume, q=q, n_initial=n_initial,
+        n_initial_steps=n_initial_steps, loaded_initial=False,
+        repeats=repeats, X_initial=X_initial, strategy=strategy, noise=noise, seed=seed)
+    for record in prior_records:
+        bo.update_XY(**record)
+    if not verbose:
+        # Keep stderr clean so stray GP-fit warnings don't fragment the tqdm bar.
+        warnings.filterwarnings("ignore")
+    # Counts the number of measurements, not proposals: with repeats > 1 a step costs q * repeats
+    n_measurements = (n_initial + n_evals) * repeats
+    pbar = tqdm(total=n_measurements, unit="eval", desc="Optimizing") if not verbose else None
+    if pbar is not None and prior_records:
+        pbar.update(sum(record["new_X"].shape[0] for record in prior_records))
+
+    for i in range(start_i, n_steps):
+        modelling = i >= n_initial_steps
+        source = "proposed" if modelling else "initial"
+        description = "Optimizing" if modelling else "Initial design"
+        if pbar is not None:
+            pbar.set_description(description)
+        if verbose:
+            phase = "propose" if modelling else "initial design"
+            print(f"\n*** Step {i + 1}/{n_steps} ({phase}) | eval {(i + 1) * q}/{n_initial + n_evals} ***")
+
+        if modelling:
+            """ Optimize and get new X """
+            bo.optimize(verbose=verbose)
+            new_X = bo.new_X
+            bo.compute_acquisition_function_value_at_X(X=new_X, verbose=verbose)
+            bo.compute_posterior_mean_at_X(X=new_X, verbose=verbose)
+        else:
+            """ Take the next batch of the initial design """
+            new_X = X_initial[i * q:(i + 1) * q]
+
+        """ Simulate the experiment at new X, once per repetition """
+        # TODO: Pass main and variance for each group of repeated experiments. BO scales as O(n^3)!
+        for rep in range(repeats):
+            step_dir = run_dir / f"step_{i:03d}_rep{rep:02d}"
+            step_dir.mkdir(parents=True, exist_ok=True)
+            os.chdir(step_dir)
+            new_Y_obj = objective.evaluate_true_objective(new_X, noisy=noisy)
+            if verbose:
+                print(f"New Y_obj: {new_Y_obj.detach().cpu().numpy()}")
+            bo.update_XY(
+                new_X=new_X,
+                new_Y_obj=new_Y_obj,
+                source=source
+            )
+
+            """ Save the running summary (run root) and this measurement's record """
+            bo.to_file(filepath=run_dir / "summary.bin", verbose=verbose)
+            bo.to_json(filepath=step_dir / "experiment.json", verbose=verbose)
+
+            if pbar is not None:
+                time.sleep(0.1)
+                pbar.update(q)
+
+    if pbar is not None:
+        pbar.close()
+
+    print("Optimization Finished.")
+
+
+if __name__ == "__main__":
+    args = parse_trial_args(description="Run a single Yield-Rate-Cost BO trial.")
+    if args.verbose:
+        print(f"Running on {args.device}.")
+    output_dir = resolve_output_dir(args, __file__)
+
+    main(
+        n_evals=args.n_evals,
+        q=args.q_batch,
+        n_initial=args.n_initial,
+        seed=args.seed,
+        output_dir=output_dir,
+        verbose=args.verbose,
+        device=args.device,
+        strategy=args.strategy,
+        repeats=args.repeats,
+        noise=args.noise,
+        resume=args.resume,
+    )
