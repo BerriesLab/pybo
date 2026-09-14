@@ -22,9 +22,9 @@ from pybo_gui.utils.experiment_map_loader import load_experiments_from_map
 from pybo_gui.modules.bayesian_campaign_analysis._constraints import parse_constraints, is_feasible, ConstraintError
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--x", default="down_time_minutes", help="Result key for first objective")
-parser.add_argument("--y", default="wear_microns",      help="Result key for second objective")
-parser.add_argument("--z", default="",                  help="Result key for third objective (empty = 2D hypervolume)")
+parser.add_argument("--x", default="", help="Result key for first objective")
+parser.add_argument("--y", default="", help="Result key for second objective")
+parser.add_argument("--z", default="", help="Result key for third objective (empty = 2D hypervolume)")
 parser.add_argument("--objective", action="append", default=[],
                     help="Result key for an objective (repeatable). When given, "
                          "overrides --x/--y/--z and enables N-D hypervolume. Give "
