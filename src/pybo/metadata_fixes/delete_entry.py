@@ -6,13 +6,13 @@ inside "data" are reached:
 
     experiment_type                        the file's own top level
     data.*.source                          every observation
-    data.*.trackers.Orbiting Time (min)    every observation's tracker
+    data.*.trackers.Settling Time (min)    every observation's tracker
 
 Usage:
     python -m pybo.metadata_fixes.delete_entry <root> <path> [<path> ...] --apply
     python -m pybo.metadata_fixes.delete_entry data/my_campaign data.*.source --apply
-    python -m pybo.metadata_fixes.delete_entry data/my_campaign "data.*.trackers.Orbiting Time (min)" \\
-        "data.*.trackers.Orbiting Time (min)_var" --apply
+    python -m pybo.metadata_fixes.delete_entry data/my_campaign "data.*.trackers.Settling Time (min)" \\
+        "data.*.trackers.Settling Time (min)_var" --apply
 
     <root> takes several folders too, comma-separated in the one argument:
     python -m pybo.metadata_fixes.delete_entry data/campaign_a,data/campaign_b data.*.source --apply
@@ -27,7 +27,7 @@ import sys
 
 from pybo.metadata_fixes._common import find_experiments, resolve, load, save, split_roots
 
-# Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+# Labels like "Film Thickness (μm)" get printed, and stdout defaults to cp1252 on
 # Windows, which cannot encode them.
 sys.stdout.reconfigure(encoding="utf-8")
 

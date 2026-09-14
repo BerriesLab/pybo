@@ -91,7 +91,7 @@ def coerce(value: str):
 
 def evaluate(expr: str, scope: dict):
     """An expression against the observation the path landed on, plus math. Labels
-    carry spaces and parentheses, so they are reached as objectives["Tool Wear (μm)"]
+    carry spaces and parentheses, so they are reached as objectives["Film Thickness (μm)"]
     rather than by attribute."""
     return eval(expr, {"math": math}, dict(scope))
 
@@ -102,6 +102,6 @@ def load(path: Path) -> dict:
 
 def save(path: Path, doc: dict) -> None:
     """ensure_ascii=False and utf-8, matching what is already on disk: the files hold
-    a real mu in labels like "Tool Wear (μm)", and escaping it would rewrite every
+    a real mu in labels like "Film Thickness (μm)", and escaping it would rewrite every
     line of every file it touches."""
     path.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -150,11 +150,11 @@ lines and the named expression, with no `def`, no `noisy` branch and no
 `return`:
 
 ```
-# trackers / Orbiting Time (degree 2, pooled noise std 0.6754)
+# trackers / Settling Time (degree 2, pooled noise std 0.6754)
         x0 = (X[..., 0] - 10.863) / 2.12656
         x1 = (X[..., 1] - 5.36859) / 1.43657
         x2 = (X[..., 2] - 49683.3) / 25415.8
-        orbiting_time = (20.9966
+        settling_time = (20.9966
                          - 4.28653 * x0
                          ...
                          - 0.217852 * x2 ** 2)
@@ -168,8 +168,8 @@ to put in that method's `noisy` branch travels with the coefficients.
 Paste the block whose **quantity** the method computes, which is not always the
 block the constraint column is named after: an objective that derives its
 constraint from a measurement fits the measurement: a method computing an
-orbiting time comes from `trackers / Orbiting Time`, while
-`constraints / Orbiting Time Deviation` is a fit of the already-banded distance
+settling time comes from `trackers / Settling Time`, while
+`constraints / Settling Time Deviation` is a fit of the already-banded distance
 and nothing consumes it.
 
 Nothing is written to disk — pipe or redirect stdout if you want to keep the

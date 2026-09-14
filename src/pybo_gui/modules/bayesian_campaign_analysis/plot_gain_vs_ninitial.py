@@ -83,7 +83,7 @@ from pybo_gui.modules.bayesian_campaign_analysis.build_experiment_map import run
 
 parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 parser.add_argument("--hours-per-eval", type=float, default=0.0,
-                    help="Machining hours one evaluation costs. Adds a second scale to "
+                    help="Hours one evaluation costs. Adds a second scale to "
                          "the cost panel reading the same axis in hours (0 = off).")
 parser.add_argument("--points", type=lambda v: v.lower() not in ("0", "false", "no"),
                     default=True,
@@ -296,14 +296,14 @@ for ax in (ax_gain, ax_prop, ax_cost):
     ax.grid(True, **fig_cfg["grid"])
     ax.set_xlim(-0.5, len(categories) - 0.5)
 
-# The same axis read in machining hours - a unit conversion of the one measure, not a
+# The same axis read in hours - a unit conversion of the one measure, not a
 # second scale competing with it.
 if args.hours_per_eval > 0:
     for ax in (ax_prop, ax_cost):
         hours = ax.secondary_yaxis(
             "right", functions=(lambda v: v * args.hours_per_eval,
                                 lambda v: v / args.hours_per_eval))
-        hours.set_ylabel("Machining time (h)", fontsize=FONT_LABEL)
+        hours.set_ylabel("Experiment time (h)", fontsize=FONT_LABEL)
 
 censored = [r for r in runs if not r["converged"]]
 if censored:

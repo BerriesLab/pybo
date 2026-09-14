@@ -74,7 +74,7 @@ def _pooled_noise_std(X, Y, decimals, resolutions=None):
 
 
 def main():
-    # Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+    # Labels like "Film Thickness (μm)" get printed, and stdout defaults to cp1252 on
     # Windows, which cannot encode them.
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -196,7 +196,7 @@ def main():
             raise SystemExit(f"No experiment.json found under {source_label}")
         for path in paths:
             # utf-8 explicitly: the default on Windows is cp1252, which mangles labels
-            # like "Tool Wear (μm)" on the way in.
+            # like "Film Thickness (μm)" on the way in.
             with open(path, encoding="utf-8") as f:
                 json_file = json.load(f)
             for observation in json_file["data"]:

@@ -4,23 +4,24 @@ A constraint is a boolean expression over an experiment's result keys, passed
 whole on the CLI (repeatable via ``--constraint``). Because the expression is
 evaluated with asteval, all of the following work in one mechanism:
 
-  - single-key bound      ``wear_microns <= 50``
-  - general linear        ``wear_microns + 2*down_time_minutes <= 80``
-  - nonlinear             ``wear_microns**2 + orbiting_time_minutes**2 <= 100``
-  - equality as tolerance ``abs(wear_microns - 50) <= 1``
+  - single-key bound      ``thickness_um <= 50``
+  - general linear        ``thickness_um + 2*down_time_minutes <= 80``
+  - nonlinear             ``thickness_um**2 + settling_time_minutes**2 <= 100``
+  - equality as tolerance ``abs(thickness_um - 50) <= 1``
 
 An experiment is *feasible* iff every constraint evaluates truthy against its
 results. A missing key, a None value, or any evaluation error makes the
 experiment infeasible.
 
 A result key has to be a Python name to be referenced at all, and most of them are
-not: a problem names its channels "Tool Wear", "Material Removal Rate". So a run of
+not: a problem names its channels "Film Thickness", "Deposition Rate". So a run of
 words is read as one name, both in the expression and when the results are bound -
-``Tool Wear <= 100`` works, and so does ``abs(Tool Wear - 50) <= 1``. The words asteval
-reads as operators are left alone, so ``Tool Wear <= 100 and Orbiting Time >= 19`` still
-parses as two comparisons. A key that is already a name ("con_00") is unaffected.
+``Film Thickness <= 100`` works, and so does ``abs(Film Thickness - 50) <= 1``.
+The words asteval reads as operators are left alone, so
+``Film Thickness <= 100 and Settling Time >= 19`` still parses as two
+comparisons. A key that is already a name ("con_00") is unaffected.
 
-A key carrying anything else non-alphanumeric - "Orbiting Time Deviation (min)" - stays
+A key carrying anything else non-alphanumeric - "Settling Time Deviation (min)" - stays
 unreferenceable, because no run of words can produce it.
 
 Expressions run in a sandbox: ``minimal`` asteval (arithmetic, comparisons and
@@ -32,7 +33,7 @@ import re
 from asteval import Interpreter
 
 # Words asteval reads as operators or literals. A run of words is broken on these rather
-# than swallowing them, or "100 and Orbiting Time" would become one name.
+# than swallowing them, or "100 and Settling Time" would become one name.
 _RESERVED = frozenset(("and", "or", "not", "in", "is", "if", "else",
                        "True", "False", "None"))
 _WORD_RUN = re.compile(r"[A-Za-z_]\w*(?:[ \t]+[A-Za-z_]\w*)+")

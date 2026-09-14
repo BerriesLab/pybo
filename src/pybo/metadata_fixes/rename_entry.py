@@ -8,7 +8,7 @@ own group, and moving a channel between groups is a different operation.
 Usage:
     python -m pybo.metadata_fixes.rename_entry <root> <path> <new_name> [--apply]
     python -m pybo.metadata_fixes.rename_entry data/my_campaign \\
-        "data.*.objectives.mrr_mm3_min" "Material Removal Rate (mm3/min)" --apply
+        "data.*.objectives.dep_nm_s" "Deposition Rate (nm/s)" --apply
 
 The "<label>_var" companion is renamed along with the label. Every pybo channel is
 that pair, and renaming one half leaves a broken one — the kind of mistake nobody
@@ -26,7 +26,7 @@ import sys
 
 from pybo.metadata_fixes._common import find_experiments, resolve, load, save
 
-# Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+# Labels like "Film Thickness (μm)" get printed, and stdout defaults to cp1252 on
 # Windows, which cannot encode them.
 sys.stdout.reconfigure(encoding="utf-8")
 

@@ -183,7 +183,7 @@ def test_true_results_skips_a_row_with_no_parameters(objective_file):
 
 def test_input_feasible_marks_the_points_the_problem_forbids(objective_file):
     """The constraint is coeff . x >= rhs, so coeff=[-1,-1] with rhs=-1 reads a + b <= 1
-    (the spelling a real campaign uses for V0 + dV <= 150). Asserted as literal expectations
+   . Asserted as literal expectations
     rather than against is_X_feasible, which is the thing under test here."""
     from pybo_gui.modules.bayesian_campaign_analysis._problem_view import input_feasible
     rows = [{"a": 0.2, "b": 0.3},   # a + b = 0.5, inside

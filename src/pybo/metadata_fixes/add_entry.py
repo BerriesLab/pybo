@@ -6,7 +6,7 @@ inside "data" are reached:
 
     experiment_type                        the file's own top level
     data.*.source                          every observation
-    data.*.objectives.Tool Wear (μm)_var   every observation's objective variance
+    data.*.objectives.Film Thickness (μm)_var   every observation's objective variance
 
 Usage — literal value:
     python -m pybo.metadata_fixes.add_entry <root> <path> <value> --apply
@@ -18,12 +18,12 @@ Usage — literal value:
 
 Usage — derived expression:
     python -m pybo.metadata_fixes.add_entry <root> <path> --expr EXPR --apply
-    python -m pybo.metadata_fixes.add_entry data/my_campaign "data.*.trackers.Orbiting Time Deviation (min)" \\
-        --expr "objectives['Machining Time (min)'] - 42" --apply
+    python -m pybo.metadata_fixes.add_entry data/my_campaign "data.*.trackers.Settling Time Deviation (min)" \\
+        --expr "objectives['Cycle Time (min)'] - 42" --apply
 
     The expression sees the observation the path landed on — parameters, objectives,
     constraints, trackers — plus math. Labels carry spaces and parentheses, so they
-    are reached as objectives["Tool Wear (μm)"] rather than by attribute. A path that
+    are reached as objectives["Film Thickness (μm)"] rather than by attribute. A path that
     never crosses a list is evaluated against the file's top level instead.
 
 Nothing is written without --apply: the run is previewed and the files are left alone.
@@ -40,7 +40,7 @@ from pybo.metadata_fixes._common import (
     find_experiments, resolve, coerce, evaluate, load, save, split_roots,
 )
 
-# Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+# Labels like "Film Thickness (μm)" get printed, and stdout defaults to cp1252 on
 # Windows, which cannot encode them.
 sys.stdout.reconfigure(encoding="utf-8")
 

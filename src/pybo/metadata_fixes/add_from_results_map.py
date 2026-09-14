@@ -12,7 +12,7 @@ leaf is the label the value is written under:
     python -m pybo.metadata_fixes.add_from_results_map <root> <map> <result> <path> [--apply]
 
     python -m pybo.metadata_fixes.add_from_results_map data/my_campaign_converted \\
-        data/results_map.json cavity_depth_mm "data.*.trackers.Cavity Depth" --apply
+        data/results_map.json thickness_mm "data.*.trackers.Coating Thickness" --apply
 
 An experiment the map does not name, or names without that result, is reported and left
 alone - a result not every experiment has is the case this is for, and writing null would
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from pybo.metadata_fixes._common import find_experiments, resolve, load, save, split_roots
 
-# Labels like "Tool Wear (μm)" get printed, and stdout defaults to cp1252 on
+# Labels like "Film Thickness (μm)" get printed, and stdout defaults to cp1252 on
 # Windows, which cannot encode them.
 sys.stdout.reconfigure(encoding="utf-8")
 
